@@ -28,22 +28,41 @@ into a new module and import.
 
 - `KherveBook.py` — entry script.
 - `khervebook/` — package; `python -m khervebook` is the alternative entry.
-  - `__init__.py`   — `APP_NAME`, version import.
-  - `__main__.py`   — module entry point.
-  - `_version.py`   — git-based version string.
-  - `app.py`        — `main()`, crash log, Fusion style.
-  - `mainwindow.py` — `MainWindow` shell: menus, toolbar, .kbook I/O.
-  - `notebook.py`   — `NotebookWidget`: scrollable cell column, shared kernel,
-                      JSON (de)serialisation.
-  - `cells.py`      — `CodeCell`, `MarkdownCell`, `LatexCell` widgets.
-  - `kernel.py`     — in-process Python kernel: shared namespace, stdout/stderr
-                      capture, trailing-expression echo, matplotlib figure capture.
+  - `__init__.py`    — `APP_NAME`, version import.
+  - `__main__.py`    — module entry point.
+  - `_version.py`    — git-based version string.
+  - `app.py`         — `main()`, crash log, Fusion style + theme.
+  - `style.py`       — QSS theme: flat light, white cell cards, blue
+                       selected-cell bar (KherveFitting-Qt family look).
+  - `icons.py`       — qtawesome MDI icon wrapper (32px toolbar icons,
+                       same size as KherveSheet).
+  - `mainwindow.py`  — `MainWindow` shell: menus, Jupyter-style toolbar,
+                       cell-type combo, .kbook I/O.
+  - `celltoolbar.py` — second toolbar row that swaps with the focused
+                       cell type (markdown/code/latex/sheet tools).
+  - `explorer.py`    — dockable file tree (Ctrl+B), opens .kbook on
+                       double-click.
+  - `notebook.py`    — `NotebookWidget`: scrollable cell column, shared
+                       kernel, cell clipboard/convert, context menu,
+                       JSON (de)serialisation.
+  - `cells.py`       — `CellWidget` base (gutter run button) +
+                       `CodeCell`, `MarkdownCell`, `LatexCell`.
+  - `sheetcell.py`   — `SheetCell`: spreadsheet grid, `=` formulas in
+                       Python with A1 refs over the kernel namespace.
+  - `kernel.py`      — in-process Python kernel: shared namespace
+                       (np/plt/pd/scipy preloaded), timeout guard,
+                       stdout/stderr capture, trailing-expression echo,
+                       figure/image capture.
+  - `welcome.py`     — pre-run example notebook shown on startup.
+- `tests/` — pytest suite (offscreen Qt; run `python -m pytest tests/`).
 - `requirements.txt`, `LICENSE` (GPL-3.0).
 
 ## Document format
 
 `.kbook` is JSON: `{"format": "kbook", "version": 1, "cells":
-[{"type": "code"|"markdown"|"latex", "source": "..."}]}`. When a cell
+[{"type": "code"|"markdown"|"latex"|"sheet", "source": "..."}]}`.
+A sheet cell's `source` is itself JSON: `{"rows", "cols", "data":
+{"A1": "raw text or =formula"}}`. When a cell
 gains new persisted properties, bump `FORMAT_VERSION` in `notebook.py`
 and keep `load_json` backward compatible. Importing/exporting `.ipynb`
 is on the roadmap.

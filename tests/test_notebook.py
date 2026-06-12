@@ -66,6 +66,24 @@ def test_loop_stops_when_cell_removed(qapp):
     assert not nb.looping
 
 
+def test_bouncing_balls_physics(qapp):
+    """Elastic collisions: kinetic energy conserved, balls stay boxed."""
+    from khervebook.kernel import Kernel
+    from khervebook.welcome import WELCOME_CELLS
+    source = next(c["source"] for c in WELCOME_CELLS
+                  if c["source"].startswith("# Bouncing balls"))
+    physics = source.split("fig, ax")[0]      # skip plotting per frame
+    k = Kernel()
+    k.run(physics)
+    ke0 = k.run("float((balls_vel ** 2).sum())").result_repr
+    for _ in range(400):
+        k.run(physics)
+    ke1 = k.run("float((balls_vel ** 2).sum())").result_repr
+    assert abs(float(ke0) - float(ke1)) < 1e-9   # elastic = no energy loss
+    res = k.run("bool((balls_pos > -0.02).all() and (balls_pos < 1.02).all())")
+    assert res.result_repr == "True"
+
+
 def test_restart_kernel_resets_gutters(qapp):
     from khervebook.notebook import NotebookWidget
     nb = NotebookWidget()

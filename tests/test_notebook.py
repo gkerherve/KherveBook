@@ -66,6 +66,33 @@ def test_loop_stops_when_cell_removed(qapp):
     assert not nb.looping
 
 
+def test_collapse_cell_and_round_trip(qapp):
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    cell = nb.cells[0]
+    cell.set_source("line1 = 1\nline2 = 2\nline3 = 3")
+    cell.set_collapsed(True)
+    assert not cell._body.isVisibleTo(cell)
+    assert cell.summary.isVisibleTo(cell)
+    assert "line1 = 1" in cell.summary.text()
+    assert "3 lines" in cell.summary.text()
+    # Collapsed state survives save/load.
+    nb2 = NotebookWidget()
+    nb2.load_json(nb.to_json())
+    assert nb2.cells[0].collapsed
+    nb2.cells[0].set_collapsed(False)
+    assert nb2.cells[0]._body.isVisibleTo(nb2.cells[0])
+
+
+def test_long_editor_caps_height(qapp):
+    from khervebook.cells import _GrowingEdit
+    short = _GrowingEdit("x = 1")
+    tall = _GrowingEdit("\n".join(f"a{i} = {i}" for i in range(80)))
+    assert tall.height() < short.height() * 30   # capped, not 80 rows
+    from PyQt5.QtCore import Qt
+    assert tall.verticalScrollBarPolicy() == Qt.ScrollBarAsNeeded
+
+
 def test_drop_files_into_cells(qapp, tmp_path):
     from khervebook.notebook import NotebookWidget
     nb = NotebookWidget()

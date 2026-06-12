@@ -20,7 +20,7 @@ from PyQt5.QtGui import (QColor, QFont, QFontMetrics, QPixmap,
                          QSyntaxHighlighter, QTextCharFormat)
 from PyQt5.QtWidgets import (QAction, QFrame, QHBoxLayout, QLabel,
                              QPlainTextEdit, QSizePolicy, QTextBrowser,
-                             QToolButton, QVBoxLayout)
+                             QToolButton, QVBoxLayout, QWidget)
 
 from .icons import icon
 
@@ -77,8 +77,10 @@ class PythonHighlighter(QSyntaxHighlighter):
 
 
 class _GrowingEdit(QPlainTextEdit):
-    """Plain-text editor that grows with its content (no inner scrollbar)."""
+    """Editor that grows with its content, up to MAX_ROWS lines —
+    beyond that it scrolls internally instead of swallowing the page."""
 
+    MAX_ROWS = 25
     run_requested = pyqtSignal()
 
     def __init__(self, text=""):
@@ -117,8 +119,12 @@ class _GrowingEdit(QPlainTextEdit):
 
     def _resize(self):
         rows = max(1, self.document().blockCount())
-        height = QFontMetrics(self.font()).lineSpacing() * rows + 14
+        shown = min(rows, self.MAX_ROWS)
+        height = QFontMetrics(self.font()).lineSpacing() * shown + 14
         self.setFixedHeight(height)
+        self.setVerticalScrollBarPolicy(
+            Qt.ScrollBarAsNeeded if rows > self.MAX_ROWS
+            else Qt.ScrollBarAlwaysOff)
 
 
 class CellWidget(QFrame):
@@ -161,6 +167,14 @@ class CellWidget(QFrame):
         self.stop_btn.hide()
         btns.addWidget(self.stop_btn)
         gcol.addLayout(btns)
+        self.collapse_btn = QToolButton()
+        self.collapse_btn.setIcon(icon("mdi.chevron-down"))
+        self.collapse_btn.setIconSize(QSize(18, 18))
+        self.collapse_btn.setToolTip("Collapse / expand this cell")
+        self.collapse_btn.setAutoRaise(True)
+        self.collapse_btn.clicked.connect(
+            lambda: self.set_collapsed(not self._collapsed))
+        gcol.addWidget(self.collapse_btn, alignment=Qt.AlignHCenter)
         self.gutter = QLabel("")
         self.gutter.setObjectName("gutter")      # themed via QSS
         self.gutter.setFont(MONO)
@@ -170,9 +184,25 @@ class CellWidget(QFrame):
         gcol.addStretch(1)
         outer.addLayout(gcol)
 
-        self.column = QVBoxLayout()
+        # Content: a one-line summary (collapsed) over the real body.
+        self._collapsed = False
+        content = QVBoxLayout()
+        content.setSpacing(0)
+        self.summary = QLabel("")
+        self.summary.setFont(MONO)
+        self.summary.setStyleSheet("color: #8a939c; font-style: italic;")
+        self.summary.setCursor(Qt.PointingHandCursor)
+        self.summary.setToolTip("Click to expand")
+        self.summary.mousePressEvent = (
+            lambda _e: self.set_collapsed(False))
+        self.summary.hide()
+        content.addWidget(self.summary)
+        self._body = QWidget()
+        self.column = QVBoxLayout(self._body)
+        self.column.setContentsMargins(0, 0, 0, 0)
         self.column.setSpacing(4)
-        outer.addLayout(self.column, 1)
+        content.addWidget(self._body)
+        outer.addLayout(content, 1)
 
         self.editor = _GrowingEdit(source)
         self.editor.cell = self
@@ -186,6 +216,25 @@ class CellWidget(QFrame):
     def set_looping(self, on: bool):
         """Show/hide the stop button while a continuous run is active."""
         self.stop_btn.setVisible(on)
+
+    # -- collapse ----------------------------------------------------------
+    @property
+    def collapsed(self) -> bool:
+        return self._collapsed
+
+    def set_collapsed(self, on: bool):
+        """Minimise the cell to a one-line summary (and back)."""
+        self._collapsed = bool(on)
+        self._body.setVisible(not self._collapsed)
+        self.summary.setVisible(self._collapsed)
+        if self._collapsed:
+            lines = self.source().strip().splitlines() or [""]
+            first = lines[0][:90]
+            more = f"   … {len(lines)} lines" if len(lines) > 1 else ""
+            self.summary.setText(first + more)
+        self.collapse_btn.setIcon(icon(
+            "mdi.chevron-right" if self._collapsed
+            else "mdi.chevron-down"))
 
     # -- file drops (from the explorer or the OS) ------------------------
     def dragEnterEvent(self, event):
@@ -221,7 +270,10 @@ class CellWidget(QFrame):
         """Run/render the cell. Overridden per type."""
 
     def to_dict(self) -> dict:
-        return {"type": self.CELL_TYPE, "source": self.source()}
+        d = {"type": self.CELL_TYPE, "source": self.source()}
+        if self._collapsed:
+            d["collapsed"] = True
+        return d
 
 
 class CodeCell(CellWidget):

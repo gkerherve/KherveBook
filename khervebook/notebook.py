@@ -21,7 +21,8 @@ from .cells import CodeCell, make_cell
 from .kernel import Kernel
 from . import sheetcell                  # noqa: F401  (registers "sheet")
 
-FORMAT_VERSION = 1
+# v2: cells gained an optional "collapsed" property.
+FORMAT_VERSION = 2
 
 #: extension -> cell type for files dropped onto the notebook.
 DROP_TYPES = {
@@ -209,6 +210,8 @@ class NotebookWidget(QScrollArea):
         else:
             menu.addAction("Run Continuously",
                            lambda: self.start_loop(cell))
+        menu.addAction("Expand Cell" if cell.collapsed else "Collapse Cell",
+                       lambda: cell.set_collapsed(not cell.collapsed))
         menu.addSeparator()
         menu.addAction("Cut Cell", self.cut_current)
         menu.addAction("Copy Cell", self.copy_current)
@@ -338,4 +341,7 @@ class NotebookWidget(QScrollArea):
         self.current = None
         self.kernel.reset()
         for item in doc.get("cells", []) or [{"type": "code", "source": ""}]:
-            self.add_cell(item.get("type", "code"), item.get("source", ""))
+            cell = self.add_cell(item.get("type", "code"),
+                                 item.get("source", ""))
+            if item.get("collapsed"):
+                cell.set_collapsed(True)

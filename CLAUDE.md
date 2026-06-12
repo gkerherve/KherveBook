@@ -40,8 +40,15 @@ into a new module and import.
                        cell-type combo, .kbook I/O.
   - `celltoolbar.py` — second toolbar row that swaps with the focused
                        cell type (markdown/code/latex/sheet tools).
-  - `explorer.py`    — dockable file tree (Ctrl+B), opens .kbook on
-                       double-click.
+  - `explorer.py`    — dockable file tree (Ctrl+B) rooted at a chosen
+                       folder; drag source for cell drops.
+  - `ai_providers.py`— AI provider registry (Claude/ChatGPT/Mistral/
+                       Ollama/Local) + urllib chat calls.
+  - `ai_chat.py`     — AI Assistant dock (bottom-left): chat, settings,
+                       fenced-block replies inserted as cells.
+  - `examples.py`    — Examples menu registry (name, category, builder),
+                       like KherveSheet's.
+  - `importers.py`   — .ksheet (HDF5) and .kdocz/.kdoc.json importers.
   - `notebook.py`    — `NotebookWidget`: scrollable cell column, shared
                        kernel, cell clipboard/convert, context menu,
                        JSON (de)serialisation.

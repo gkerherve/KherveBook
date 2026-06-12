@@ -13,13 +13,52 @@ the Free Software Foundation, either version 3 of the License, or
 """
 
 import io
+import re
 
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QFont, QFontMetrics, QPixmap
+from PyQt5.QtGui import (QColor, QFont, QFontMetrics, QPixmap,
+                         QSyntaxHighlighter, QTextCharFormat)
 from PyQt5.QtWidgets import (QFrame, QHBoxLayout, QLabel, QPlainTextEdit,
                              QSizePolicy, QTextBrowser, QVBoxLayout)
 
 MONO = QFont("Consolas", 10)
+
+
+class PythonHighlighter(QSyntaxHighlighter):
+    """Minimal Python syntax highlighting for code cell editors."""
+
+    _KEYWORDS = (
+        "def class return if elif else for while in is and or not import "
+        "from as with try except finally raise lambda yield global nonlocal "
+        "pass break continue None True False assert del").split()
+
+    def __init__(self, document):
+        super().__init__(document)
+        self._rules = []
+
+        kw = QTextCharFormat()
+        kw.setForeground(QColor("#0000C0"))
+        kw.setFontWeight(QFont.Bold)
+        for word in self._KEYWORDS:
+            self._rules.append((re.compile(rf"\b{word}\b"), kw))
+
+        num = QTextCharFormat()
+        num.setForeground(QColor("#098658"))
+        self._rules.append((re.compile(r"\b\d+(\.\d+)?\b"), num))
+
+        s = QTextCharFormat()
+        s.setForeground(QColor("#A31515"))
+        self._rules.append((re.compile(r"'[^']*'|\"[^\"]*\""), s))
+
+        c = QTextCharFormat()
+        c.setForeground(QColor("#808080"))
+        c.setFontItalic(True)
+        self._rules.append((re.compile(r"#.*$"), c))
+
+    def highlightBlock(self, text):
+        for pattern, fmt in self._rules:
+            for m in pattern.finditer(text):
+                self.setFormat(m.start(), m.end() - m.start(), fmt)
 
 
 class _GrowingEdit(QPlainTextEdit):
@@ -103,6 +142,7 @@ class CodeCell(CellWidget):
     def __init__(self, source=""):
         super().__init__(source)
         self.gutter.setText("In [ ]:")
+        self._highlighter = PythonHighlighter(self.editor.document())
         self.output = QLabel()
         self.output.setFont(MONO)
         self.output.setTextInteractionFlags(Qt.TextSelectableByMouse)

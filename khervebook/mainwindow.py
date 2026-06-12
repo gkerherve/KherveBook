@@ -10,12 +10,13 @@ the Free Software Foundation, either version 3 of the License, or
 
 from pathlib import Path
 
-from PyQt5.QtCore import QSize
+from PyQt5.QtCore import QSize, Qt
 from PyQt5.QtWidgets import (QAction, QComboBox, QFileDialog, QMainWindow,
                              QMessageBox, QToolBar)
 
 from . import APP_NAME, __version__
 from .celltoolbar import CellToolBar
+from .explorer import FileExplorer
 from .icons import app_icon, icon
 from .notebook import NotebookWidget
 
@@ -32,6 +33,9 @@ class MainWindow(QMainWindow):
         self.path = None
         self.dirty = False
         self.setWindowIcon(app_icon())
+        self.explorer = FileExplorer(self)
+        self.explorer.open_requested.connect(self._open_path)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.explorer)
         self._build_menus()
         self._build_toolbar()
         self.notebook.current_changed.connect(self._on_current_cell)
@@ -91,6 +95,12 @@ class MainWindow(QMainWindow):
         k = m.addMenu("&Kernel")
         k.addAction(self._act("&Restart Kernel", "Ctrl+Shift+R",
                               self.notebook.restart_kernel))
+
+        v = m.addMenu("&View")
+        toggle = self.explorer.toggleViewAction()
+        toggle.setText("&File Explorer")
+        toggle.setShortcut("Ctrl+B")
+        v.addAction(toggle)
 
         h = m.addMenu("&Help")
         h.addAction(self._act("&About", None, self._about))
@@ -186,11 +196,13 @@ class MainWindow(QMainWindow):
         self._update_title()
 
     def open_file(self):
-        if not self._confirm_discard():
-            return
         name, _ = QFileDialog.getOpenFileName(self, "Open notebook",
                                               "", FILE_FILTER)
-        if not name:
+        if name:
+            self._open_path(name)
+
+    def _open_path(self, name: str):
+        if not self._confirm_discard():
             return
         try:
             self.notebook.load_json(Path(name).read_text(encoding="utf-8"))
@@ -199,6 +211,7 @@ class MainWindow(QMainWindow):
             return
         self.path = name
         self.dirty = False
+        self.explorer.show_file(name)
         self._update_title()
 
     def save_file(self):
@@ -207,6 +220,7 @@ class MainWindow(QMainWindow):
             return
         Path(self.path).write_text(self.notebook.to_json(), encoding="utf-8")
         self.dirty = False
+        self.explorer.show_file(self.path)
         self._update_title()
 
     def save_as(self):

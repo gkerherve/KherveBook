@@ -98,6 +98,32 @@ def test_formula_bar_roundtrip(qapp):
     assert sheet._raw(1, 1) == "42"
 
 
+def test_auto_recalc_on_edit(qapp):
+    """Editing a cell recomputes formulas without pressing run."""
+    import json as _json
+    from PyQt5.QtWidgets import QApplication
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    nb.add_cell("sheet", _json.dumps(
+        {"rows": 3, "cols": 2, "data": {"A1": "3", "B1": "=A1 * 10"}}))
+    sheet = nb.cells[-1]
+    sheet._set_item(0, 0, "5", "5")        # itemChanged fires
+    assert sheet._recalc_timer.isActive()  # edit scheduled a recalc
+    sheet.recalculate()                    # what the timer will run
+    assert sheet.table.item(0, 1).text() == "50"
+
+
+def test_formula_plot_displays_below_grid(qapp):
+    from khervebook.kernel import Kernel
+    sheet = make_sheet(qapp, {"A1": "=plt.plot([1, 2, 3]) and plt.gcf()"})
+    sheet.execute(Kernel())
+    assert sheet.table.item(0, 0).text() == "[plot]"
+    assert len(sheet._figure_labels) == 1
+    assert not sheet._figure_labels[0].pixmap().isNull()
+    # The raw formula is still there for editing.
+    assert sheet._raw(0, 0).startswith("=plt.plot")
+
+
 def test_formula_error_shown(qapp):
     from khervebook.kernel import Kernel
     sheet = make_sheet(qapp, {"A1": "=1/0"})

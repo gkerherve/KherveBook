@@ -21,12 +21,14 @@ the Free Software Foundation, either version 3 of the License, or
 import json
 import re
 
-from PyQt5.QtCore import QEvent, Qt
+from PyQt5.QtCore import QEvent, Qt, QTimer
+from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import (QHBoxLayout, QLabel, QLineEdit, QSizePolicy,
                              QStyledItemDelegate, QTableWidget,
                              QTableWidgetItem)
 
 from .cells import MONO, CELL_CLASSES, CellWidget
+from .kernel import Kernel
 
 _REF = re.compile(r"\b([A-Z]{1,2})(\d{1,3})\b")
 _RANGE = re.compile(r"\b([A-Z]{1,2})(\d{1,3})\s*:\s*([A-Z]{1,2})(\d{1,3})\b")
@@ -111,11 +113,39 @@ class SheetCell(CellWidget):
         self.table.currentCellChanged.connect(self._sync_formula_bar)
         self.table.installEventFilter(self)
         self.column.addWidget(self.table)
+        self._figure_labels = []        # plots produced by formulas
         self._refresh_headers()
         self._fit_height()
 
+        # Excel-like behaviour: recompute shortly after any edit.
+        self._recalc_timer = QTimer(self)
+        self._recalc_timer.setSingleShot(True)
+        self._recalc_timer.setInterval(300)
+        self._recalc_timer.timeout.connect(self.recalculate)
+        self.table.itemChanged.connect(
+            lambda _item: self._recalc_timer.start())
+        self._computed_once = False
+
         if source:
             self.set_source(source)
+
+    def _notebook(self):
+        w = self.parent()
+        while w is not None and not hasattr(w, "kernel"):
+            w = w.parent()
+        return w
+
+    def recalculate(self):
+        """Recompute against the owning notebook's kernel, if any."""
+        nb = self._notebook()
+        if nb is not None:
+            self.execute(nb.kernel)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Loaded notebooks show computed values without a manual run.
+        if not self._computed_once:
+            self._recalc_timer.start()
 
     # -- CellWidget API ----------------------------------------------------
     def source(self) -> str:
@@ -162,7 +192,10 @@ class SheetCell(CellWidget):
     def execute(self, kernel):
         """Recompute every =formula against the kernel namespace, then
         publish the grid into the namespace as sheet1/sheet2/..."""
+        self._computed_once = True
         kernel._seed_namespace()
+        plt = kernel.namespace.get("plt")
+        before = set(plt.get_fignums()) if plt else set()
         values, formulas = {}, {}
         for r in range(self.table.rowCount()):
             for c in range(self.table.columnCount()):
@@ -195,12 +228,44 @@ class SheetCell(CellWidget):
         for rc in pending:
             values[rc] = "#ERR circular"
 
+        # Figures: trailing Figure values and any pyplot figures a
+        # formula created both display below the grid, like code cells.
+        pngs, captured = [], set()
         self.table.blockSignals(True)
         for rc, expr in formulas.items():
             raw = self._raw(*rc)
-            self._set_item(rc[0], rc[1], raw, format_value(values[rc]))
+            value = values[rc]
+            if Kernel._is_figure(value):
+                pngs.append(Kernel._fig_png(value))
+                captured.add(getattr(value, "number", None))
+                values[rc] = "[plot]"
+                self._set_item(rc[0], rc[1], raw, "[plot]")
+            else:
+                self._set_item(rc[0], rc[1], raw, format_value(value))
         self.table.blockSignals(False)
+        if plt:
+            for num in plt.get_fignums():
+                if num in before:
+                    continue
+                if num not in captured:
+                    pngs.append(Kernel._fig_png(plt.figure(num)))
+                plt.close(num)
+        self._show_figures(pngs)
         self._publish(kernel, values)
+
+    def _show_figures(self, pngs):
+        if len(pngs) != len(self._figure_labels):
+            for lab in self._figure_labels:
+                lab.deleteLater()
+            self._figure_labels = []
+            for _png in pngs:
+                lab = QLabel()
+                self.column.addWidget(lab)
+                self._figure_labels.append(lab)
+        for lab, png in zip(self._figure_labels, pngs):
+            pix = QPixmap()
+            pix.loadFromData(png, "PNG")
+            lab.setPixmap(pix)
 
     @staticmethod
     def _eval(expr, values, blocked, namespace):

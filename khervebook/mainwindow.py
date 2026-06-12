@@ -10,10 +10,13 @@ the Free Software Foundation, either version 3 of the License, or
 
 from pathlib import Path
 
-from PyQt5.QtWidgets import (QAction, QFileDialog, QMainWindow, QMessageBox,
-                             QToolBar)
+from PyQt5.QtCore import QSize
+from PyQt5.QtWidgets import (QAction, QComboBox, QFileDialog, QMainWindow,
+                             QMessageBox, QToolBar)
 
 from . import APP_NAME, __version__
+from .celltoolbar import CellToolBar
+from .icons import app_icon, icon
 from .notebook import NotebookWidget
 
 FILE_FILTER = "KherveBook notebook (*.kbook);;All files (*)"
@@ -28,11 +31,24 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.notebook)
         self.path = None
         self.dirty = False
+        self.setWindowIcon(app_icon())
         self._build_menus()
         self._build_toolbar()
+        self.notebook.current_changed.connect(self._on_current_cell)
         self.statusBar().showMessage(f"{APP_NAME} v{__version__}")
         self.resize(1000, 750)
+        self._load_welcome()
         self._update_title()
+
+    def _load_welcome(self):
+        """Open with a pre-run example so a new user sees what the
+        app does instead of an empty window."""
+        from .welcome import load_welcome
+        try:
+            load_welcome(self.notebook)
+        except Exception:
+            pass    # an empty notebook is a fine fallback
+        self.dirty = False
 
     # -- UI scaffolding ---------------------------------------------------
     def _build_menus(self):
@@ -58,6 +74,13 @@ class MainWindow(QMainWindow):
         c.addAction(self._act("Run &All", "Ctrl+Shift+Return",
                               self.notebook.run_all))
         c.addSeparator()
+        c.addAction(self._act("Cu&t Cell", "Ctrl+Shift+X",
+                              self.notebook.cut_current))
+        c.addAction(self._act("C&opy Cell", "Ctrl+Shift+O",
+                              self.notebook.copy_current))
+        c.addAction(self._act("&Paste Cell Below", "Ctrl+Shift+V",
+                              self.notebook.paste_cell))
+        c.addSeparator()
         c.addAction(self._act("Move Cell &Up", "Ctrl+Shift+Up",
                               lambda: self.notebook.move_current(-1)))
         c.addAction(self._act("Move Cell &Down", "Ctrl+Shift+Down",
@@ -72,24 +95,84 @@ class MainWindow(QMainWindow):
         h = m.addMenu("&Help")
         h.addAction(self._act("&About", None, self._about))
 
+    #: (label, type-key) pairs for the Jupyter-style cell-type selector.
+    CELL_TYPES = [("Code", "code"), ("Markdown", "markdown"),
+                  ("LaTeX", "latex")]
+
     def _build_toolbar(self):
+        """Jupyter-style main toolbar: file/cell ops, run, cell type."""
+        nb = self.notebook
         tb = QToolBar("Main")
         tb.setMovable(False)
+        tb.setIconSize(QSize(20, 20))
         self.addToolBar(tb)
-        tb.addAction(self._act("+Code", None,
-                               lambda: self.notebook.add_cell("code")))
-        tb.addAction(self._act("+Markdown", None,
-                               lambda: self.notebook.add_cell("markdown")))
-        tb.addAction(self._act("+LaTeX", None,
-                               lambda: self.notebook.add_cell("latex")))
-        tb.addSeparator()
-        tb.addAction(self._act("Run", None, self.notebook.run_current))
-        tb.addAction(self._act("Run All", None, self.notebook.run_all))
 
-    def _act(self, text, shortcut, slot):
+        tb.addAction(self._act("Save", None, self.save_file,
+                               "mdi.content-save",
+                               "Save the notebook (Ctrl+S)"))
+        tb.addSeparator()
+        tb.addAction(self._act("Add cell", None,
+                               lambda: nb.add_cell_below("code"),
+                               "mdi.plus", "Insert a code cell below"))
+        tb.addAction(self._act("Cut", None, nb.cut_current,
+                               "mdi.content-cut", "Cut the selected cell"))
+        tb.addAction(self._act("Copy", None, nb.copy_current,
+                               "mdi.content-copy", "Copy the selected cell"))
+        tb.addAction(self._act("Paste", None, nb.paste_cell,
+                               "mdi.content-paste", "Paste the cell below"))
+        tb.addSeparator()
+        tb.addAction(self._act("Up", None, lambda: nb.move_current(-1),
+                               "mdi.arrow-up", "Move the cell up"))
+        tb.addAction(self._act("Down", None, lambda: nb.move_current(1),
+                               "mdi.arrow-down", "Move the cell down"))
+        tb.addSeparator()
+        tb.addAction(self._act("Run", None, nb.run_current,
+                               "mdi.play", "Run the selected cell "
+                               "(Shift+Enter runs and advances)",
+                               color="#27ae60"))
+        tb.addAction(self._act("Restart", None, nb.restart_kernel,
+                               "mdi.refresh", "Restart the kernel "
+                               "(clears all variables)"))
+        tb.addAction(self._act("Run all", None, nb.run_all,
+                               "mdi.fast-forward",
+                               "Restart and run every cell"))
+        tb.addSeparator()
+
+        self.cell_type_combo = QComboBox()
+        for label, _key in self.CELL_TYPES:
+            self.cell_type_combo.addItem(label)
+        self.cell_type_combo.setToolTip("Change the selected cell's type")
+        self.cell_type_combo.activated.connect(
+            lambda i: nb.convert_current(self.CELL_TYPES[i][1]))
+        tb.addWidget(self.cell_type_combo)
+
+        # Second row: tools specific to the focused cell's type.
+        self.addToolBarBreak()
+        self.cell_toolbar = CellToolBar(nb, self)
+        self.addToolBar(self.cell_toolbar)
+
+    def _on_current_cell(self, cell):
+        """Follow the focused cell: type selector + contextual toolbar."""
+        if cell is None:
+            return
+        self.cell_toolbar.set_mode(cell.CELL_TYPE)
+        for i, (_label, key) in enumerate(self.CELL_TYPES):
+            if key == cell.CELL_TYPE:
+                self.cell_type_combo.blockSignals(True)
+                self.cell_type_combo.setCurrentIndex(i)
+                self.cell_type_combo.blockSignals(False)
+                break
+
+    def _act(self, text, shortcut, slot, icon_name=None, tip=None,
+             color=None):
         action = QAction(text, self)
+        if icon_name:
+            action.setIcon(icon(icon_name, color) if color
+                           else icon(icon_name))
         if shortcut:
             action.setShortcut(shortcut)
+        if tip:
+            action.setToolTip(tip)
         action.triggered.connect(slot)
         return action
 

@@ -26,6 +26,7 @@ class NotebookWidget(QScrollArea):
     """Vertical list of cells with a shared execution kernel."""
 
     modified = pyqtSignal()
+    current_changed = pyqtSignal(object)   # the newly focused cell
 
     def __init__(self):
         super().__init__()
@@ -38,6 +39,7 @@ class NotebookWidget(QScrollArea):
         self.setWidget(self._container)
         self.cells = []
         self.current = None
+        self._clipboard = None              # dict from a cut/copied cell
         self.add_cell("code")
 
     # -- cell management ------------------------------------------------
@@ -59,7 +61,8 @@ class NotebookWidget(QScrollArea):
         idx = self.cells.index(self.current)
         cell = self.cells.pop(idx)
         cell.deleteLater()
-        self.current = self.cells[min(idx, len(self.cells) - 1)]
+        self.current = None
+        self._set_current(self.cells[min(idx, len(self.cells) - 1)])
         self.current.editor.setFocus()
         self.modified.emit()
 
@@ -75,7 +78,53 @@ class NotebookWidget(QScrollArea):
         self.modified.emit()
 
     def _set_current(self, cell):
-        self.current = cell
+        if cell is not self.current:
+            self.current = cell
+            self.current_changed.emit(cell)
+
+    def add_cell_below(self, cell_type: str, source: str = ""):
+        """Insert a cell after the current one (Jupyter's '+') and focus it."""
+        idx = (self.cells.index(self.current) + 1
+               if self.current in self.cells else len(self.cells))
+        cell = self.add_cell(cell_type, source, idx)
+        # Select explicitly — focus events alone can lag or be absent.
+        self._set_current(cell)
+        cell.editor.setFocus()
+        return cell
+
+    # -- cell clipboard / conversion --------------------------------------
+    def copy_current(self):
+        if self.current is not None:
+            self._clipboard = self.current.to_dict()
+
+    def cut_current(self):
+        if self.current is None:
+            return
+        self.copy_current()
+        if len(self.cells) == 1:
+            # Cutting the only cell leaves a fresh empty code cell.
+            self.add_cell("code")
+        self.remove_current()
+
+    def paste_cell(self):
+        if not self._clipboard:
+            return
+        self.add_cell_below(self._clipboard.get("type", "code"),
+                            self._clipboard.get("source", ""))
+
+    def convert_current(self, cell_type: str):
+        """Change the current cell's type, keeping its source."""
+        cell = self.current
+        if cell is None or cell.CELL_TYPE == cell_type:
+            return
+        idx = self.cells.index(cell)
+        source = cell.source()
+        self.cells.pop(idx)
+        cell.deleteLater()
+        new = self.add_cell(cell_type, source, idx)
+        self.current = new
+        self.current_changed.emit(new)
+        new.editor.setFocus()
 
     # -- execution -------------------------------------------------------
     def run_current(self):

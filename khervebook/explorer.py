@@ -14,12 +14,20 @@ the Free Software Foundation, either version 3 of the License, or
 
 from pathlib import Path
 
-from PyQt5.QtCore import QDir, pyqtSignal
-from PyQt5.QtWidgets import QDockWidget, QFileSystemModel, QTreeView
+from PyQt5.QtCore import QDir, QSettings, pyqtSignal
+from PyQt5.QtWidgets import (QDockWidget, QFileDialog, QFileSystemModel,
+                             QHBoxLayout, QLabel, QToolButton, QTreeView,
+                             QVBoxLayout, QWidget)
+
+from .icons import icon
 
 
 class FileExplorer(QDockWidget):
-    """Dockable file tree rooted at the current notebook's folder."""
+    """Dockable file tree rooted at a chosen folder (not the whole disk).
+
+    The root persists between sessions; the folder button (or opening
+    a notebook) changes it.
+    """
 
     open_requested = pyqtSignal(str)    # absolute path of a .kbook
 
@@ -44,14 +52,45 @@ class FileExplorer(QDockWidget):
             self._tree.hideColumn(col)             # name column only
         self._tree.setAnimated(True)
         self._tree.doubleClicked.connect(self._on_double_click)
-        self.setWidget(self._tree)
 
-        self.set_root(QDir.homePath())
+        # Header row: pick-folder button + current folder name.
+        container = QWidget()
+        column = QVBoxLayout(container)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
+        header = QHBoxLayout()
+        header.setContentsMargins(4, 4, 4, 4)
+        pick = QToolButton()
+        pick.setIcon(icon("mdi.folder-open-outline"))
+        pick.setToolTip("Choose the folder to explore")
+        pick.setAutoRaise(True)
+        pick.clicked.connect(self._pick_folder)
+        header.addWidget(pick)
+        self._root_label = QLabel("")
+        self._root_label.setToolTip("")
+        header.addWidget(self._root_label, 1)
+        column.addLayout(header)
+        column.addWidget(self._tree, 1)
+        self.setWidget(container)
+
+        saved = QSettings("Kherve", "KherveBook").value("explorer/root", "")
+        self.set_root(saved if saved and Path(saved).is_dir()
+                      else QDir.homePath())
 
     def set_root(self, folder: str):
-        """Point the tree at *folder* (e.g. the opened file's folder)."""
+        """Point the tree at *folder* only, and remember the choice."""
         self._model.setRootPath(folder)
         self._tree.setRootIndex(self._model.index(folder))
+        self._root_label.setText(Path(folder).name or folder)
+        self._root_label.setToolTip(folder)
+        QSettings("Kherve", "KherveBook").setValue("explorer/root", folder)
+
+    def _pick_folder(self):
+        folder = QFileDialog.getExistingDirectory(
+            self, "Choose the folder to explore",
+            self._model.rootPath() or QDir.homePath())
+        if folder:
+            self.set_root(folder)
 
     def show_file(self, path: str):
         """Re-root to the file's folder and select it."""

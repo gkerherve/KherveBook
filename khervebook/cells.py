@@ -96,6 +96,13 @@ class _GrowingEdit(QPlainTextEdit):
             return
         super().keyPressEvent(event)
 
+    def dragEnterEvent(self, event):
+        # Let file drops reach the parent cell; keep text drags local.
+        if event.mimeData().hasUrls():
+            event.ignore()
+        else:
+            super().dragEnterEvent(event)
+
     def contextMenuEvent(self, event):
         """Standard edit menu with a "Run Cell" entry on top."""
         menu = self.createStandardContextMenu()
@@ -122,12 +129,14 @@ class CellWidget(QFrame):
     run_clicked = pyqtSignal(object)     # self — run in place
     stop_clicked = pyqtSignal(object)    # self — stop continuous run
     menu_requested = pyqtSignal(object, object)   # self, global pos
+    file_dropped = pyqtSignal(str, object)        # path, self
     focused = pyqtSignal(object)         # self
 
     def __init__(self, source=""):
         super().__init__()
         self.setFrameShape(QFrame.StyledPanel)
         self.setObjectName("cell")
+        self.setAcceptDrops(True)
         outer = QHBoxLayout(self)
         outer.setContentsMargins(6, 6, 6, 6)
 
@@ -177,6 +186,21 @@ class CellWidget(QFrame):
     def set_looping(self, on: bool):
         """Show/hide the stop button while a continuous run is active."""
         self.stop_btn.setVisible(on)
+
+    # -- file drops (from the explorer or the OS) ------------------------
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        for url in event.mimeData().urls():
+            if url.isLocalFile():
+                self.file_dropped.emit(url.toLocalFile(), self)
+        event.acceptProposedAction()
 
     def eventFilter(self, obj, event):
         if obj is self.editor and event.type() == event.FocusIn:
@@ -257,6 +281,7 @@ class MarkdownCell(CellWidget):
         super().__init__(source)
         self.gutter.setText("md")
         self.view = QTextBrowser()
+        self.view.setAcceptDrops(False)      # file drops go to the cell
         self.view.setOpenExternalLinks(True)
         self.view.setFrameShape(QFrame.NoFrame)
         self.view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)

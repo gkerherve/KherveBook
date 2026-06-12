@@ -66,6 +66,47 @@ def test_loop_stops_when_cell_removed(qapp):
     assert not nb.looping
 
 
+def test_drop_files_into_cells(qapp, tmp_path):
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+
+    py = tmp_path / "script.py"
+    py.write_text("x = 1\n", encoding="utf-8")
+    assert nb.open_file_in_cell(str(py))
+    assert nb.current.CELL_TYPE == "code"
+    assert nb.current.source() == "x = 1\n"
+
+    csv = tmp_path / "data.csv"
+    csv.write_text("a,b\n1,2\n", encoding="utf-8")
+    target = nb.current
+    assert nb.open_file_in_cell(str(csv), target)   # converts in place
+    assert nb.current.CELL_TYPE == "sheet"
+    assert nb.current._raw(0, 0) == "a"
+    assert nb.current._raw(1, 1) == "2"
+
+    md = tmp_path / "notes.md"
+    md.write_text("# Title", encoding="utf-8")
+    assert nb.open_file_in_cell(str(md))
+    assert nb.current.CELL_TYPE == "markdown"
+    assert nb.current.view.isVisibleTo(nb)          # rendered on drop
+
+    assert not nb.open_file_in_cell(str(tmp_path / "missing.py"))
+    exe = tmp_path / "app.exe"
+    exe.write_bytes(b"MZ")
+    assert not nb.open_file_in_cell(str(exe))       # unrecognised
+
+
+def test_drop_kbook_emits_open_request(qapp, tmp_path):
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    kb = tmp_path / "doc.kbook"
+    kb.write_text('{"cells": []}', encoding="utf-8")
+    got = []
+    nb.open_kbook_requested.connect(got.append)
+    assert nb.open_file_in_cell(str(kb))
+    assert got == [str(kb)]
+
+
 def test_bouncing_balls_physics(qapp):
     """Elastic collisions: kinetic energy conserved, balls stay boxed."""
     from khervebook.kernel import Kernel

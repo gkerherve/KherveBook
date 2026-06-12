@@ -12,6 +12,7 @@ the Free Software Foundation, either version 3 of the License, or
 """
 
 import json
+from pathlib import Path
 
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtWidgets import QMenu, QScrollArea, QVBoxLayout, QWidget
@@ -22,16 +23,30 @@ from . import sheetcell                  # noqa: F401  (registers "sheet")
 
 FORMAT_VERSION = 1
 
+#: extension -> cell type for files dropped onto the notebook.
+DROP_TYPES = {
+    ".py": "code",
+    ".md": "markdown", ".markdown": "markdown",
+    ".tex": "latex",
+    ".csv": "sheet", ".tsv": "sheet", ".txt": "sheet", ".dat": "sheet",
+    ".png": "image", ".jpg": "image", ".jpeg": "image",
+    ".gif": "image", ".bmp": "image",
+    ".kbook": "kbook",
+}
+_MAX_DROP_BYTES = 2_000_000
+
 
 class NotebookWidget(QScrollArea):
     """Vertical list of cells with a shared execution kernel."""
 
     modified = pyqtSignal()
     current_changed = pyqtSignal(object)   # the newly focused cell
+    open_kbook_requested = pyqtSignal(str)  # a .kbook was dropped
 
     def __init__(self):
         super().__init__()
         self.kernel = Kernel()
+        self.setAcceptDrops(True)
         self.setWidgetResizable(True)
         self._container = QWidget()
         self._layout = QVBoxLayout(self._container)
@@ -53,6 +68,7 @@ class NotebookWidget(QScrollArea):
         cell.run_clicked.connect(self.run_cell)
         cell.stop_clicked.connect(lambda _cell: self.stop_loop())
         cell.menu_requested.connect(self._show_cell_menu)
+        cell.file_dropped.connect(self.open_file_in_cell)
         cell.focused.connect(self._set_current)
         cell.editor.textChanged.connect(self.modified.emit)
         if hasattr(cell, "table"):
@@ -229,6 +245,61 @@ class NotebookWidget(QScrollArea):
         for cell in self.cells:
             if isinstance(cell, CodeCell):
                 cell.gutter.setText("In [ ]:")
+
+    # -- file drops ---------------------------------------------------------
+    def open_file_in_cell(self, path: str, cell=None) -> bool:
+        """Load a recognised file into *cell* (or a new cell at the end).
+
+        .py -> code, .md -> markdown, .tex -> latex, tabular text ->
+        sheet, images -> markdown image, .kbook -> open the notebook.
+        Returns False for unrecognised or unreadable files.
+        """
+        p = Path(path)
+        kind = DROP_TYPES.get(p.suffix.lower())
+        if kind is None or not p.is_file():
+            return False
+        if kind == "kbook":
+            self.open_kbook_requested.emit(str(p))
+            return True
+        if kind == "image":
+            kind, source = "markdown", f"![{p.name}]({p.as_uri()})"
+        else:
+            try:
+                if p.stat().st_size > _MAX_DROP_BYTES:
+                    return False
+                source = p.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                return False
+
+        if cell is None:
+            cell = self.add_cell_below(kind, source)
+        else:
+            self._set_current(cell)
+            if cell.CELL_TYPE != kind:
+                self.convert_current(kind)
+                cell = self.current
+            cell.set_source(source)
+        # Render text content immediately; code/sheet wait for the user
+        # (their run executes, which a drop should not do by itself).
+        if kind in ("markdown", "latex"):
+            cell.execute(self.kernel)
+        self.modified.emit()
+        return True
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        """Files dropped on empty notebook space append new cells."""
+        for url in event.mimeData().urls():
+            if url.isLocalFile():
+                self.open_file_in_cell(url.toLocalFile())
+        event.acceptProposedAction()
 
     # -- persistence -------------------------------------------------------
     def to_json(self) -> str:

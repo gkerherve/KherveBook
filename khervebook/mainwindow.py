@@ -41,6 +41,7 @@ class MainWindow(QMainWindow):
         self._build_menus()
         self._build_toolbar()
         self.notebook.current_changed.connect(self._on_current_cell)
+        self.notebook.open_kbook_requested.connect(self._open_path)
         self.statusBar().showMessage(f"{APP_NAME} v{__version__}")
         self.resize(1000, 750)
         self._load_welcome()

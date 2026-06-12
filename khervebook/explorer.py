@@ -36,6 +36,7 @@ class FileExplorer(QDockWidget):
 
         self._tree = QTreeView()
         self._tree.setModel(self._model)
+        self._tree.setDragEnabled(True)       # drag files onto cells
         self._tree.setHeaderHidden(True)
         for col in range(1, self._model.columnCount()):
             self._tree.hideColumn(col)             # name column only

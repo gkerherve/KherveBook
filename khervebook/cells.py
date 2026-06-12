@@ -108,6 +108,7 @@ class CellWidget(QFrame):
     CELL_TYPE = "code"
     run_requested = pyqtSignal(object)   # self — run and advance
     run_clicked = pyqtSignal(object)     # self — run in place
+    stop_clicked = pyqtSignal(object)    # self — stop continuous run
     menu_requested = pyqtSignal(object, object)   # self, global pos
     focused = pyqtSignal(object)         # self
 
@@ -118,16 +119,27 @@ class CellWidget(QFrame):
         outer = QHBoxLayout(self)
         outer.setContentsMargins(6, 6, 6, 6)
 
-        # Gutter column: a run button above the In [n] / md / tex label.
+        # Gutter column: run + stop buttons above the In [n] label.
         gcol = QVBoxLayout()
         gcol.setSpacing(2)
+        btns = QHBoxLayout()
+        btns.setSpacing(0)
         self.run_btn = QToolButton()
         self.run_btn.setIcon(icon("mdi.play-circle-outline", "#27ae60"))
-        self.run_btn.setIconSize(QSize(26, 26))
+        self.run_btn.setIconSize(QSize(24, 24))
         self.run_btn.setToolTip("Run this cell")
         self.run_btn.setAutoRaise(True)
         self.run_btn.clicked.connect(lambda: self.run_clicked.emit(self))
-        gcol.addWidget(self.run_btn, alignment=Qt.AlignHCenter)
+        btns.addWidget(self.run_btn)
+        self.stop_btn = QToolButton()
+        self.stop_btn.setIcon(icon("mdi.stop-circle-outline", "#c0392b"))
+        self.stop_btn.setIconSize(QSize(24, 24))
+        self.stop_btn.setToolTip("Stop the continuous run")
+        self.stop_btn.setAutoRaise(True)
+        self.stop_btn.clicked.connect(lambda: self.stop_clicked.emit(self))
+        self.stop_btn.hide()
+        btns.addWidget(self.stop_btn)
+        gcol.addLayout(btns)
         self.gutter = QLabel("")
         self.gutter.setFont(MONO)
         self.gutter.setFixedWidth(58)
@@ -149,6 +161,10 @@ class CellWidget(QFrame):
 
     def contextMenuEvent(self, event):
         self.menu_requested.emit(self, event.globalPos())
+
+    def set_looping(self, on: bool):
+        """Show/hide the stop button while a continuous run is active."""
+        self.stop_btn.setVisible(on)
 
     def eventFilter(self, obj, event):
         if obj is self.editor and event.type() == event.FocusIn:
@@ -189,9 +205,6 @@ class CodeCell(CellWidget):
     def execute(self, kernel):
         res = kernel.run(self.source())
         self.gutter.setText(f"In [{kernel.exec_count}]:")
-        for lab in self._figure_labels:
-            lab.deleteLater()
-        self._figure_labels = []
 
         text = res.stdout
         if res.result_repr:
@@ -205,13 +218,20 @@ class CodeCell(CellWidget):
         self.output.setStyleSheet("color: #b71c1c;" if res.error else "")
         self.output.setVisible(bool(text.strip()))
 
-        for png in res.figures:
+        # Reuse the existing labels when the figure count is unchanged
+        # so continuous runs animate without flicker or relayout.
+        if len(res.figures) != len(self._figure_labels):
+            for lab in self._figure_labels:
+                lab.deleteLater()
+            self._figure_labels = []
+            for _png in res.figures:
+                lab = QLabel()
+                self.column.addWidget(lab)
+                self._figure_labels.append(lab)
+        for lab, png in zip(self._figure_labels, res.figures):
             pix = QPixmap()
             pix.loadFromData(png, "PNG")
-            lab = QLabel()
             lab.setPixmap(pix)
-            self.column.addWidget(lab)
-            self._figure_labels.append(lab)
 
 
 class MarkdownCell(CellWidget):

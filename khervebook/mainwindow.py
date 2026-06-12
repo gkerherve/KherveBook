@@ -142,6 +142,13 @@ class MainWindow(QMainWindow):
                                "mdi.play", "Run the selected cell "
                                "(Shift+Enter runs and advances)",
                                color="#27ae60"))
+        tb.addAction(self._act("Run continuously", None,
+                               lambda: nb.start_loop(),
+                               "mdi.repeat", "Re-run the selected cell "
+                               "continuously (simulations, animations)"))
+        tb.addAction(self._act("Stop", None, nb.stop_loop,
+                               "mdi.stop", "Stop the continuous run",
+                               color="#c0392b"))
         tb.addAction(self._act("Restart", None, nb.restart_kernel,
                                "mdi.refresh", "Restart the kernel "
                                "(clears all variables)"))

@@ -38,6 +38,34 @@ def test_kbook_round_trip(qapp):
     assert nb2.cells[1].source() == "# Title"
 
 
+def test_continuous_run_loop(qapp):
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    cell = nb.cells[0]
+    cell.set_source("counter = globals().get('counter', 0) + 1\ncounter")
+    nb.start_loop(cell, interval_ms=10)
+    assert nb.looping
+    assert cell.stop_btn.isVisibleTo(cell)      # stop appears while looping
+    assert nb.kernel.namespace["counter"] == 1  # ran once on start
+    nb._loop_tick()
+    assert nb.kernel.namespace["counter"] == 2  # state persists per frame
+    nb.stop_loop()
+    assert not nb.looping
+    assert not cell.stop_btn.isVisibleTo(cell)
+    assert not nb._loop_timer.isActive()
+
+
+def test_loop_stops_when_cell_removed(qapp):
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    cell = nb.cells[0]
+    nb.start_loop(cell, interval_ms=10)
+    nb._set_current(cell)
+    nb.cut_current()
+    nb._loop_tick()
+    assert not nb.looping
+
+
 def test_restart_kernel_resets_gutters(qapp):
     from khervebook.notebook import NotebookWidget
     nb = NotebookWidget()

@@ -13,7 +13,7 @@ the Free Software Foundation, either version 3 of the License, or
 
 import json
 
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtWidgets import QMenu, QScrollArea, QVBoxLayout, QWidget
 
 from .cells import CodeCell, make_cell
@@ -41,6 +41,9 @@ class NotebookWidget(QScrollArea):
         self.cells = []
         self.current = None
         self._clipboard = None              # dict from a cut/copied cell
+        self._loop_cell = None              # cell being run continuously
+        self._loop_timer = QTimer(self)
+        self._loop_timer.timeout.connect(self._loop_tick)
         self.add_cell("code")
 
     # -- cell management ------------------------------------------------
@@ -48,6 +51,7 @@ class NotebookWidget(QScrollArea):
         cell = make_cell(cell_type, source)
         cell.run_requested.connect(self._run_and_advance)
         cell.run_clicked.connect(self.run_cell)
+        cell.stop_clicked.connect(lambda _cell: self.stop_loop())
         cell.menu_requested.connect(self._show_cell_menu)
         cell.focused.connect(self._set_current)
         cell.editor.textChanged.connect(self.modified.emit)
@@ -147,11 +151,46 @@ class NotebookWidget(QScrollArea):
         self._set_current(cell)
         cell.execute(self.kernel)
 
+    # -- continuous run ---------------------------------------------------
+    def start_loop(self, cell=None, interval_ms: int = 60):
+        """Re-run *cell* (default: current) every *interval_ms* —
+        for live simulations and animations. One cell loops at a time."""
+        cell = cell or self.current
+        if cell is None:
+            return
+        self.stop_loop()
+        self._loop_cell = cell
+        cell.set_looping(True)
+        cell.execute(self.kernel)
+        self._loop_timer.start(interval_ms)
+
+    def stop_loop(self):
+        self._loop_timer.stop()
+        if self._loop_cell is not None:
+            self._loop_cell.set_looping(False)
+            self._loop_cell = None
+
+    @property
+    def looping(self) -> bool:
+        return self._loop_cell is not None
+
+    def _loop_tick(self):
+        cell = self._loop_cell
+        if cell is None or cell not in self.cells:
+            self.stop_loop()
+            return
+        cell.execute(self.kernel)
+
     def _show_cell_menu(self, cell, global_pos):
         """Right-click menu with the per-cell operations."""
         self._set_current(cell)
         menu = QMenu(self)
         menu.addAction("Run Cell", lambda: self.run_cell(cell))
+        if cell is self._loop_cell:
+            menu.addAction("Stop Continuous Run", self.stop_loop)
+        else:
+            menu.addAction("Run Continuously",
+                           lambda: self.start_loop(cell))
         menu.addSeparator()
         menu.addAction("Cut Cell", self.cut_current)
         menu.addAction("Copy Cell", self.copy_current)
@@ -185,6 +224,7 @@ class NotebookWidget(QScrollArea):
             cell.execute(self.kernel)
 
     def restart_kernel(self):
+        self.stop_loop()
         self.kernel.reset()
         for cell in self.cells:
             if isinstance(cell, CodeCell):
@@ -197,6 +237,7 @@ class NotebookWidget(QScrollArea):
         return json.dumps(doc, indent=1)
 
     def load_json(self, text: str):
+        self.stop_loop()
         doc = json.loads(text)
         for cell in self.cells:
             cell.deleteLater()

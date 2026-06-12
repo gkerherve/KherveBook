@@ -35,28 +35,40 @@ class PythonHighlighter(QSyntaxHighlighter):
         "from as with try except finally raise lambda yield global nonlocal "
         "pass break continue None True False assert del").split()
 
-    def __init__(self, document):
+    #: (keyword, number, string, comment) per background brightness.
+    LIGHT = ("#0000C0", "#098658", "#A31515", "#808080")
+    DARK = ("#6f9fff", "#6ccb9e", "#e8907e", "#8a939c")
+
+    def __init__(self, document, dark=False):
         super().__init__(document)
+        self._build_rules(dark)
+
+    def _build_rules(self, dark: bool):
+        kw_c, num_c, str_c, com_c = self.DARK if dark else self.LIGHT
         self._rules = []
 
         kw = QTextCharFormat()
-        kw.setForeground(QColor("#0000C0"))
+        kw.setForeground(QColor(kw_c))
         kw.setFontWeight(QFont.Bold)
         for word in self._KEYWORDS:
             self._rules.append((re.compile(rf"\b{word}\b"), kw))
 
         num = QTextCharFormat()
-        num.setForeground(QColor("#098658"))
+        num.setForeground(QColor(num_c))
         self._rules.append((re.compile(r"\b\d+(\.\d+)?\b"), num))
 
         s = QTextCharFormat()
-        s.setForeground(QColor("#A31515"))
+        s.setForeground(QColor(str_c))
         self._rules.append((re.compile(r"'[^']*'|\"[^\"]*\""), s))
 
         c = QTextCharFormat()
-        c.setForeground(QColor("#808080"))
+        c.setForeground(QColor(com_c))
         c.setFontItalic(True)
         self._rules.append((re.compile(r"#.*$"), c))
+
+    def set_dark(self, dark: bool):
+        self._build_rules(dark)
+        self.rehighlight()
 
     def highlightBlock(self, text):
         for pattern, fmt in self._rules:
@@ -141,10 +153,10 @@ class CellWidget(QFrame):
         btns.addWidget(self.stop_btn)
         gcol.addLayout(btns)
         self.gutter = QLabel("")
+        self.gutter.setObjectName("gutter")      # themed via QSS
         self.gutter.setFont(MONO)
         self.gutter.setFixedWidth(58)
         self.gutter.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
-        self.gutter.setStyleSheet("color: #1565c0;")
         gcol.addWidget(self.gutter)
         gcol.addStretch(1)
         outer.addLayout(gcol)
@@ -193,7 +205,9 @@ class CodeCell(CellWidget):
     def __init__(self, source=""):
         super().__init__(source)
         self.gutter.setText("In [ ]:")
-        self._highlighter = PythonHighlighter(self.editor.document())
+        from .style import tokens
+        self._highlighter = PythonHighlighter(self.editor.document(),
+                                              dark=tokens()["dark"])
         self.output = QLabel()
         self.output.setFont(MONO)
         self.output.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -300,10 +314,13 @@ class LatexCell(CellWidget):
         import matplotlib
         matplotlib.use("Agg", force=False)
         from matplotlib.figure import Figure
+        from PyQt5.QtWidgets import QApplication
         if not tex.startswith("$"):
             tex = f"${tex}$"
+        # Follow the theme's text colour (renders on a transparent bg).
+        color = QApplication.palette().text().color().name()
         fig = Figure(figsize=(0.1, 0.1))
-        fig.text(0, 0, tex, fontsize=14)
+        fig.text(0, 0, tex, fontsize=14, color=color)
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=130, bbox_inches="tight",
                     transparent=True)

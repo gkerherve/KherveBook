@@ -19,17 +19,23 @@ try:
 except ImportError:          # pragma: no cover - optional dependency
     qta = None
 
-#: Default glyph colour — dark slate, close to Jupyter's toolbar grey.
+#: Glyph colour for neutral icons — set by the active theme.
 DEFAULT_COLOR = "#444444"
 
 
-def icon(name: str, color: str = DEFAULT_COLOR) -> QIcon:
+def set_icon_color(color: str):
+    """Called by style.apply_style so icons follow the theme."""
+    global DEFAULT_COLOR
+    DEFAULT_COLOR = color
+
+
+def icon(name: str, color: str = None) -> QIcon:
     """Return the qtawesome icon *name* (e.g. "mdi.play"), or a null
     icon if qtawesome is unavailable."""
     if qta is None:
         return QIcon()
     try:
-        return qta.icon(name, color=color)
+        return qta.icon(name, color=color or DEFAULT_COLOR)
     except Exception:
         return QIcon()
 

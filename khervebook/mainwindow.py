@@ -11,8 +11,10 @@ the Free Software Foundation, either version 3 of the License, or
 from pathlib import Path
 
 from PyQt5.QtCore import QSize, Qt
-from PyQt5.QtWidgets import (QAction, QComboBox, QFileDialog, QMainWindow,
-                             QMessageBox, QToolBar)
+from PyQt5.QtWidgets import (QAction, QActionGroup, QApplication, QComboBox,
+                             QFileDialog, QMainWindow, QMessageBox, QToolBar)
+
+from . import style
 
 from . import APP_NAME, __version__
 from .celltoolbar import CellToolBar
@@ -103,6 +105,16 @@ class MainWindow(QMainWindow):
         toggle.setText("&File Explorer")
         toggle.setShortcut("Ctrl+B")
         v.addAction(toggle)
+        theme_menu = v.addMenu("&Theme")
+        group = QActionGroup(self)
+        group.setExclusive(True)
+        for name in style.THEMES:
+            act = QAction(name, self, checkable=True)
+            act.setChecked(name == style.current_theme())
+            act.triggered.connect(lambda _=False, n=name:
+                                  self._apply_theme(n))
+            group.addAction(act)
+            theme_menu.addAction(act)
 
         h = m.addMenu("&Help")
         h.addAction(self._act("&About", None, self._about))
@@ -114,7 +126,7 @@ class MainWindow(QMainWindow):
     def _build_toolbar(self):
         """Jupyter-style main toolbar: file/cell ops, run, cell type."""
         nb = self.notebook
-        tb = QToolBar("Main")
+        tb = self._main_tb = QToolBar("Main")
         tb.setMovable(False)
         tb.setIconSize(QSize(32, 32))
         self.addToolBar(tb)
@@ -169,6 +181,24 @@ class MainWindow(QMainWindow):
         self.addToolBarBreak()
         self.cell_toolbar = CellToolBar(nb, self)
         self.addToolBar(self.cell_toolbar)
+
+    def _apply_theme(self, name: str):
+        """Switch theme live: stylesheet, icons, highlighters, LaTeX."""
+        style.apply_style(QApplication.instance(), name)
+        # Rebuild toolbars so their icons pick up the theme colour.
+        for tb in (self._main_tb, self.cell_toolbar):
+            self.removeToolBar(tb)
+            tb.deleteLater()
+        self._build_toolbar()
+        self._on_current_cell(self.notebook.current)
+        dark = style.tokens()["dark"]
+        for cell in self.notebook.cells:
+            hl = getattr(cell, "_highlighter", None)
+            if hl is not None:
+                hl.set_dark(dark)
+            # Re-render LaTeX so its text colour matches the theme.
+            if cell.CELL_TYPE == "latex" and cell.view.isVisible():
+                cell.execute(self.notebook.kernel)
 
     def _on_current_cell(self, cell):
         """Follow the focused cell: type selector + contextual toolbar."""

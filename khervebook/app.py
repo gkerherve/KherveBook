@@ -26,6 +26,9 @@ def main():
     app.setStyle("Fusion")
     app.setApplicationName("KherveBook")
 
+    from .style import apply_style
+    apply_style(app)
+
     from .mainwindow import MainWindow
     win = MainWindow()
     win.show()

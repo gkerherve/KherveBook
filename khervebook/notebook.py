@@ -78,9 +78,15 @@ class NotebookWidget(QScrollArea):
         self.modified.emit()
 
     def _set_current(self, cell):
-        if cell is not self.current:
-            self.current = cell
-            self.current_changed.emit(cell)
+        if cell is self.current:
+            return
+        old, self.current = self.current, cell
+        for w in (old, cell):
+            if w is not None:
+                w.setProperty("current", w is cell)
+                w.style().unpolish(w)
+                w.style().polish(w)
+        self.current_changed.emit(cell)
 
     def add_cell_below(self, cell_type: str, source: str = ""):
         """Insert a cell after the current one (Jupyter's '+') and focus it."""
@@ -122,8 +128,8 @@ class NotebookWidget(QScrollArea):
         self.cells.pop(idx)
         cell.deleteLater()
         new = self.add_cell(cell_type, source, idx)
-        self.current = new
-        self.current_changed.emit(new)
+        self.current = None
+        self._set_current(new)
         new.editor.setFocus()
 
     # -- execution -------------------------------------------------------

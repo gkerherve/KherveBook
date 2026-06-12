@@ -104,7 +104,7 @@ class MainWindow(QMainWindow):
         nb = self.notebook
         tb = QToolBar("Main")
         tb.setMovable(False)
-        tb.setIconSize(QSize(20, 20))
+        tb.setIconSize(QSize(32, 32))
         self.addToolBar(tb)
 
         tb.addAction(self._act("Save", None, self.save_file,

@@ -70,7 +70,7 @@ class CellToolBar(QToolBar):
     def __init__(self, notebook, parent=None):
         super().__init__("Cell tools", parent)
         self.setMovable(False)
-        self.setIconSize(QSize(18, 18))
+        self.setIconSize(QSize(32, 32))
         self._notebook = notebook
         self.set_mode("code")
 

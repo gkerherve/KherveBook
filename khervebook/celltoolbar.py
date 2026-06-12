@@ -78,7 +78,8 @@ class CellToolBar(QToolBar):
     def set_mode(self, cell_type: str):
         self.clear()
         build = {"markdown": self._build_markdown,
-                 "latex": self._build_latex}.get(cell_type, self._build_code)
+                 "latex": self._build_latex,
+                 "sheet": self._build_sheet}.get(cell_type, self._build_code)
         build()
 
     # -- editor helpers ---------------------------------------------------
@@ -262,6 +263,28 @@ class CellToolBar(QToolBar):
                 else ln.replace("#", "", 1) if "#" in ln else ln)
         else:
             self._apply_per_line(lambda ln: ("# " + ln) if ln.strip() else ln)
+
+    # -- sheet mode -----------------------------------------------------------
+    def _sheet_op(self, name):
+        cell = self._notebook.current
+        if cell is not None and hasattr(cell, name):
+            getattr(cell, name)()
+
+    def _build_sheet(self):
+        self._add("Run", "Recompute all =formulas (Shift+Enter)",
+                  self._notebook.run_current, "mdi.play", color="#27ae60")
+        self.addSeparator()
+        self._add("Add row", "Add a row",
+                  lambda: self._sheet_op("add_row"),
+                  "mdi.table-row-plus-after")
+        self._add("Add column", "Add a column",
+                  lambda: self._sheet_op("add_col"),
+                  "mdi.table-column-plus-after")
+        self._add("Delete row", "Delete the selected row",
+                  lambda: self._sheet_op("del_row"), "mdi.table-row-remove")
+        self._add("Delete column", "Delete the selected column",
+                  lambda: self._sheet_op("del_col"),
+                  "mdi.table-column-remove")
 
     # -- LaTeX mode -----------------------------------------------------------
     def _build_latex(self):

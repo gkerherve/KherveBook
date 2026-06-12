@@ -18,6 +18,7 @@ from PyQt5.QtWidgets import QMenu, QScrollArea, QVBoxLayout, QWidget
 
 from .cells import CodeCell, make_cell
 from .kernel import Kernel
+from . import sheetcell                  # noqa: F401  (registers "sheet")
 
 FORMAT_VERSION = 1
 
@@ -50,6 +51,8 @@ class NotebookWidget(QScrollArea):
         cell.menu_requested.connect(self._show_cell_menu)
         cell.focused.connect(self._set_current)
         cell.editor.textChanged.connect(self.modified.emit)
+        if hasattr(cell, "table"):
+            cell.table.itemChanged.connect(lambda *_: self.modified.emit())
         if index is None:
             index = len(self.cells)
         self.cells.insert(index, cell)
@@ -155,7 +158,7 @@ class NotebookWidget(QScrollArea):
         menu.addAction("Paste Cell Below", self.paste_cell)
         conv = menu.addMenu("Convert To")
         for label, key in (("Code", "code"), ("Markdown", "markdown"),
-                           ("LaTeX", "latex")):
+                           ("LaTeX", "latex"), ("Sheet", "sheet")):
             if key != cell.CELL_TYPE:
                 conv.addAction(label,
                                lambda k=key: self.convert_current(k))

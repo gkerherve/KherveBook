@@ -41,6 +41,16 @@ WELCOME_CELLS = [
     {"type": "latex", "source":
         r"\int_0^\infty e^{-x^2}\,dx = \frac{\sqrt{\pi}}{2}"},
     {"type": "markdown", "source": (
+        "**Sheet cells** embed a small KherveSheet-style spreadsheet. "
+        "`=` formulas use Python, can reference cells A1-style and see "
+        "everything the kernel knows — try `=np.pi * A2**2`:")},
+    {"type": "sheet", "source": json.dumps({
+        "rows": 4, "cols": 3,
+        "data": {"A1": "radius", "B1": "area",
+                 "A2": "1", "B2": "=np.pi * A2**2",
+                 "A3": "2", "B3": "=np.pi * A3**2",
+                 "A4": "3", "B4": "=np.pi * A4**2"}})},
+    {"type": "markdown", "source": (
         "## Try it\n\n"
         "Click into any cell and edit it, or add a new one with the "
         "**+** button. The toolbar's second row changes with the cell "

@@ -72,6 +72,8 @@ class MainWindow(QMainWindow):
                               lambda: self.notebook.add_cell("markdown")))
         c.addAction(self._act("Add &LaTeX Cell", "Ctrl+Shift+L",
                               lambda: self.notebook.add_cell("latex")))
+        c.addAction(self._act("Add &Sheet Cell", "Ctrl+Shift+T",
+                              lambda: self.notebook.add_cell("sheet")))
         c.addSeparator()
         c.addAction(self._act("&Run Cell", "Ctrl+Return",
                               self.notebook.run_current))
@@ -107,7 +109,7 @@ class MainWindow(QMainWindow):
 
     #: (label, type-key) pairs for the Jupyter-style cell-type selector.
     CELL_TYPES = [("Code", "code"), ("Markdown", "markdown"),
-                  ("LaTeX", "latex")]
+                  ("LaTeX", "latex"), ("Sheet", "sheet")]
 
     def _build_toolbar(self):
         """Jupyter-style main toolbar: file/cell ops, run, cell type."""

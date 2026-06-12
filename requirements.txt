@@ -6,3 +6,4 @@ scipy>=1.10
 pandas>=2.0
 lmfit>=1.2
 sympy>=1.12
+h5py>=3.8

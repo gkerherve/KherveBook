@@ -32,6 +32,8 @@ DROP_TYPES = {
     ".png": "image", ".jpg": "image", ".jpeg": "image",
     ".gif": "image", ".bmp": "image",
     ".kbook": "kbook",
+    ".ksheet": "ksheet",                  # KherveSheet workbook
+    ".kdocz": "kdoc", ".ktexz": "kdoc",   # kherveDOC document
 }
 _MAX_DROP_BYTES = 2_000_000
 
@@ -254,12 +256,32 @@ class NotebookWidget(QScrollArea):
         sheet, images -> markdown image, .kbook -> open the notebook.
         Returns False for unrecognised or unreadable files.
         """
+        from . import importers
         p = Path(path)
         kind = DROP_TYPES.get(p.suffix.lower())
+        if kind is None and importers.is_kdoc(str(p)):
+            kind = "kdoc"                  # .kdoc.json double suffix
         if kind is None or not p.is_file():
             return False
         if kind == "kbook":
             self.open_kbook_requested.emit(str(p))
+            return True
+        if kind in ("ksheet", "kdoc"):
+            try:
+                importer = (importers.ksheet_to_cells if kind == "ksheet"
+                            else importers.kdoc_to_cells)
+                items = importer(str(p))
+            except Exception:
+                return False
+            if not items:
+                return False
+            if cell is not None:
+                self._set_current(cell)
+            for item in items:
+                new = self.add_cell_below(item["type"], item["source"])
+                if item["type"] in ("markdown", "latex"):
+                    new.execute(self.kernel)
+            self.modified.emit()
             return True
         if kind == "image":
             kind, source = "markdown", f"![{p.name}]({p.as_uri()})"

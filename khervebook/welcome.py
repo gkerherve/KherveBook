@@ -15,8 +15,8 @@ import json
 
 WELCOME_CELLS = [
     {"type": "markdown", "source": (
-        '<p align="center"># Welcome to <span style="color:#3776ab">'
-        'Kherve</span><span style="color:#e07b39">Book</span></p>\n\n'
+        '# Welcome to <span style="font-size:28px;color:#3776ab">Kherve'
+        '</span><span style="font-size:28px;color:#e07b39">Book</span>\n\n'
         "A computational notebook: one document mixing **runnable Python**, "
         "*formatted text* and LaTeX equations — "
         '<span style="background-color:#fff3a0">just like Jupyter</span>, '

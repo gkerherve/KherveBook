@@ -107,6 +107,29 @@ def test_drop_kbook_emits_open_request(qapp, tmp_path):
     assert got == [str(kb)]
 
 
+def _example_params():
+    from khervebook.examples import EXAMPLES
+    return [pytest.param(b, id=n) for n, _c, b in EXAMPLES]
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize("builder", _example_params())
+def test_examples_run_clean(qapp, builder):
+    """Every Examples-menu notebook loads and runs without errors."""
+    from khervebook.examples import load_example
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    load_example(nb, builder)
+    nb.stop_loop()
+    for cell in nb.cells:
+        if cell.CELL_TYPE == "code":
+            text = cell.output.text()
+            assert "Traceback" not in text, text
+            assert "#ERR" not in text, text
+
+
 def test_bouncing_balls_physics(qapp):
     """Elastic collisions: kinetic energy conserved, balls stay boxed."""
     from khervebook.kernel import Kernel

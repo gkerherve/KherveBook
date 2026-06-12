@@ -14,7 +14,7 @@ from PyQt5.QtCore import QSize, Qt
 from PyQt5.QtWidgets import (QAction, QActionGroup, QApplication, QComboBox,
                              QFileDialog, QMainWindow, QMessageBox, QToolBar)
 
-from . import style
+from . import examples, style
 
 from . import APP_NAME, __version__
 from .celltoolbar import CellToolBar
@@ -45,6 +45,14 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"{APP_NAME} v{__version__}")
         self.resize(1000, 750)
         self._load_welcome()
+        self._update_title()
+
+    def _load_example(self, builder):
+        if not self._confirm_discard():
+            return
+        examples.load_example(self.notebook, builder)
+        self.path = None
+        self.dirty = False
         self._update_title()
 
     def _load_welcome(self):
@@ -116,6 +124,15 @@ class MainWindow(QMainWindow):
                                   self._apply_theme(n))
             group.addAction(act)
             theme_menu.addAction(act)
+
+        ex = m.addMenu("E&xamples")
+        categories = {}
+        for name, cat, builder in examples.EXAMPLES:
+            if cat not in categories:
+                categories[cat] = ex.addMenu(cat)
+            categories[cat].addAction(self._act(
+                name, None,
+                lambda _=False, b=builder: self._load_example(b)))
 
         h = m.addMenu("&Help")
         h.addAction(self._act("&About", None, self._about))

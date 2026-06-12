@@ -10,7 +10,7 @@ the Free Software Foundation, either version 3 of the License, or
 
 from pathlib import Path
 
-from PyQt5.QtCore import QSize, Qt
+from PyQt5.QtCore import QSettings, QSize, Qt
 from PyQt5.QtWidgets import (QAction, QActionGroup, QApplication, QComboBox,
                              QFileDialog, QMainWindow, QMessageBox, QToolBar)
 
@@ -46,6 +46,14 @@ class MainWindow(QMainWindow):
         self.resize(1000, 750)
         self._load_welcome()
         self._update_title()
+        # Restore window size and dock layout from the last session.
+        settings = QSettings("Kherve", "KherveBook")
+        geometry = settings.value("win/geometry")
+        state = settings.value("win/state")
+        if geometry:
+            self.restoreGeometry(geometry)
+        if state:
+            self.restoreState(state)
 
     def _load_example(self, builder):
         if not self._confirm_discard():
@@ -114,6 +122,12 @@ class MainWindow(QMainWindow):
         toggle.setText("&File Explorer")
         toggle.setShortcut("Ctrl+B")
         v.addAction(toggle)
+        pos = v.addMenu("File Explorer &Position")
+        pos.addAction(self._act("&Left", None,
+                                lambda: self._dock_explorer(Qt.LeftDockWidgetArea)))
+        pos.addAction(self._act("&Right", None,
+                                lambda: self._dock_explorer(Qt.RightDockWidgetArea)))
+        pos.addAction(self._act("&Floating", None, self._float_explorer))
         theme_menu = v.addMenu("&Theme")
         group = QActionGroup(self)
         group.setExclusive(True)
@@ -199,6 +213,15 @@ class MainWindow(QMainWindow):
         self.addToolBarBreak()
         self.cell_toolbar = CellToolBar(nb, self)
         self.addToolBar(self.cell_toolbar)
+
+    def _dock_explorer(self, area):
+        self.explorer.setFloating(False)
+        self.addDockWidget(area, self.explorer)
+        self.explorer.show()
+
+    def _float_explorer(self):
+        self.explorer.setFloating(True)
+        self.explorer.show()
 
     def _apply_theme(self, name: str):
         """Switch theme live: stylesheet, icons, highlighters, LaTeX."""
@@ -292,6 +315,9 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         if self._confirm_discard():
+            settings = QSettings("Kherve", "KherveBook")
+            settings.setValue("win/geometry", self.saveGeometry())
+            settings.setValue("win/state", self.saveState())
             event.accept()
         else:
             event.ignore()

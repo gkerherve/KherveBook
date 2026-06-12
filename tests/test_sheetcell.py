@@ -53,6 +53,51 @@ def test_formula_sees_kernel_variables(qapp):
     assert sheet.table.item(0, 1).text() == "40"
 
 
+def test_range_formula(qapp):
+    from khervebook.kernel import Kernel
+    sheet = make_sheet(qapp, {"A1": "1", "A2": "2", "A3": "3",
+                              "B1": "=sum(A1:A3)",
+                              "C1": "=np.mean(A1:A3)"})
+    sheet.execute(Kernel())
+    assert sheet.table.item(0, 1).text() == "6"
+    assert sheet.table.item(0, 2).text() == "2"
+
+
+def test_range_with_formula_dependency(qapp):
+    from khervebook.kernel import Kernel
+    sheet = make_sheet(qapp, {"A1": "2", "A2": "=A1 * 2",
+                              "B1": "=sum(A1:A2)"})
+    sheet.execute(Kernel())
+    assert sheet.table.item(0, 1).text() == "6"
+
+
+def test_grid_published_to_kernel(qapp):
+    from khervebook.kernel import Kernel
+    from khervebook.notebook import NotebookWidget
+    import json as _json
+    nb = NotebookWidget()
+    nb.add_cell("sheet", _json.dumps(
+        {"rows": 2, "cols": 2, "data": {"A1": "5", "B1": "=A1 + 1"}}))
+    sheet = nb.cells[-1]
+    sheet.execute(nb.kernel)
+    assert nb.kernel.namespace["sheet1"][0][:2] == [5, 6]
+    res = nb.kernel.run("sheet1[0][1] * 10")
+    assert res.result_repr == "60"
+
+
+def test_formula_bar_roundtrip(qapp):
+    from khervebook.kernel import Kernel
+    sheet = make_sheet(qapp, {"A1": "=1+1"})
+    sheet.execute(Kernel())
+    sheet.table.setCurrentCell(0, 0)
+    assert sheet.ref_label.text() == "A1"
+    assert sheet.formula_edit.text() == "=1+1"   # raw, not the value
+    sheet.table.setCurrentCell(1, 1)
+    sheet.formula_edit.setText("42")
+    sheet._commit_formula()
+    assert sheet._raw(1, 1) == "42"
+
+
 def test_formula_error_shown(qapp):
     from khervebook.kernel import Kernel
     sheet = make_sheet(qapp, {"A1": "=1/0"})

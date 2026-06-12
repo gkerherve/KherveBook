@@ -22,12 +22,14 @@ import json
 import re
 
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import (QSizePolicy, QStyledItemDelegate, QTableWidget,
+from PyQt5.QtWidgets import (QHBoxLayout, QLabel, QLineEdit, QSizePolicy,
+                             QStyledItemDelegate, QTableWidget,
                              QTableWidgetItem)
 
-from .cells import CELL_CLASSES, CellWidget
+from .cells import MONO, CELL_CLASSES, CellWidget
 
 _REF = re.compile(r"\b([A-Z]{1,2})(\d{1,3})\b")
+_RANGE = re.compile(r"\b([A-Z]{1,2})(\d{1,3})\s*:\s*([A-Z]{1,2})(\d{1,3})\b")
 
 DEFAULT_ROWS, DEFAULT_COLS = 6, 4
 MAX_PASSES = 8      # formula chains resolve iteratively
@@ -88,10 +90,25 @@ class SheetCell(CellWidget):
         self.gutter.setText("sheet")
         self.editor.hide()
 
+        # Formula bar: selected ref + raw content, like KherveSheet.
+        bar = QHBoxLayout()
+        self.ref_label = QLabel("A1")
+        self.ref_label.setFont(MONO)
+        self.ref_label.setFixedWidth(40)
+        bar.addWidget(self.ref_label)
+        self.formula_edit = QLineEdit()
+        self.formula_edit.setFont(MONO)
+        self.formula_edit.setPlaceholderText(
+            "value or =formula  (Python; A1 refs, A1:B5 ranges)")
+        self.formula_edit.returnPressed.connect(self._commit_formula)
+        bar.addWidget(self.formula_edit)
+        self.column.addLayout(bar)
+
         self.table = QTableWidget(DEFAULT_ROWS, DEFAULT_COLS)
         self.table.setItemDelegate(_RawDelegate(self.table))
         self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.table.itemChanged.connect(lambda _item: self.focused.emit(self))
+        self.table.currentCellChanged.connect(self._sync_formula_bar)
         self.table.installEventFilter(self)
         self.column.addWidget(self.table)
         self._refresh_headers()
@@ -143,7 +160,8 @@ class SheetCell(CellWidget):
         self._fit_height()
 
     def execute(self, kernel):
-        """Recompute every =formula against the kernel namespace."""
+        """Recompute every =formula against the kernel namespace, then
+        publish the grid into the namespace as sheet1/sheet2/..."""
         kernel._seed_namespace()
         values, formulas = {}, {}
         for r in range(self.table.rowCount()):
@@ -162,8 +180,10 @@ class SheetCell(CellWidget):
                 break
             progressed = False
             for rc, expr in list(pending.items()):
+                blocked = set(pending) - {rc}
                 try:
-                    values[rc] = self._eval(expr, values, kernel.namespace)
+                    values[rc] = self._eval(expr, values, blocked,
+                                            kernel.namespace)
                 except KeyError:
                     continue            # depends on a not-yet-computed cell
                 except Exception as exc:
@@ -180,14 +200,72 @@ class SheetCell(CellWidget):
             raw = self._raw(*rc)
             self._set_item(rc[0], rc[1], raw, format_value(values[rc]))
         self.table.blockSignals(False)
+        self._publish(kernel, values)
 
     @staticmethod
-    def _eval(expr, values, namespace):
-        def sub(match):
-            r = int(match.group(2)) - 1
-            c = letter_col(match.group(1))
-            return repr(values[(r, c)])      # KeyError -> retry next pass
-        return eval(_REF.sub(sub, expr), namespace)   # noqa: S307
+    def _eval(expr, values, blocked, namespace):
+        """Evaluate one formula. *blocked* cells (still-pending
+        formulas) raise KeyError so the pass loop retries later;
+        empty cells read as 0."""
+        def lookup(r, c):
+            if (r, c) in blocked:
+                raise KeyError((r, c))
+            return values.get((r, c), 0)
+
+        def sub_range(match):
+            r1, r2 = sorted((int(match.group(2)), int(match.group(4))))
+            c1, c2 = sorted((letter_col(match.group(1)),
+                             letter_col(match.group(3))))
+            rows = [[lookup(r, c) for c in range(c1, c2 + 1)]
+                    for r in range(r1 - 1, r2)]
+            if len(rows) == 1:                  # single row -> flat list
+                return repr(rows[0])
+            if all(len(row) == 1 for row in rows):   # single column
+                return repr([row[0] for row in rows])
+            return repr(rows)
+
+        def sub_ref(match):
+            return repr(lookup(int(match.group(2)) - 1,
+                               letter_col(match.group(1))))
+
+        py = _REF.sub(sub_ref, _RANGE.sub(sub_range, expr))
+        return eval(py, namespace)   # noqa: S307
+
+    def _publish(self, kernel, values):
+        """Expose the computed grid to code cells (sheet1, sheet2, ...)."""
+        name = self._kernel_name()
+        self.gutter.setText(name)
+        grid = [[values.get((r, c)) for c in range(self.table.columnCount())]
+                for r in range(self.table.rowCount())]
+        kernel.namespace[name] = grid
+
+    def _kernel_name(self) -> str:
+        """sheetN by document order among the notebook's sheet cells."""
+        w = self.parent()
+        while w is not None and not hasattr(w, "cells"):
+            w = w.parent()
+        cells = getattr(w, "cells", None)
+        if cells and self in cells:
+            n = 1 + sum(1 for c in cells[:cells.index(self)]
+                        if isinstance(c, SheetCell))
+        else:
+            n = 1
+        return f"sheet{n}"
+
+    # -- formula bar -------------------------------------------------------
+    def _sync_formula_bar(self, row, col, *_old):
+        if row < 0 or col < 0:
+            return
+        self.ref_label.setText(f"{col_letter(col)}{row + 1}")
+        self.formula_edit.setText(self._raw(row, col))
+
+    def _commit_formula(self):
+        row, col = self.table.currentRow(), self.table.currentColumn()
+        if row < 0 or col < 0:
+            row, col = 0, 0
+        text = self.formula_edit.text()
+        self._set_item(row, col, text, text)
+        self.table.setFocus()
 
     # -- grid plumbing -------------------------------------------------------
     def _raw(self, r, c) -> str:

@@ -85,11 +85,12 @@ class Kernel:
             g["pandas"] = pd
         except Exception:
             pass
-        try:
-            import scipy
-            g["scipy"] = scipy
-        except Exception:
-            pass
+        # The wider scientific stack, whatever is installed.
+        for mod in ("scipy", "lmfit", "sympy"):
+            try:
+                g[mod] = __import__(mod)
+            except Exception:
+                pass
 
     def run(self, source: str) -> ExecResult:
         """Execute *source*; return captured output and figures."""

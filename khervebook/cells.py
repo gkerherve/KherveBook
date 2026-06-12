@@ -15,7 +15,7 @@ the Free Software Foundation, either version 3 of the License, or
 import io
 import re
 
-from PyQt5.QtCore import QSize, Qt, pyqtSignal
+from PyQt5.QtCore import QEvent, QSize, Qt, pyqtSignal
 from PyQt5.QtGui import (QColor, QFont, QFontMetrics, QPixmap,
                          QSyntaxHighlighter, QTextCharFormat)
 from PyQt5.QtWidgets import (QAction, QFrame, QHBoxLayout, QLabel,
@@ -203,9 +203,12 @@ class CellWidget(QFrame):
         event.acceptProposedAction()
 
     def eventFilter(self, obj, event):
-        if obj is self.editor and event.type() == event.FocusIn:
-            self.focused.emit(self)
-        return super().eventFilter(obj, event)
+        try:
+            if obj is self.editor and event.type() == QEvent.FocusIn:
+                self.focused.emit(self)
+            return super().eventFilter(obj, event)
+        except RuntimeError:        # widget already deleted at shutdown
+            return False
 
     # -- API used by NotebookWidget ------------------------------------
     def source(self) -> str:

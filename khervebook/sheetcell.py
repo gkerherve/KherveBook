@@ -21,7 +21,7 @@ the Free Software Foundation, either version 3 of the License, or
 import json
 import re
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import QEvent, Qt
 from PyQt5.QtWidgets import (QHBoxLayout, QLabel, QLineEdit, QSizePolicy,
                              QStyledItemDelegate, QTableWidget,
                              QTableWidgetItem)
@@ -294,10 +294,13 @@ class SheetCell(CellWidget):
         self.table.setFixedHeight(h)
 
     def eventFilter(self, obj, event):
-        if (obj is getattr(self, "table", None)
-                and event.type() == event.FocusIn):
-            self.focused.emit(self)
-        return super().eventFilter(obj, event)
+        try:
+            if (obj is getattr(self, "table", None)
+                    and event.type() == QEvent.FocusIn):
+                self.focused.emit(self)
+            return super().eventFilter(obj, event)
+        except RuntimeError:        # widget already deleted at shutdown
+            return False
 
     # -- toolbar operations ---------------------------------------------------
     def add_row(self):

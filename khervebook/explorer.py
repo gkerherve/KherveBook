@@ -86,9 +86,12 @@ class FileExplorer(QDockWidget):
         QSettings("Kherve", "KherveBook").setValue("explorer/root", folder)
 
     def _pick_folder(self):
+        # Qt's own dialog: the native Windows folder picker can die
+        # with COM error 0x8001010e (wrong-thread marshalling).
         folder = QFileDialog.getExistingDirectory(
             self, "Choose the folder to explore",
-            self._model.rootPath() or QDir.homePath())
+            self._model.rootPath() or QDir.homePath(),
+            QFileDialog.ShowDirsOnly | QFileDialog.DontUseNativeDialog)
         if folder:
             self.set_root(folder)
 

@@ -15,11 +15,14 @@ the Free Software Foundation, either version 3 of the License, or
 import io
 import re
 
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import QSize, Qt, pyqtSignal
 from PyQt5.QtGui import (QColor, QFont, QFontMetrics, QPixmap,
                          QSyntaxHighlighter, QTextCharFormat)
-from PyQt5.QtWidgets import (QFrame, QHBoxLayout, QLabel, QPlainTextEdit,
-                             QSizePolicy, QTextBrowser, QVBoxLayout)
+from PyQt5.QtWidgets import (QAction, QFrame, QHBoxLayout, QLabel,
+                             QPlainTextEdit, QSizePolicy, QTextBrowser,
+                             QToolButton, QVBoxLayout)
+
+from .icons import icon
 
 MONO = QFont("Consolas", 10)
 
@@ -81,6 +84,18 @@ class _GrowingEdit(QPlainTextEdit):
             return
         super().keyPressEvent(event)
 
+    def contextMenuEvent(self, event):
+        """Standard edit menu with a "Run Cell" entry on top."""
+        menu = self.createStandardContextMenu()
+        cell = getattr(self, "cell", None)
+        if cell is not None:
+            run = QAction("Run Cell", menu)
+            run.triggered.connect(lambda: cell.run_clicked.emit(cell))
+            first = menu.actions()[0] if menu.actions() else None
+            menu.insertAction(first, run)
+            menu.insertSeparator(first)
+        menu.exec_(event.globalPos())
+
     def _resize(self):
         rows = max(1, self.document().blockCount())
         height = QFontMetrics(self.font()).lineSpacing() * rows + 14
@@ -91,7 +106,9 @@ class CellWidget(QFrame):
     """Base cell: gutter label + content column inside a bordered frame."""
 
     CELL_TYPE = "code"
-    run_requested = pyqtSignal(object)   # self
+    run_requested = pyqtSignal(object)   # self — run and advance
+    run_clicked = pyqtSignal(object)     # self — run in place
+    menu_requested = pyqtSignal(object, object)   # self, global pos
     focused = pyqtSignal(object)         # self
 
     def __init__(self, source=""):
@@ -99,21 +116,39 @@ class CellWidget(QFrame):
         self.setFrameShape(QFrame.StyledPanel)
         self.setObjectName("cell")
         outer = QHBoxLayout(self)
-        outer.setContentsMargins(4, 4, 4, 4)
+        outer.setContentsMargins(6, 6, 6, 6)
+
+        # Gutter column: a run button above the In [n] / md / tex label.
+        gcol = QVBoxLayout()
+        gcol.setSpacing(2)
+        self.run_btn = QToolButton()
+        self.run_btn.setIcon(icon("mdi.play-circle-outline", "#27ae60"))
+        self.run_btn.setIconSize(QSize(26, 26))
+        self.run_btn.setToolTip("Run this cell")
+        self.run_btn.setAutoRaise(True)
+        self.run_btn.clicked.connect(lambda: self.run_clicked.emit(self))
+        gcol.addWidget(self.run_btn, alignment=Qt.AlignHCenter)
         self.gutter = QLabel("")
         self.gutter.setFont(MONO)
-        self.gutter.setFixedWidth(56)
-        self.gutter.setAlignment(Qt.AlignRight | Qt.AlignTop)
+        self.gutter.setFixedWidth(58)
+        self.gutter.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
         self.gutter.setStyleSheet("color: #1565c0;")
-        outer.addWidget(self.gutter)
+        gcol.addWidget(self.gutter)
+        gcol.addStretch(1)
+        outer.addLayout(gcol)
+
         self.column = QVBoxLayout()
         self.column.setSpacing(4)
         outer.addLayout(self.column, 1)
 
         self.editor = _GrowingEdit(source)
+        self.editor.cell = self
         self.editor.run_requested.connect(lambda: self.run_requested.emit(self))
         self.editor.installEventFilter(self)
         self.column.addWidget(self.editor)
+
+    def contextMenuEvent(self, event):
+        self.menu_requested.emit(self, event.globalPos())
 
     def eventFilter(self, obj, event):
         if obj is self.editor and event.type() == event.FocusIn:

@@ -14,7 +14,7 @@ the Free Software Foundation, either version 3 of the License, or
 import json
 
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtWidgets import QScrollArea, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import QMenu, QScrollArea, QVBoxLayout, QWidget
 
 from .cells import CodeCell, make_cell
 from .kernel import Kernel
@@ -46,6 +46,8 @@ class NotebookWidget(QScrollArea):
     def add_cell(self, cell_type: str, source: str = "", index: int = None):
         cell = make_cell(cell_type, source)
         cell.run_requested.connect(self._run_and_advance)
+        cell.run_clicked.connect(self.run_cell)
+        cell.menu_requested.connect(self._show_cell_menu)
         cell.focused.connect(self._set_current)
         cell.editor.textChanged.connect(self.modified.emit)
         if index is None:
@@ -136,6 +138,33 @@ class NotebookWidget(QScrollArea):
     def run_current(self):
         if self.current is not None:
             self.current.execute(self.kernel)
+
+    def run_cell(self, cell):
+        """Run *cell* in place (gutter button / context menu)."""
+        self._set_current(cell)
+        cell.execute(self.kernel)
+
+    def _show_cell_menu(self, cell, global_pos):
+        """Right-click menu with the per-cell operations."""
+        self._set_current(cell)
+        menu = QMenu(self)
+        menu.addAction("Run Cell", lambda: self.run_cell(cell))
+        menu.addSeparator()
+        menu.addAction("Cut Cell", self.cut_current)
+        menu.addAction("Copy Cell", self.copy_current)
+        menu.addAction("Paste Cell Below", self.paste_cell)
+        conv = menu.addMenu("Convert To")
+        for label, key in (("Code", "code"), ("Markdown", "markdown"),
+                           ("LaTeX", "latex")):
+            if key != cell.CELL_TYPE:
+                conv.addAction(label,
+                               lambda k=key: self.convert_current(k))
+        menu.addSeparator()
+        menu.addAction("Move Up", lambda: self.move_current(-1))
+        menu.addAction("Move Down", lambda: self.move_current(1))
+        menu.addSeparator()
+        menu.addAction("Delete Cell", self.remove_current)
+        menu.exec_(global_pos)
 
     def _run_and_advance(self, cell):
         cell.execute(self.kernel)

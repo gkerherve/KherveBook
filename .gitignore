@@ -5,5 +5,7 @@ dist/
 *.spec.bak
 .venv/
 venv/
+.idea/
+.pytest_cache/
 .claude/
 *.kbook.bak

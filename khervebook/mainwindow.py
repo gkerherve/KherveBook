@@ -38,6 +38,10 @@ class MainWindow(QMainWindow):
         self.explorer = FileExplorer(self)
         self.explorer.open_requested.connect(self._open_path)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.explorer)
+        from .ai_chat import AIChatDock
+        self.ai_chat = AIChatDock(self.notebook, self)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.ai_chat)
+        self.splitDockWidget(self.explorer, self.ai_chat, Qt.Vertical)
         self._build_menus()
         self._build_toolbar()
         self.notebook.current_changed.connect(self._on_current_cell)
@@ -122,6 +126,10 @@ class MainWindow(QMainWindow):
         toggle.setText("&File Explorer")
         toggle.setShortcut("Ctrl+B")
         v.addAction(toggle)
+        ai_toggle = self.ai_chat.toggleViewAction()
+        ai_toggle.setText("&AI Assistant")
+        ai_toggle.setShortcut("Ctrl+Shift+A")
+        v.addAction(ai_toggle)
         pos = v.addMenu("File Explorer &Position")
         pos.addAction(self._act("&Left", None,
                                 lambda: self._dock_explorer(Qt.LeftDockWidgetArea)))

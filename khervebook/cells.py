@@ -503,16 +503,36 @@ class LatexCell(CellWidget):
     def __init__(self, source=""):
         super().__init__(source)
         self.gutter.setText("tex")
-        self.view = QLabel()
+        self.view = QLabel()                 # single-equation math image
         self.view.setAlignment(Qt.AlignCenter)
         self.view.hide()
         self.view.mouseDoubleClickEvent = self._edit_again
         self.column.addWidget(self.view)
+        self.doc_view = QTextBrowser()       # document-style LaTeX
+        self.doc_view.setAcceptDrops(False)
+        self.doc_view.setOpenExternalLinks(True)
+        self.doc_view.setFrameShape(QFrame.NoFrame)
+        self.doc_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.doc_view.hide()
+        self.doc_view.mouseDoubleClickEvent = self._edit_again
+        self.column.addWidget(self.doc_view)
 
     def execute(self, kernel):
+        from .latextext import is_document, latex_to_html
         tex = self.source().strip()
         if not tex:
             return
+        self.editor.hide()
+        if is_document(tex):
+            # Whole-document LaTeX: render best-effort formatted prose.
+            self.view.hide()
+            self.doc_view.document().setHtml(latex_to_html(tex))
+            self.doc_view.document().adjustSize()
+            height = int(self.doc_view.document().size().height()) + 16
+            self.doc_view.setFixedHeight(max(40, height))
+            self.doc_view.show()
+            return
+        self.doc_view.hide()
         try:
             png = self._render(tex)
         except Exception as exc:  # bad TeX should not crash the app
@@ -523,7 +543,6 @@ class LatexCell(CellWidget):
             pix.loadFromData(png, "PNG")
             self.view.setPixmap(pix)
             self.view.setStyleSheet("")
-        self.editor.hide()
         self.view.show()
 
     @staticmethod
@@ -545,6 +564,7 @@ class LatexCell(CellWidget):
 
     def _edit_again(self, _event):
         self.view.hide()
+        self.doc_view.hide()
         self.editor.show()
         self.editor.setFocus()
 

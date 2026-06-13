@@ -80,20 +80,32 @@ class _ResizeGrip(QWidget):
     def __init__(self, cell):
         super().__init__(cell)
         self._cell = cell
-        self.setFixedHeight(8)
+        self.setFixedHeight(11)
         self.setCursor(Qt.SizeVerCursor)
-        self.setToolTip("Drag to resize; double-click to auto-fit")
+        self.setToolTip("Drag to resize height; double-click to auto-fit")
         self._press_y = None
         self._start_h = 0
+        self._hover = False
+
+    def enterEvent(self, _event):
+        self._hover = True
+        self.update()
+
+    def leaveEvent(self, _event):
+        self._hover = False
+        self.update()
 
     def paintEvent(self, _event):
         from PyQt5.QtGui import QPainter
         painter = QPainter(self)
-        painter.setPen(QColor("#9aa3ad"))
-        y = self.height() // 2
-        cx = self.width() // 2
-        for dx in (-10, -5, 0, 5, 10):
-            painter.drawPoint(cx + dx, y)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor("#5a6b7a") if self._hover
+                         else QColor("#c4ccd4"))
+        w = min(44, max(24, self.width() // 4))
+        x = (self.width() - w) // 2
+        y = (self.height() - 4) // 2
+        painter.drawRoundedRect(x, y, w, 4, 2, 2)
         painter.end()
 
     def mousePressEvent(self, event):
@@ -120,20 +132,32 @@ class _WidthGrip(QWidget):
     def __init__(self, cell):
         super().__init__(cell)
         self._cell = cell
-        self.setFixedWidth(8)
+        self.setFixedWidth(11)
         self.setCursor(Qt.SizeHorCursor)
         self.setToolTip("Drag to resize width; double-click to auto")
         self._press_x = None
         self._start_w = 0
+        self._hover = False
+
+    def enterEvent(self, _event):
+        self._hover = True
+        self.update()
+
+    def leaveEvent(self, _event):
+        self._hover = False
+        self.update()
 
     def paintEvent(self, _event):
         from PyQt5.QtGui import QPainter
         painter = QPainter(self)
-        painter.setPen(QColor("#9aa3ad"))
-        cx = self.width() // 2
-        cy = self.height() // 2
-        for dy in (-10, -5, 0, 5, 10):
-            painter.drawPoint(cx, cy + dy)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor("#5a6b7a") if self._hover
+                         else QColor("#c4ccd4"))
+        h = min(44, max(24, self.height() // 4))
+        x = (self.width() - 4) // 2
+        y = (self.height() - h) // 2
+        painter.drawRoundedRect(x, y, 4, h, 2, 2)
         painter.end()
 
     def mousePressEvent(self, event):

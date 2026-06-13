@@ -22,7 +22,7 @@ import base64
 import json
 import re
 
-from PyQt5.QtCore import QEvent, Qt, QTimer
+from PyQt5.QtCore import QEvent, QSize, Qt, QTimer
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QLineEdit,
                              QSizePolicy, QStackedWidget, QStyledItemDelegate,
@@ -79,12 +79,22 @@ class _ViewStack(QStackedWidget):
 
     def sizeHint(self):
         w = self.currentWidget()
-        return w.sizeHint() if w is not None else super().sizeHint()
+        if w is None:
+            return super().sizeHint()
+        hint = w.sizeHint()
+        # Respect an explicit fixed height (setFixedHeight => min==max),
+        # so dragging a grid taller actually grows the cell.
+        if 0 < w.minimumHeight() == w.maximumHeight():
+            return QSize(hint.width(), w.maximumHeight())
+        return hint
 
     def minimumSizeHint(self):
         w = self.currentWidget()
-        return (w.minimumSizeHint() if w is not None
-                else super().minimumSizeHint())
+        if w is None:
+            return super().minimumSizeHint()
+        if 0 < w.minimumHeight() == w.maximumHeight():
+            return QSize(w.minimumSizeHint().width(), w.maximumHeight())
+        return w.minimumSizeHint()
 
 
 class _RawDelegate(QStyledItemDelegate):

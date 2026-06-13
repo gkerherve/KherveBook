@@ -227,6 +227,37 @@ class PythonHighlighter(QSyntaxHighlighter):
                 self.setFormat(m.start(), m.end() - m.start(), fmt)
 
 
+class _FitImage(QLabel):
+    """An image that always scales to fill its width (keeping aspect),
+    re-fitting whenever the cell is resized — no side margins."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._orig = None
+        self._last_w = -1
+        self.setAlignment(Qt.AlignCenter)
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+
+    def set_image(self, pixmap):
+        self._orig = pixmap
+        self._last_w = -1
+        self._rescale()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self._orig is not None and self.width() != self._last_w:
+            self._rescale()
+
+    def _rescale(self):
+        if self._orig is None or self._orig.isNull():
+            return
+        self._last_w = self.width()
+        scaled = self._orig.scaledToWidth(max(1, self.width()),
+                                          Qt.SmoothTransformation)
+        super().setPixmap(scaled)
+        self.setFixedHeight(scaled.height())
+
+
 class _GrowingEdit(QPlainTextEdit):
     """Editor that grows with its content, up to MAX_ROWS lines —
     beyond that it scrolls internally instead of swallowing the page."""
@@ -652,7 +683,8 @@ class _LatexCompileWorker(QThread):
     def run(self):
         from .latexcompile import compile_to_pngs
         try:
-            pngs, err = compile_to_pngs(self._source)
+            # Higher dpi so scaling up to a wide cell stays crisp.
+            pngs, err = compile_to_pngs(self._source, dpi=190)
         except Exception as exc:
             self.failed.emit(self._source, str(exc))
             return
@@ -670,7 +702,6 @@ class LatexCell(CellWidget):
 
     CELL_TYPE = "latex"
     COMMENT = ("% ", "")             # Ctrl+/ comment syntax
-    PAGE_WIDTH = 760                 # displayed page width (px)
 
     def __init__(self, source=""):
         super().__init__(source)
@@ -750,12 +781,8 @@ class LatexCell(CellWidget):
         for png in pngs:
             pix = QPixmap()
             pix.loadFromData(png, "PNG")
-            if pix.width() > self.PAGE_WIDTH:
-                pix = pix.scaledToWidth(self.PAGE_WIDTH,
-                                        Qt.SmoothTransformation)
-            lab = QLabel()
-            lab.setAlignment(Qt.AlignCenter)
-            lab.setPixmap(pix)
+            lab = _FitImage()                 # fills the cell width
+            lab.set_image(pix)
             self._pages_layout.addWidget(lab)
             self._page_labels.append(lab)
         self._compiled_source = source

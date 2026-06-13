@@ -59,8 +59,12 @@ THEMES = {
         icon="#000000", gutter="#0000cc", dark=False),
 }
 
-DEFAULT_THEME = "Light"
+DEFAULT_THEME = "Slate"
 _SETTINGS = ("Kherve", "KherveBook")
+# v2 key: the previous "theme" key was auto-written on every launch,
+# pinning everyone to the old default. Reading a fresh key lets the
+# new default take effect; only an explicit choice is saved.
+_THEME_KEY = "theme_v2"
 _current = DEFAULT_THEME
 
 
@@ -192,17 +196,22 @@ def tokens(name: str = None) -> dict:
 
 
 def saved_theme() -> str:
-    name = QSettings(*_SETTINGS).value("theme", DEFAULT_THEME)
+    name = QSettings(*_SETTINGS).value(_THEME_KEY, DEFAULT_THEME)
     return name if name in THEMES else DEFAULT_THEME
 
 
 def apply_style(app, name: str = None):
-    """Apply theme *name* (default: the saved one) and persist it."""
+    """Apply theme *name* (or the saved one at startup).
+
+    Only an explicit *name* (a user choice from the Theme menu) is
+    persisted — startup must not overwrite the saved value, so the
+    default stays the default until the user picks something."""
     global _current
     _current = name or saved_theme()
     t = tokens(_current)
     app.setPalette(_palette(t))
     app.setStyleSheet(_template(t))
-    QSettings(*_SETTINGS).setValue("theme", _current)
+    if name is not None:
+        QSettings(*_SETTINGS).setValue(_THEME_KEY, name)
     from . import icons
     icons.set_icon_color(t["icon"])

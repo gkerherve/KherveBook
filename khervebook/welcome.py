@@ -21,12 +21,15 @@ WELCOME_CELLS = [
         '</span><span style="font-size:28px;color:#e07b39">Book</span>\n\n'
         "A computational notebook: one document mixing **runnable Python**, "
         "*formatted text* and LaTeX equations — "
-        '<span style="background-color:#fff3a0">just like Jupyter</span>, '
-        "but a native desktop app.\n\n"
+        '<span style="background-color:#fff3a0">not just like Jupyter, but '
+        "more</span>: it also embeds live spreadsheets, full typeset LaTeX "
+        "documents, drawings, and imported images and PDFs in the same "
+        "scrolling page.\n\n"
         "- **Code cells** run Python with `numpy`, `matplotlib`, `pandas` "
         "and `scipy` preloaded (`np`, `plt`, `pd`)\n"
         "- **Markdown cells** hold formatted notes like this one\n"
-        "- **LaTeX cells** render equations\n\n"
+        "- **LaTeX cells** render equations\n"
+        "- **Sheet cells** embed a spreadsheet, two-way linked to Python\n\n"
         "Press **Shift+Enter** to run a cell and move to the next. "
         "Double-click a rendered text cell to edit it again.")},
     {"type": "code", "source": (

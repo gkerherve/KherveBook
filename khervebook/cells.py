@@ -45,12 +45,13 @@ class _AutoScroll(QScrollArea):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._cap = None
         inner.installEventFilter(self)
+        self._refresh()
 
     def set_cap(self, height):
         self._cap = max(60, int(height)) if height else None
         self.setVerticalScrollBarPolicy(
             Qt.ScrollBarAsNeeded if self._cap else Qt.ScrollBarAlwaysOff)
-        self.updateGeometry()
+        self._refresh()
 
     @property
     def cap(self):
@@ -60,19 +61,16 @@ class _AutoScroll(QScrollArea):
         w = self.widget()
         return w.sizeHint().height() if w is not None else 0
 
-    def sizeHint(self):
+    def _refresh(self):
+        """Track content height directly so the cell height is exact."""
         h = self._content_height()
         if self._cap is not None:
             h = min(h, self._cap)
-        return QSize(super().sizeHint().width(), h)
-
-    def minimumSizeHint(self):
-        h = 0 if self._cap is not None else self._content_height()
-        return QSize(0, h)
+        self.setFixedHeight(h)
 
     def eventFilter(self, obj, event):
         if obj is self.widget() and event.type() == QEvent.LayoutRequest:
-            self.updateGeometry()
+            self._refresh()
         return super().eventFilter(obj, event)
 
 

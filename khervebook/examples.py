@@ -317,6 +317,30 @@ def _latex_document():
     ]
 
 
+SVG_DRAWING = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 220">\n'
+    '  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">\n'
+    '    <stop offset="0" stop-color="#50bea0"/>\n'
+    '    <stop offset="1" stop-color="#2176c7"/></linearGradient></defs>\n'
+    '  <rect x="0" y="0" width="420" height="220" fill="#f4f7fb"/>\n'
+    '  <rect x="30" y="40" width="150" height="140" rx="14" fill="url(#g)"/>\n'
+    '  <circle cx="300" cy="105" r="60" fill="#ed7d31" opacity="0.85"/>\n'
+    '  <polygon points="300,55 332,150 268,150" fill="#fff" opacity="0.6"/>\n'
+    '  <text x="36" y="205" font-size="16" fill="#2e3440">'
+    'KherveBook SVG cell</text>\n'
+    '</svg>')
+
+
+def _svg_drawing():
+    return [
+        _md("# SVG drawing\nAn **SVG cell** renders a vector drawing. "
+            "Paste SVG source, or draw in **KhervePaint** (the sibling "
+            "paint app), save as `.svg`, and drop it onto the notebook. "
+            "Double-click the drawing to edit its source."),
+        {"type": "svg", "source": SVG_DRAWING},
+    ]
+
+
 # -- Physics ----------------------------------------------------------------
 
 def _maxwell():
@@ -1119,6 +1143,7 @@ def _globe():
 EXAMPLES = [
     # (name, category, builder)
     ("LaTeX Document",           "LaTeX",             _latex_document),
+    ("SVG Drawing",              "Drawing",           _svg_drawing),
     ("Symbolic Calculus",        "Math",              _sympy),
     ("Matrix Operations",        "Math",              _matrices),
     ("Newton Root Finding",      "Math",              _newton),

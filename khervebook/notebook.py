@@ -21,6 +21,7 @@ from PyQt5.QtWidgets import (QHBoxLayout, QInputDialog, QMenu, QScrollArea,
 from .cells import CodeCell, make_cell
 from .kernel import Kernel
 from . import sheetcell                  # noqa: F401  (registers "sheet")
+from . import svgcell                    # noqa: F401  (registers "svg")
 
 # v4: cells gained "height" (v3: title/column, v2: collapsed).
 FORMAT_VERSION = 4
@@ -31,6 +32,7 @@ DROP_TYPES = {
     ".md": "markdown", ".markdown": "markdown",
     ".tex": "latex",
     ".csv": "sheet", ".tsv": "sheet", ".txt": "sheet", ".dat": "sheet",
+    ".svg": "svg",                        # KhervePaint / any SVG drawing
     ".png": "image", ".jpg": "image", ".jpeg": "image",
     ".gif": "image", ".bmp": "image",
     ".kbook": "kbook",
@@ -319,7 +321,8 @@ class NotebookWidget(QScrollArea):
         menu.addAction("Paste Cell Below", self.paste_cell)
         conv = menu.addMenu("Convert To")
         for label, key in (("Code", "code"), ("Markdown", "markdown"),
-                           ("LaTeX", "latex"), ("Sheet", "sheet")):
+                           ("LaTeX", "latex"), ("Sheet", "sheet"),
+                           ("SVG", "svg")):
             if key != cell.CELL_TYPE:
                 conv.addAction(label,
                                lambda k=key: self.convert_current(k))
@@ -430,7 +433,7 @@ class NotebookWidget(QScrollArea):
             cell.set_source(source)
         # Render text content immediately; code/sheet wait for the user
         # (their run executes, which a drop should not do by itself).
-        if kind in ("markdown", "latex"):
+        if kind in ("markdown", "latex", "svg"):
             cell.execute(self.kernel)
         self.modified.emit()
         return True

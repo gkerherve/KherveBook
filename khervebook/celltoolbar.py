@@ -96,8 +96,33 @@ class CellToolBar(QToolBar):
         self.clear()
         build = {"markdown": self._build_markdown,
                  "latex": self._build_latex,
-                 "sheet": self._build_sheet}.get(cell_type, self._build_code)
+                 "sheet": self._build_sheet,
+                 "svg": self._build_svg}.get(cell_type, self._build_code)
         build()
+
+    # -- SVG mode -------------------------------------------------------------
+    def _build_svg(self):
+        self._add("Render", "Render the drawing (Shift+Enter)",
+                  self._notebook.run_current, "mdi.eye-outline",
+                  color="#27ae60")
+        self.addSeparator()
+        self._add_menu("Shape", "Insert an SVG shape", [
+            ("Rectangle", lambda: self._insert(
+                '<rect x="20" y="20" width="120" height="80" rx="6" '
+                'fill="#50bea0"/>')),
+            ("Circle", lambda: self._insert(
+                '<circle cx="80" cy="80" r="50" fill="#2176c7"/>')),
+            ("Line", lambda: self._insert(
+                '<line x1="10" y1="10" x2="200" y2="120" '
+                'stroke="#333" stroke-width="3"/>')),
+            ("Text", lambda: self._insert(
+                '<text x="20" y="44" font-size="20" fill="#333">label</text>')),
+            ("Curve (path)", lambda: self._insert(
+                '<path d="M10,90 Q100,10 190,90" stroke="#c0392b" '
+                'fill="none" stroke-width="3"/>')),
+        ], icon_name="mdi.shape-outline")
+        self._add("Comment", "Comment out — <!-- … --> (Ctrl+/)",
+                  self._editor_comment, "mdi.comment-text-outline")
 
     # -- editor helpers ---------------------------------------------------
     def _editor(self):

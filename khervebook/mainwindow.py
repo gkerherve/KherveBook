@@ -76,6 +76,10 @@ class MainWindow(QMainWindow):
         self.move(area.x() + (area.width() - w) // 2,
                   area.y() + (area.height() - h) // 2)
 
+    def _add_svg_cell(self):
+        from .svgcell import STARTER_SVG
+        self.notebook.add_cell_below("svg", STARTER_SVG)
+
     def _load_example(self, builder):
         if not self._confirm_discard():
             return
@@ -119,6 +123,8 @@ class MainWindow(QMainWindow):
                               lambda: self.notebook.add_cell("latex")))
         c.addAction(self._act("Add &Sheet Cell", "Ctrl+Shift+T",
                               lambda: self.notebook.add_cell("sheet")))
+        c.addAction(self._act("Add S&VG Cell", None,
+                              self._add_svg_cell))
         c.addSeparator()
         c.addAction(self._act("&Run Cell", "Ctrl+Return",
                               self.notebook.run_current))
@@ -194,7 +200,7 @@ class MainWindow(QMainWindow):
 
     #: (label, type-key) pairs for the Jupyter-style cell-type selector.
     CELL_TYPES = [("Code", "code"), ("Markdown", "markdown"),
-                  ("LaTeX", "latex"), ("Sheet", "sheet")]
+                  ("LaTeX", "latex"), ("Sheet", "sheet"), ("SVG", "svg")]
 
     def _build_toolbar(self):
         """Jupyter-style main toolbar: file/cell ops, run, cell type."""

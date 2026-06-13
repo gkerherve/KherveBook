@@ -65,6 +65,8 @@ into a new module and import.
                        plots, one view at a time via a left drop-down);
                        `=` formulas in Python with A1 refs/ranges over
                        the kernel namespace, recomputed live as you type.
+  - `svgcell.py`     — `SvgCell`: renders an SVG drawing (KhervePaint
+                       saves .svg) via QSvgRenderer.
   - `kernel.py`      — in-process Python kernel: shared namespace
                        (np/plt/pd/scipy preloaded), timeout guard,
                        stdout/stderr capture, trailing-expression echo,
@@ -76,7 +78,7 @@ into a new module and import.
 ## Document format
 
 `.kbook` is JSON: `{"format": "kbook", "version": 3, "cells":
-[{"type": "code"|"markdown"|"latex"|"sheet", "source": "...",
+[{"type": "code"|"markdown"|"latex"|"sheet"|"svg", "source": "...",
 optional "title", "collapsed", "column", "width", "height"}]}`. The
 optional per-cell keys: `title` (heading shown at the top),
 `collapsed` (minimised to its title/summary), `column` (sits beside

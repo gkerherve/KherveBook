@@ -16,7 +16,7 @@ from pathlib import Path
 
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (QHBoxLayout, QInputDialog, QMenu, QScrollArea,
-                             QVBoxLayout, QWidget)
+                             QSizePolicy, QVBoxLayout, QWidget)
 
 from .cells import CodeCell, make_cell
 from .kernel import Kernel
@@ -93,9 +93,11 @@ class NotebookWidget(QScrollArea):
         self._container.setUpdatesEnabled(False)
         for cell in self.cells:             # detach so row deletes are safe
             cell.setParent(None)
-        for row in self._rows:
-            self._layout.removeWidget(row)
-            row.deleteLater()
+        while self._layout.count():         # clear rows AND any stretch
+            item = self._layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
         self._rows = []
         i, n = 0, len(self.cells)
         while i < n:
@@ -105,6 +107,7 @@ class NotebookWidget(QScrollArea):
                 group.append(self.cells[j])
                 j += 1
             row = QWidget()
+            row.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
             hbox = QHBoxLayout(row)
             hbox.setContentsMargins(0, 0, 0, 0)
             hbox.setSpacing(6)
@@ -113,6 +116,7 @@ class NotebookWidget(QScrollArea):
             self._layout.addWidget(row)
             self._rows.append(row)
             i = j
+        self._layout.addStretch(1)          # absorb extra space, not rows
         self._container.setUpdatesEnabled(True)
 
     def set_cell_column(self, cell, on: bool):

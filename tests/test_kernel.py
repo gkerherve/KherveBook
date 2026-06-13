@@ -84,6 +84,22 @@ def test_syntax_error(kernel):
     assert "SyntaxError" in res.error
 
 
+def test_ks_reads_published_sheet_grid(kernel):
+    kernel.namespace["sheet1"] = [["radius", 3], ["x", 5], ["y", 9]]
+    assert kernel.run('ks("B1")').result_repr == "3"
+    assert kernel.run('ks("A2")').result_repr == "'x'"
+    assert kernel.run('[float(x) for x in ks("B1:B3")]'
+                      ).result_repr == "[3.0, 5.0, 9.0]"
+    # Sheet2! prefix targets the numbered sheet.
+    kernel.namespace["sheet2"] = [[7]]
+    assert kernel.run('ks("Sheet2!A1")').result_repr == "7"
+
+
+def test_ks_missing_sheet_errors(kernel):
+    res = kernel.run('ks("A1")')
+    assert not res.ok and "not available" in res.error
+
+
 def test_reset_clears_namespace(kernel):
     kernel.run("a = 1")
     kernel.reset()

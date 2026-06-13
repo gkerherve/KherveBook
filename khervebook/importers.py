@@ -105,7 +105,7 @@ def ksheet_to_cells(path: str) -> list:
     """
     import h5py     # optional dependency; ImportError -> not recognised
 
-    sheets, plots = [], []
+    sheets, plots, py_cells = [], [], []
     with h5py.File(path, "r") as f:
         if _text(f.attrs.get("format", "")) != "ksheet":
             raise ValueError("not a .ksheet file")
@@ -115,15 +115,22 @@ def ksheet_to_cells(path: str) -> list:
             rows = int(sg.attrs.get("rows", 0))
             cols = int(sg.attrs.get("cols", 0))
             flat = sg["cells"][:]
+            name = _text(sg.attrs.get("name", f"Sheet {si + 1}"))
             data, max_r, max_c = {}, -1, -1
             for idx, value in enumerate(flat[:rows * cols]):
                 value = _text(value)
                 if not value:
                     continue
                 r, c = divmod(idx, cols)
-                data[f"{col_letter(c)}{r + 1}"] = value
+                ref = f"{col_letter(c)}{r + 1}"
+                if value.lstrip().upper().startswith("=PY"):
+                    # A Python (=PY) cell -> its own code cell. ks("A1")
+                    # reads the grid, available as sheet1 after a run.
+                    code = value.lstrip()[3:].lstrip("\r\n")
+                    py_cells.append((name, ref, code))
+                    continue
+                data[ref] = value
                 max_r, max_c = max(max_r, r), max(max_c, c)
-            name = _text(sg.attrs.get("name", f"Sheet {si + 1}"))
             sheets.append({"name": name,
                            "rows": max(max_r + 1, DEFAULT_ROWS),
                            "cols": max(max_c + 1, DEFAULT_COLS),
@@ -140,8 +147,14 @@ def ksheet_to_cells(path: str) -> list:
                               "png": base64.b64encode(png).decode("ascii")})
     if not sheets:
         return []
-    return [{"type": "sheet", "source": json.dumps(
+    cells = [{"type": "sheet", "source": json.dumps(
         {"sheets": sheets, "active": sheets[0]["name"], "plots": plots})}]
+    multi = count > 1
+    for name, ref, code in py_cells:
+        loc = f"{name}!{ref}" if multi else ref
+        cells.append({"type": "code",
+                      "source": f"# KherveSheet =PY cell {loc}\n{code}"})
+    return cells
 
 
 # -- KherveTeX (.ktex / .ktexz) -> a LaTeX cell -------------------------

@@ -97,6 +97,26 @@ def test_ksheet_chart_imports_as_plot(tmp_path, qapp):
     assert "My Chart" in nb2.cells[-1].view_titles()
 
 
+def test_ksheet_py_cell_becomes_code(tmp_path):
+    from khervebook.importers import ksheet_to_cells
+    path = tmp_path / "py.ksheet"
+    make_ksheet(path, [("Data", 5, 2, {
+        (0, 0): "radius", (0, 1): "3",
+        (1, 0): "=PY\nimport numpy as np\nnp.pi * ks(\"B1\")**2"})])
+    cells = ksheet_to_cells(str(path))
+    assert [c["type"] for c in cells] == ["sheet", "code"]
+    code = cells[1]["source"]
+    body = code.split("\n", 1)[1]            # drop the "# … cell A2" header
+    assert not body.lstrip().startswith("=PY")   # marker stripped from code
+    assert "import numpy" in body
+    assert 'ks("B1")' in code                # ks() call preserved
+    assert code.startswith("# KherveSheet =PY cell A2")
+    # The =PY cell is pulled out of the grid.
+    doc = json.loads(cells[0]["source"])
+    assert "A2" not in doc["sheets"][0]["data"]
+    assert doc["sheets"][0]["data"]["B1"] == "3"
+
+
 def test_ksheet_multi_sheet_single_cell(tmp_path):
     from khervebook.importers import ksheet_to_cells
     path = tmp_path / "book.ksheet"

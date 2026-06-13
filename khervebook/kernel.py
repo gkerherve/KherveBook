@@ -14,12 +14,75 @@ the Free Software Foundation, either version 3 of the License, or
 
 import ast
 import io
+import re
 import sys
 import threading
 import time
 import traceback
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
+
+_KS_REF = re.compile(r"^([A-Za-z]{1,2})(\d{1,4})$")
+_KS_RANGE = re.compile(r"^([A-Za-z]{1,2})(\d{1,4}):([A-Za-z]{1,2})(\d{1,4})$")
+
+
+def _ks_col(letters: str) -> int:
+    c = 0
+    for ch in letters.upper():
+        c = c * 26 + (ord(ch) - 64)
+    return c - 1
+
+
+def make_ks(namespace):
+    """Build ks(ref): read a published sheet grid like KherveSheet.
+
+    A bare ref ("A1", "A1:B5") reads sheet1 (the first sheet cell); a
+    "Sheet2!A1" ref reads that numbered sheet. A single cell returns its
+    value; a range returns a NumPy array (or list of lists)."""
+    def _grid(name):
+        grid = namespace.get(name)
+        if grid is None:
+            raise NameError(
+                f"{name} is not available yet — run the sheet cell first")
+        return grid
+
+    def _at(grid, r, c):
+        if 0 <= r < len(grid) and 0 <= c < len(grid[r]):
+            v = grid[r][c]
+            return 0 if v is None else v
+        return 0
+
+    def ks(ref):
+        ref = str(ref).strip()
+        name = "sheet1"
+        if "!" in ref:
+            sheet, _, ref = ref.partition("!")
+            sheet = sheet.strip().strip("'\"").lower().replace(" ", "")
+            name = sheet if sheet.startswith("sheet") else "sheet1"
+        grid = _grid(name)
+        m = _KS_RANGE.match(ref)
+        if m:
+            r1, c1 = int(m.group(2)) - 1, _ks_col(m.group(1))
+            r2, c2 = int(m.group(4)) - 1, _ks_col(m.group(3))
+            r1, r2 = sorted((r1, r2))
+            c1, c2 = sorted((c1, c2))
+            rows = [[_at(grid, r, c) for c in range(c1, c2 + 1)]
+                    for r in range(r1, r2 + 1)]
+            try:
+                import numpy as np
+                if len(rows) == 1:
+                    return np.array(rows[0], dtype=float)
+                if all(len(x) == 1 for x in rows):
+                    return np.array([x[0] for x in rows], dtype=float)
+                return np.array(rows, dtype=float)
+            except Exception:
+                return rows
+        m = _KS_REF.match(ref)
+        if m:
+            return _at(grid, int(m.group(2)) - 1, _ks_col(m.group(1)))
+        raise ValueError(f"bad cell reference: {ref!r}")
+
+    return ks
 
 
 @dataclass
@@ -91,6 +154,10 @@ class Kernel:
                 g[mod] = __import__(mod)
             except Exception:
                 pass
+        # KherveSheet-style grid accessor for imported =PY cells: ks("A1")
+        # reads from a sheet cell's published grid (sheet1, sheet2, ...).
+        g["ks"] = make_ks(g)
+        g["xl"] = g["ks"]
 
     def run(self, source: str) -> ExecResult:
         """Execute *source*; return captured output and figures."""

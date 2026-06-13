@@ -130,6 +130,23 @@ def test_collapse_cell_and_round_trip(qapp):
     assert nb2.cells[0]._body.isVisibleTo(nb2.cells[0])
 
 
+def test_manual_cell_height_caps_and_round_trips(qapp):
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    nb.show()
+    cell = nb.cells[0]
+    cell.set_source("\n".join(f"row {i}" for i in range(40)))
+    auto = cell.sizeHint().height()
+    cell.set_content_height(200)
+    assert cell.sizeHint().height() < auto      # capped shorter
+    assert cell.content_height() == 200
+    nb2 = NotebookWidget()
+    nb2.load_json(nb.to_json())
+    assert nb2.cells[0].content_height() == 200
+    nb2.cells[0].set_content_height(None)        # double-click reset
+    assert nb2.cells[0].content_height() is None
+
+
 def test_long_editor_caps_height(qapp):
     from khervebook.cells import _GrowingEdit
     short = _GrowingEdit("x = 1")

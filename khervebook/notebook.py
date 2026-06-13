@@ -22,8 +22,8 @@ from .cells import CodeCell, make_cell
 from .kernel import Kernel
 from . import sheetcell                  # noqa: F401  (registers "sheet")
 
-# v3: cells gained optional "title" and "column" properties (v2: collapsed).
-FORMAT_VERSION = 3
+# v4: cells gained "height" (v3: title/column, v2: collapsed).
+FORMAT_VERSION = 4
 
 #: extension -> cell type for files dropped onto the notebook.
 DROP_TYPES = {
@@ -425,5 +425,7 @@ class NotebookWidget(QScrollArea):
                 cell.set_collapsed(True)
             if item.get("column"):
                 cell.set_beside_previous(True)
+            if item.get("height"):
+                cell.set_content_height(item["height"])
         self._suspend_layout = False
         self._relayout()

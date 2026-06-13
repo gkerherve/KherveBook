@@ -19,12 +19,99 @@ from PyQt5.QtCore import QEvent, QSize, Qt, pyqtSignal
 from PyQt5.QtGui import (QColor, QFont, QFontMetrics, QPixmap,
                          QSyntaxHighlighter, QTextCharFormat)
 from PyQt5.QtWidgets import (QAction, QFrame, QHBoxLayout, QLabel,
-                             QPlainTextEdit, QSizePolicy, QTextBrowser,
-                             QToolButton, QVBoxLayout, QWidget)
+                             QPlainTextEdit, QScrollArea, QSizePolicy,
+                             QTextBrowser, QToolButton, QVBoxLayout, QWidget)
 
 from .icons import icon
 
 MONO = QFont("Consolas", 10)
+
+
+class _AutoScroll(QScrollArea):
+    """Sizes to its content, until a height cap is set — then it scrolls.
+
+    Auto mode (cap None) reports the content's height as its size hint,
+    so the cell is exactly as tall as it needs. With a cap, the area
+    fixes to that height and the content scrolls inside it.
+    """
+
+    def __init__(self, inner, parent=None):
+        super().__init__(parent)
+        self.setWidget(inner)
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._cap = None
+        inner.installEventFilter(self)
+
+    def set_cap(self, height):
+        self._cap = max(60, int(height)) if height else None
+        self.setVerticalScrollBarPolicy(
+            Qt.ScrollBarAsNeeded if self._cap else Qt.ScrollBarAlwaysOff)
+        self.updateGeometry()
+
+    @property
+    def cap(self):
+        return self._cap
+
+    def _content_height(self):
+        w = self.widget()
+        return w.sizeHint().height() if w is not None else 0
+
+    def sizeHint(self):
+        h = self._content_height()
+        if self._cap is not None:
+            h = min(h, self._cap)
+        return QSize(super().sizeHint().width(), h)
+
+    def minimumSizeHint(self):
+        h = 0 if self._cap is not None else self._content_height()
+        return QSize(0, h)
+
+    def eventFilter(self, obj, event):
+        if obj is self.widget() and event.type() == QEvent.LayoutRequest:
+            self.updateGeometry()
+        return super().eventFilter(obj, event)
+
+
+class _ResizeGrip(QWidget):
+    """Thin drag handle at the bottom of a cell to cap/auto its height."""
+
+    def __init__(self, cell):
+        super().__init__(cell)
+        self._cell = cell
+        self.setFixedHeight(8)
+        self.setCursor(Qt.SizeVerCursor)
+        self.setToolTip("Drag to resize; double-click to auto-fit")
+        self._press_y = None
+        self._start_h = 0
+
+    def paintEvent(self, _event):
+        from PyQt5.QtGui import QPainter
+        painter = QPainter(self)
+        painter.setPen(QColor("#9aa3ad"))
+        y = self.height() // 2
+        cx = self.width() // 2
+        for dx in (-10, -5, 0, 5, 10):
+            painter.drawPoint(cx + dx, y)
+        painter.end()
+
+    def mousePressEvent(self, event):
+        self._press_y = event.globalY()
+        self._start_h = self._cell._body_scroll.height()
+
+    def mouseMoveEvent(self, event):
+        if self._press_y is not None:
+            self._cell.set_content_height(
+                self._start_h + event.globalY() - self._press_y)
+
+    def mouseReleaseEvent(self, _event):
+        self._press_y = None
+
+    def mouseDoubleClickEvent(self, _event):
+        self._cell.set_content_height(None)
 
 
 class PythonHighlighter(QSyntaxHighlighter):
@@ -210,7 +297,10 @@ class CellWidget(QFrame):
         self.column = QVBoxLayout(self._body)
         self.column.setContentsMargins(0, 0, 0, 0)
         self.column.setSpacing(4)
-        content.addWidget(self._body)
+        self._body_scroll = _AutoScroll(self._body)
+        content.addWidget(self._body_scroll)
+        self._grip = _ResizeGrip(self)
+        content.addWidget(self._grip)
         outer.addLayout(content, 1)
 
         self.editor = _GrowingEdit(source)
@@ -234,7 +324,8 @@ class CellWidget(QFrame):
     def set_collapsed(self, on: bool):
         """Minimise the cell to its title (or a one-line summary)."""
         self._collapsed = bool(on)
-        self._body.setVisible(not self._collapsed)
+        self._body_scroll.setVisible(not self._collapsed)
+        self._grip.setVisible(not self._collapsed)
         # When collapsed, a title is the label; otherwise show a preview.
         show_summary = self._collapsed and not self._title
         self.summary.setVisible(show_summary)
@@ -259,6 +350,15 @@ class CellWidget(QFrame):
         self.title_label.setVisible(bool(self._title))
         if self._collapsed:                 # refresh summary visibility
             self.set_collapsed(True)
+
+    # -- manual height -----------------------------------------------------
+    def set_content_height(self, height):
+        """Cap the cell body to *height* px (content scrolls), or None
+        to auto-fit to the content."""
+        self._body_scroll.set_cap(height)
+
+    def content_height(self):
+        return self._body_scroll.cap
 
     # -- row layout --------------------------------------------------------
     @property
@@ -310,6 +410,8 @@ class CellWidget(QFrame):
             d["collapsed"] = True
         if self._column:
             d["column"] = True
+        if self.content_height():
+            d["height"] = self.content_height()
         return d
 
 

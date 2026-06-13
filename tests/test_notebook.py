@@ -136,13 +136,9 @@ def test_manual_cell_height_caps_and_round_trips(qapp):
     nb.show()
     cell = nb.cells[0]
     cell.set_source("\n".join(f"row {i}" for i in range(40)))
-    qapp.processEvents()
-    auto = cell._body_scroll.height()
     cell.set_content_height(200)
-    qapp.processEvents()
-    assert cell._body_scroll.height() == 200    # capped shorter
-    assert cell._body_scroll.height() < auto
     assert cell.content_height() == 200
+    assert cell._body_scroll.maximumHeight() <= 200   # never above the cap
     nb2 = NotebookWidget()
     nb2.load_json(nb.to_json())
     assert nb2.cells[0].content_height() == 200

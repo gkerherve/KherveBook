@@ -12,6 +12,8 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
+import base64
+import io
 import json
 import zipfile
 from pathlib import Path
@@ -27,9 +29,75 @@ def _text(value) -> str:
 
 # -- KherveSheet (.ksheet — HDF5) ---------------------------------------
 
+def _render_ksheet_chart(chart) -> bytes:
+    """Reconstruct a KherveSheet chart (series + styling) to PNG bytes.
+
+    Charts are stored as vector definitions, not images: each chart_N
+    group holds its axes attrs and series_K subgroups with x/y datasets
+    and a JSON style. Replot them with matplotlib so KherveBook can show
+    the plot next to the sheets.
+    """
+    import matplotlib
+    matplotlib.use("Agg", force=False)
+    import matplotlib.pyplot as plt
+
+    a = chart.attrs
+    w = int(a.get("width", 450)) / 100.0
+    h = int(a.get("height", 340)) / 100.0
+    fig, ax = plt.subplots(figsize=(max(3.0, w), max(2.2, h)))
+    has_label = False
+    for k in range(int(a.get("series_count", 0))):
+        s = chart.get(f"series_{k}")
+        if s is None or "x" not in s or "y" not in s:
+            continue
+        x, y = s["x"][:], s["y"][:]
+        try:
+            props = json.loads(_text(s.attrs.get("props", "{}")))
+        except Exception:
+            props = {}
+        label = _text(s.attrs.get("label", "")) or None
+        has_label = has_label or bool(label)
+        ptype = _text(s.attrs.get("plot_type", "Line"))
+        color = props.get("color")
+        if "Bar" in ptype:
+            ax.bar(x, y, color=color, label=label)
+        elif "Scatter" in ptype or ("Symbol" in ptype and "Line" not in ptype):
+            ax.scatter(x, y, s=float(props.get("markersize", 4)) ** 2,
+                       color=props.get("markerfacecolor", color),
+                       marker=props.get("marker", "o"), label=label)
+        else:
+            ax.plot(x, y, linestyle=props.get("linestyle", "-"),
+                    linewidth=props.get("linewidth", 1.5), color=color,
+                    marker=props.get("marker", "") if "Symbol" in ptype
+                    else "", markersize=float(props.get("markersize", 4)),
+                    markerfacecolor=props.get("markerfacecolor", color),
+                    markeredgecolor=props.get("markeredgecolor", color),
+                    label=label)
+    if _text(a.get("title", "")):
+        ax.set_title(_text(a.get("title", "")))
+    ax.set_xlabel(_text(a.get("xlabel", "")))
+    ax.set_ylabel(_text(a.get("ylabel", "")))
+    for axis, scale in (("x", _text(a.get("xscale", "linear"))),
+                        ("y", _text(a.get("yscale", "linear")))):
+        try:
+            (ax.set_xscale if axis == "x" else ax.set_yscale)(scale)
+        except Exception:
+            pass
+    if a.get("grid"):
+        ax.grid(True, alpha=0.3)
+    if has_label and a.get("legend_visible", True):
+        ax.legend(fontsize=8)
+    fig.tight_layout()
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=110, bbox_inches="tight")
+    plt.close(fig)
+    return buf.getvalue()
+
+
 def ksheet_to_cells(path: str) -> list:
-    """The whole workbook as ONE multi-sheet cell, each sheet trimmed
-    to its used range — switch between them with the cell's View menu.
+    """The whole workbook as ONE multi-sheet cell: every sheet (trimmed
+    to its used range) plus every chart, switchable from the cell's
+    View menu.
 
     Values and formula texts import as-is. KherveSheet's Excel-style
     formulas (=SUM(A:A)) and =PY cells keep their raw text — they
@@ -37,7 +105,7 @@ def ksheet_to_cells(path: str) -> list:
     """
     import h5py     # optional dependency; ImportError -> not recognised
 
-    sheets = []
+    sheets, plots = [], []
     with h5py.File(path, "r") as f:
         if _text(f.attrs.get("format", "")) != "ksheet":
             raise ValueError("not a .ksheet file")
@@ -60,10 +128,20 @@ def ksheet_to_cells(path: str) -> list:
                            "rows": max(max_r + 1, DEFAULT_ROWS),
                            "cols": max(max_c + 1, DEFAULT_COLS),
                            "data": data})
+            charts = sorted((k for k in sg if k.startswith("chart_")),
+                            key=lambda k: int(k.split("_")[1]))
+            for ck in charts:
+                try:
+                    png = _render_ksheet_chart(sg[ck])
+                except Exception:
+                    continue
+                title = _text(sg[ck].attrs.get("title", "")) or "Plot"
+                plots.append({"title": title,
+                              "png": base64.b64encode(png).decode("ascii")})
     if not sheets:
         return []
     return [{"type": "sheet", "source": json.dumps(
-        {"sheets": sheets, "active": sheets[0]["name"]})}]
+        {"sheets": sheets, "active": sheets[0]["name"], "plots": plots})}]
 
 
 # -- kherveDOC (.kdocz zip / .kdoc.json) --------------------------------

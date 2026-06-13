@@ -18,6 +18,7 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
+import base64
 import json
 import re
 
@@ -35,6 +36,7 @@ _RANGE = re.compile(r"\b([A-Z]{1,2})(\d{1,3})\s*:\s*([A-Z]{1,2})(\d{1,3})\b")
 
 DEFAULT_ROWS, DEFAULT_COLS = 6, 4
 MAX_PASSES = 8      # formula chains resolve iteratively
+TABLE_MAX_H = 420   # a tall grid scrolls inside itself past this
 
 
 def col_letter(c: int) -> str:
@@ -69,6 +71,20 @@ def format_value(value) -> str:
     return str(value)
 
 
+class _ViewStack(QStackedWidget):
+    """Sizes to the current page, not the largest — so switching to a
+    small plot view shrinks the cell instead of keeping the tall grid."""
+
+    def sizeHint(self):
+        w = self.currentWidget()
+        return w.sizeHint() if w is not None else super().sizeHint()
+
+    def minimumSizeHint(self):
+        w = self.currentWidget()
+        return (w.minimumSizeHint() if w is not None
+                else super().minimumSizeHint())
+
+
 class _RawDelegate(QStyledItemDelegate):
     """Edit the raw text (formula) while the grid displays the result."""
 
@@ -94,7 +110,10 @@ class SheetCell(CellWidget):
 
         self._tables = []           # one QTableWidget per sheet
         self._names = []            # parallel sheet names
-        self._plot_labels = []      # QLabel per plot view
+        self._plot_labels = []      # QLabel per plot view (static + formula)
+        self._plot_titles = []      # parallel plot-view titles
+        self._static_plots = []     # (title, png bytes) imported/persisted
+        self._n_static = 0          # how many leading plot views are static
         self._views = []            # [("sheet", i) | ("plot", j), ...]
         self._values = []           # last computed values, per table
         self.table = None           # active grid (None on a plot view)
@@ -126,7 +145,7 @@ class SheetCell(CellWidget):
         bar.addWidget(self.formula_edit)
         self.column.addWidget(self._formula_widget)
 
-        self.stack = QStackedWidget()
+        self.stack = _ViewStack()
         self.stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.column.addWidget(self.stack)
 
@@ -188,16 +207,21 @@ class SheetCell(CellWidget):
             sheets.append({"name": name, "rows": table.rowCount(),
                            "cols": table.columnCount(), "data": data})
         active = self._names[self._active_sheet()] if self._names else ""
-        return json.dumps({"sheets": sheets, "active": active})
+        plots = [{"title": title,
+                  "png": base64.b64encode(png).decode("ascii")}
+                 for title, png in self._static_plots]
+        return json.dumps({"sheets": sheets, "active": active,
+                           "plots": plots})
 
     def set_source(self, text: str):
-        # Parse into a list of sheet models.
-        models = []
+        # Parse into a list of sheet models (+ any persisted plots).
+        models, plot_specs = [], []
         try:
             doc = json.loads(text)
             if isinstance(doc, dict) and "sheets" in doc:
                 models = doc["sheets"]
                 active_name = doc.get("active", "")
+                plot_specs = doc.get("plots", [])
             elif isinstance(doc, dict) and "data" in doc:   # legacy single
                 models = [{"name": "Sheet1", **doc}]
                 active_name = "Sheet1"
@@ -227,16 +251,30 @@ class SheetCell(CellWidget):
         for lab in self._plot_labels:
             self.stack.removeWidget(lab)
             lab.deleteLater()
-        self._tables, self._names, self._plot_labels = [], [], []
+        self._tables, self._names = [], []
+        self._plot_labels, self._plot_titles = [], []
 
         for i, model in enumerate(models):
             name = str(model.get("name") or f"Sheet{i + 1}")
             table = self._make_table()
             self._populate(table, model)
+            self._fit_table(table)
             self._tables.append(table)
             self._names.append(name)
             self.stack.addWidget(table)
         self.table = self._tables[0]
+
+        # Static (imported / persisted) plot views come first.
+        self._static_plots = []
+        for spec in plot_specs:
+            try:
+                png = base64.b64decode(spec["png"])
+            except Exception:
+                continue
+            self._static_plots.append((spec.get("title", "Plot"), png))
+            self._plot_labels.append(self._make_plot_label(png))
+            self._plot_titles.append(spec.get("title", "Plot"))
+        self._n_static = len(self._static_plots)
 
         names = [n for n in self._names]
         start = names.index(active_name) if active_name in names else 0
@@ -388,33 +426,37 @@ class SheetCell(CellWidget):
                    if self._views else ("sheet", 0))
         return i if kind == "sheet" else 0
 
+    def _make_plot_label(self, png) -> QLabel:
+        lab = QLabel()
+        lab.setAlignment(Qt.AlignCenter)
+        pix = QPixmap()
+        pix.loadFromData(png, "PNG")
+        lab.setPixmap(pix)
+        self.stack.addWidget(lab)
+        return lab
+
     def _rebuild_plots(self, pngs):
-        """Refresh the plot views after a compute, keeping the selection."""
+        """Refresh formula plot views, keeping static plots and selection."""
         prev = (self._views[self.view_combo.currentIndex()]
                 if self._views and self.view_combo.currentIndex() >= 0
                 else ("sheet", 0))
-        for lab in self._plot_labels:
+        # Drop only the formula plots (the static ones lead the list).
+        for lab in self._plot_labels[self._n_static:]:
             self.stack.removeWidget(lab)
             lab.deleteLater()
-        self._plot_labels = []
-        for png in pngs:
-            lab = QLabel()
-            lab.setAlignment(Qt.AlignCenter)
-            pix = QPixmap()
-            pix.loadFromData(png, "PNG")
-            lab.setPixmap(pix)
-            self.stack.addWidget(lab)
-            self._plot_labels.append(lab)
-        # Keep a plot selection only if that plot still exists.
-        if prev[0] == "plot" and prev[1] >= len(pngs):
+        self._plot_labels = self._plot_labels[:self._n_static]
+        self._plot_titles = self._plot_titles[:self._n_static]
+        for k, png in enumerate(pngs):
+            self._plot_labels.append(self._make_plot_label(png))
+            self._plot_titles.append(f"Plot {self._n_static + k + 1}")
+        if prev[0] == "plot" and prev[1] >= len(self._plot_labels):
             prev = ("sheet", self._active_sheet())
         self._rebuild_views(select=prev)
 
     def _rebuild_views(self, select=("sheet", 0)):
         self._views = ([("sheet", i) for i in range(len(self._tables))]
                        + [("plot", j) for j in range(len(self._plot_labels))])
-        titles = list(self._names) + [f"Plot {j + 1}"
-                                      for j in range(len(self._plot_labels))]
+        titles = list(self._names) + list(self._plot_titles)
         try:
             index = self._views.index(tuple(select))
         except ValueError:
@@ -436,12 +478,11 @@ class SheetCell(CellWidget):
             self._formula_widget.show()
             self._sync_formula_bar(self.table.currentRow(),
                                    self.table.currentColumn())
-            self.stack.setFixedHeight(self._table_height(self.table))
+            self._fit_table(self.table)
         else:
             self.table = None
             self._formula_widget.hide()
-            pix = self._plot_labels[i].pixmap()
-            self.stack.setFixedHeight((pix.height() if pix else 200) + 6)
+        self.stack.updateGeometry()
 
     # -- right-click view menu helpers (used by NotebookWidget) -----------
     def view_titles(self):
@@ -502,6 +543,10 @@ class SheetCell(CellWidget):
             h += table.rowHeight(r)
         return h
 
+    def _fit_table(self, table):
+        """Size a grid to its rows, but cap tall grids (they scroll)."""
+        table.setFixedHeight(min(self._table_height(table), TABLE_MAX_H))
+
     def eventFilter(self, obj, event):
         try:
             if (event.type() == QEvent.FocusIn
@@ -516,7 +561,8 @@ class SheetCell(CellWidget):
         if self.table is None:
             return
         self.table.insertRow(self.table.rowCount())
-        self.stack.setFixedHeight(self._table_height(self.table))
+        self._fit_table(self.table)
+        self.stack.updateGeometry()
         self.content_changed.emit()
 
     def add_col(self):
@@ -532,7 +578,8 @@ class SheetCell(CellWidget):
             return
         row = self.table.currentRow()
         self.table.removeRow(row if row >= 0 else self.table.rowCount() - 1)
-        self.stack.setFixedHeight(self._table_height(self.table))
+        self._fit_table(self.table)
+        self.stack.updateGeometry()
         self.content_changed.emit()
 
     def del_col(self):

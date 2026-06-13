@@ -49,6 +49,54 @@ def test_ksheet_import(tmp_path):
     assert sheet0["rows"] == 6              # trimmed to used range
 
 
+def make_ksheet_with_chart(path):
+    """A .ksheet with one sheet and one line chart (series x/y + style)."""
+    h5py = pytest.importorskip("h5py")
+    import numpy as np
+    with h5py.File(path, "w") as f:
+        f.attrs["format"] = "ksheet"
+        f.attrs["sheet_count"] = 1
+        sg = f.create_group("sheet_0")
+        sg.attrs["name"] = "Data"
+        sg.attrs["rows"] = 5
+        sg.attrs["cols"] = 2
+        sg.create_dataset("cells", data=["x", "y", "1", "2", "2", "4"]
+                          + [""] * 4, dtype=h5py.string_dtype())
+        chart = sg.create_group("chart_0")
+        chart.attrs["title"] = "My Chart"
+        chart.attrs["xlabel"] = "x"
+        chart.attrs["ylabel"] = "y"
+        chart.attrs["series_count"] = 1
+        s0 = chart.create_group("series_0")
+        s0.attrs["label"] = "line"
+        s0.attrs["plot_type"] = "Line"
+        s0.attrs["props"] = '{"color": "#4472c4", "linewidth": 2.0}'
+        s0.create_dataset("x", data=np.array([1.0, 2.0, 3.0]))
+        s0.create_dataset("y", data=np.array([1.0, 4.0, 9.0]))
+
+
+def test_ksheet_chart_imports_as_plot(tmp_path, qapp):
+    from khervebook.importers import ksheet_to_cells
+    path = tmp_path / "chart.ksheet"
+    make_ksheet_with_chart(path)
+    cells = ksheet_to_cells(str(path))
+    doc = json.loads(cells[0]["source"])
+    assert [p["title"] for p in doc["plots"]] == ["My Chart"]
+    assert doc["plots"][0]["png"]                       # rendered, non-empty
+    # The sheet cell exposes the chart as a selectable plot view.
+    from khervebook.sheetcell import SheetCell
+    cell = SheetCell(cells[0]["source"])
+    assert "My Chart" in cell.view_titles()
+    assert cell._n_static == 1
+    # And it survives a .kbook round-trip.
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    nb.add_cell("sheet", cells[0]["source"])
+    nb2 = NotebookWidget()
+    nb2.load_json(nb.to_json())
+    assert "My Chart" in nb2.cells[-1].view_titles()
+
+
 def test_ksheet_multi_sheet_single_cell(tmp_path):
     from khervebook.importers import ksheet_to_cells
     path = tmp_path / "book.ksheet"

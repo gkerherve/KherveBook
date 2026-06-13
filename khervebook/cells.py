@@ -112,6 +112,48 @@ class _ResizeGrip(QWidget):
         self._cell.set_content_height(None)
 
 
+class _WidthGrip(QWidget):
+    """Thin handle on a cell's right edge to set its width (drag), or
+    double-click to fill the row again. Widening past the window scrolls
+    the notebook horizontally."""
+
+    def __init__(self, cell):
+        super().__init__(cell)
+        self._cell = cell
+        self.setFixedWidth(8)
+        self.setCursor(Qt.SizeHorCursor)
+        self.setToolTip("Drag to resize width; double-click to auto")
+        self._press_x = None
+        self._start_w = 0
+
+    def paintEvent(self, _event):
+        from PyQt5.QtGui import QPainter
+        painter = QPainter(self)
+        painter.setPen(QColor("#9aa3ad"))
+        cx = self.width() // 2
+        cy = self.height() // 2
+        for dy in (-10, -5, 0, 5, 10):
+            painter.drawPoint(cx, cy + dy)
+        painter.end()
+
+    def mousePressEvent(self, event):
+        self._press_x = event.globalX()
+        self._start_w = self._cell.width()
+
+    def mouseMoveEvent(self, event):
+        if self._press_x is not None:
+            self._cell.set_content_width(
+                self._start_w + event.globalX() - self._press_x)
+
+    def mouseReleaseEvent(self, _event):
+        self._press_x = None
+        self._cell.resized.emit()         # relayout: align + scroll
+
+    def mouseDoubleClickEvent(self, _event):
+        self._cell.set_content_width(None)
+        self._cell.resized.emit()
+
+
 class PythonHighlighter(QSyntaxHighlighter):
     """Minimal Python syntax highlighting for code cell editors."""
 
@@ -222,6 +264,7 @@ class CellWidget(QFrame):
     menu_requested = pyqtSignal(object, object)   # self, global pos
     file_dropped = pyqtSignal(str, object)        # path, self
     content_changed = pyqtSignal()       # edited (non-editor cells)
+    resized = pyqtSignal()               # width changed (notebook relayout)
     focused = pyqtSignal(object)         # self
 
     def __init__(self, source=""):
@@ -229,6 +272,7 @@ class CellWidget(QFrame):
         self.setFrameShape(QFrame.StyledPanel)
         self.setObjectName("cell")
         self.setAcceptDrops(True)
+        self._manual_w = None            # user-set width (resize grip)
         outer = QHBoxLayout(self)
         outer.setContentsMargins(6, 6, 6, 6)
 
@@ -297,9 +341,11 @@ class CellWidget(QFrame):
         self.column.setSpacing(4)
         self._body_scroll = _AutoScroll(self._body)
         content.addWidget(self._body_scroll)
-        self._grip = _ResizeGrip(self)
+        self._grip = _ResizeGrip(self)            # bottom: height
         content.addWidget(self._grip)
         outer.addLayout(content, 1)
+        self._wgrip = _WidthGrip(self)            # right edge: width
+        outer.addWidget(self._wgrip)
 
         self.editor = _GrowingEdit(source)
         self.editor.cell = self
@@ -362,6 +408,19 @@ class CellWidget(QFrame):
     def content_height(self):
         return self._body_scroll.cap
 
+    def set_content_width(self, width):
+        """Fix the cell to *width* px, or None to fill the row again."""
+        if width is None:
+            self._manual_w = None
+            self.setMinimumWidth(0)
+            self.setMaximumWidth(16777215)
+        else:
+            self._manual_w = max(220, int(width))
+            self.setFixedWidth(self._manual_w)
+
+    def content_width(self):
+        return self._manual_w
+
     # -- row layout --------------------------------------------------------
     @property
     def beside_previous(self) -> bool:
@@ -414,6 +473,8 @@ class CellWidget(QFrame):
             d["column"] = True
         if self.content_height():
             d["height"] = self.content_height()
+        if self._manual_w:
+            d["width"] = self._manual_w
         return d
 
 

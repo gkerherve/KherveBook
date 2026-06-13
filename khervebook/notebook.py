@@ -78,6 +78,7 @@ class NotebookWidget(QScrollArea):
         cell.focused.connect(self._set_current)
         cell.editor.textChanged.connect(self.modified.emit)
         cell.content_changed.connect(self.modified.emit)
+        cell.resized.connect(self._on_cell_resized)
         if index is None:
             index = len(self.cells)
         self.cells.insert(index, cell)
@@ -99,6 +100,7 @@ class NotebookWidget(QScrollArea):
             if w is not None:
                 w.deleteLater()
         self._rows = []
+        max_w = 0
         i, n = 0, len(self.cells)
         while i < n:
             group = [self.cells[i]]
@@ -111,13 +113,26 @@ class NotebookWidget(QScrollArea):
             hbox = QHBoxLayout(row)
             hbox.setContentsMargins(0, 0, 0, 0)
             hbox.setSpacing(6)
-            for c in group:
-                hbox.addWidget(c, 1)
+            if len(group) == 1 and group[0].content_width():
+                # A custom-width cell sits at that width, left-aligned;
+                # if it is wider than the viewport the notebook scrolls.
+                hbox.addWidget(group[0], 0)
+                hbox.addStretch(1)
+                max_w = max(max_w, group[0].content_width())
+            else:
+                for c in group:
+                    hbox.addWidget(c, 1)
             self._layout.addWidget(row)
             self._rows.append(row)
             i = j
         self._layout.addStretch(1)          # absorb extra space, not rows
+        # Let the container exceed the viewport so a wide cell scrolls.
+        self._container.setMinimumWidth(max_w)
         self._container.setUpdatesEnabled(True)
+
+    def _on_cell_resized(self):
+        self._relayout()
+        self.modified.emit()
 
     def set_cell_column(self, cell, on: bool):
         """Place *cell* beside the previous one (same row), or on its own."""
@@ -427,5 +442,7 @@ class NotebookWidget(QScrollArea):
                 cell.set_beside_previous(True)
             if item.get("height"):
                 cell.set_content_height(item["height"])
+            if item.get("width"):
+                cell.set_content_width(item["width"])
         self._suspend_layout = False
         self._relayout()

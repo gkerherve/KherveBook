@@ -75,10 +75,11 @@ into a new module and import.
 
 `.kbook` is JSON: `{"format": "kbook", "version": 3, "cells":
 [{"type": "code"|"markdown"|"latex"|"sheet", "source": "...",
-optional "title", "collapsed", "column"}]}`. The optional per-cell
-keys: `title` (heading shown at the top), `collapsed` (minimised to
-its title/summary), `column` (sits beside the previous cell in the
-same row). A sheet cell's `source` is itself JSON: `{"sheets":
+optional "title", "collapsed", "column", "width", "height"}]}`. The
+optional per-cell keys: `title` (heading shown at the top),
+`collapsed` (minimised to its title/summary), `column` (sits beside
+the previous cell in the same row), `width`/`height` (px, from the
+drag-resize grips; a sheet's `height` sizes its grid). A sheet cell's `source` is itself JSON: `{"sheets":
 [{"name", "rows", "cols", "data": {"A1": "raw text or =formula"}}],
 "active": "<sheet name>"}` (the legacy single-grid `{"rows","cols",
 "data"}` still loads). When a cell gains new persisted properties,

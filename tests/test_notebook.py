@@ -130,6 +130,30 @@ def test_collapse_cell_and_round_trip(qapp):
     assert nb2.cells[0]._body.isVisibleTo(nb2.cells[0])
 
 
+def test_manual_cell_width_and_round_trip(qapp):
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    nb.resize(900, 600)
+    nb.show()
+    cell = nb.cells[0]
+    cell.set_content_width(400)
+    cell.resized.emit()
+    assert cell.content_width() == 400
+    assert cell.width() == 400                       # narrower than the row
+    # Wider than the viewport grows the container (horizontal scroll).
+    cell.set_content_width(1600)
+    cell.resized.emit()
+    qapp.processEvents()
+    assert nb.widget().minimumWidth() == 1600
+    # Round-trips through .kbook.
+    nb2 = NotebookWidget()
+    nb2.load_json(nb.to_json())
+    assert nb2.cells[0].content_width() == 1600
+    # Double-click reset fills the row again.
+    nb2.cells[0].set_content_width(None)
+    assert nb2.cells[0].content_width() is None
+
+
 def test_manual_cell_height_caps_and_round_trips(qapp):
     from khervebook.notebook import NotebookWidget
     nb = NotebookWidget()

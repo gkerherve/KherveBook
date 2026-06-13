@@ -47,17 +47,34 @@ class MainWindow(QMainWindow):
         self.notebook.current_changed.connect(self._on_current_cell)
         self.notebook.open_kbook_requested.connect(self._open_path)
         self.statusBar().showMessage(f"{APP_NAME} v{__version__}")
-        self.resize(1000, 750)
+        self.setMinimumSize(900, 620)
         self._load_welcome()
         self._update_title()
-        # Restore window size and dock layout from the last session.
+        # Restore window size + dock layout, or open large by default.
+        # geometry_v2: the old key pinned everyone to a small default;
+        # a fresh key lets the bigger default take effect once.
         settings = QSettings("Kherve", "KherveBook")
-        geometry = settings.value("win/geometry")
+        geometry = settings.value("win/geometry_v2")
         state = settings.value("win/state")
         if geometry:
             self.restoreGeometry(geometry)
+        else:
+            self._open_at_default_size()
         if state:
             self.restoreState(state)
+
+    def _open_at_default_size(self):
+        """Open at 90% of the available screen (capped), centred."""
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            self.resize(1280, 900)
+            return
+        area = screen.availableGeometry()
+        w = min(int(area.width() * 0.9), 1600)
+        h = min(int(area.height() * 0.9), 1100)
+        self.resize(w, h)
+        self.move(area.x() + (area.width() - w) // 2,
+                  area.y() + (area.height() - h) // 2)
 
     def _load_example(self, builder):
         if not self._confirm_discard():
@@ -324,7 +341,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         if self._confirm_discard():
             settings = QSettings("Kherve", "KherveBook")
-            settings.setValue("win/geometry", self.saveGeometry())
+            settings.setValue("win/geometry_v2", self.saveGeometry())
             settings.setValue("win/state", self.saveState())
             event.accept()
         else:

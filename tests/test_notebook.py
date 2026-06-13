@@ -66,6 +66,24 @@ def test_loop_stops_when_cell_removed(qapp):
     assert not nb.looping
 
 
+def test_ctrl_slash_comment_per_cell_type(qapp):
+    from PyQt5.QtGui import QTextCursor
+    from khervebook.cells import CodeCell, LatexCell, MarkdownCell
+    for cls, commented in ((CodeCell, "# x"), (LatexCell, "% x"),
+                           (MarkdownCell, "<!-- x -->")):
+        cell = cls()
+        cell.editor.setPlainText("x")
+        cur = cell.editor.textCursor()
+        cur.select(QTextCursor.Document)
+        cell.editor.setTextCursor(cur)
+        cell.editor.toggle_comment()
+        assert cell.editor.toPlainText() == commented, cls.__name__
+        cur.select(QTextCursor.Document)
+        cell.editor.setTextCursor(cur)
+        cell.editor.toggle_comment()
+        assert cell.editor.toPlainText() == "x"     # toggles back off
+
+
 def test_cells_in_a_row(qapp):
     """Two cells can share a row; structure round-trips."""
     from khervebook.notebook import NotebookWidget

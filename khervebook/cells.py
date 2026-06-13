@@ -17,7 +17,7 @@ import re
 
 from PyQt5.QtCore import QEvent, QSize, Qt, QThread, pyqtSignal
 from PyQt5.QtGui import (QColor, QFont, QFontMetrics, QPixmap,
-                         QSyntaxHighlighter, QTextCharFormat)
+                         QSyntaxHighlighter, QTextCharFormat, QTextCursor)
 from PyQt5.QtWidgets import (QAction, QFrame, QHBoxLayout, QLabel,
                              QPlainTextEdit, QScrollArea, QSizePolicy,
                              QTextBrowser, QToolButton, QVBoxLayout, QWidget)
@@ -223,7 +223,55 @@ class _GrowingEdit(QPlainTextEdit):
                 and event.modifiers() & Qt.ShiftModifier):
             self.run_requested.emit()
             return
+        if (event.key() == Qt.Key_Slash
+                and event.modifiers() & Qt.ControlModifier):
+            self.toggle_comment()
+            return
         super().keyPressEvent(event)
+
+    def toggle_comment(self):
+        """Comment/uncomment the selected lines using the cell's syntax
+        (# for Python, % for LaTeX, <!-- --> for Markdown)."""
+        cell = getattr(self, "cell", None)
+        prefix, suffix = getattr(cell, "COMMENT", ("# ", ""))
+        p, sfx = prefix.strip(), suffix.strip()
+        doc = self.document()
+        cur = self.textCursor()
+        first = doc.findBlock(cur.selectionStart()).blockNumber()
+        last = doc.findBlock(cur.selectionEnd()).blockNumber()
+        blocks = [doc.findBlockByNumber(b) for b in range(first, last + 1)]
+
+        def commented(text):
+            t = text.strip()
+            return t.startswith(p) and (not sfx or t.endswith(sfx))
+
+        non_empty = [b.text() for b in blocks if b.text().strip()]
+        remove = bool(non_empty) and all(commented(t) for t in non_empty)
+
+        def transform(text):
+            indent = text[:len(text) - len(text.lstrip())]
+            body = text[len(indent):]
+            if remove:
+                if body.startswith(prefix):
+                    body = body[len(prefix):]
+                elif body.startswith(p):
+                    body = body[len(p):].lstrip(" ")
+                if suffix and body.endswith(suffix):
+                    body = body[:-len(suffix)]
+                elif sfx and body.rstrip().endswith(sfx):
+                    body = body[:body.rstrip().rfind(sfx)].rstrip()
+            else:
+                body = prefix + body + suffix
+            return indent + body
+
+        cur.beginEditBlock()
+        for block in blocks:
+            if not block.text().strip():
+                continue
+            edit = QTextCursor(block)
+            edit.select(QTextCursor.LineUnderCursor)
+            edit.insertText(transform(block.text()))
+        cur.endEditBlock()
 
     def dragEnterEvent(self, event):
         # Let file drops reach the parent cell; keep text drags local.
@@ -482,6 +530,7 @@ class CodeCell(CellWidget):
     """Python cell executed by the shared kernel."""
 
     CELL_TYPE = "code"
+    COMMENT = ("# ", "")             # Ctrl+/ comment syntax
 
     def __init__(self, source=""):
         super().__init__(source)
@@ -533,6 +582,7 @@ class MarkdownCell(CellWidget):
     """Markdown cell: edit source, render on run, double-click to re-edit."""
 
     CELL_TYPE = "markdown"
+    COMMENT = ("<!-- ", " -->")      # Ctrl+/ comment syntax
 
     def __init__(self, source=""):
         super().__init__(source)
@@ -595,6 +645,7 @@ class LatexCell(CellWidget):
     no engine is installed it falls back to the lightweight text view."""
 
     CELL_TYPE = "latex"
+    COMMENT = ("% ", "")             # Ctrl+/ comment syntax
     PAGE_WIDTH = 760                 # displayed page width (px)
 
     def __init__(self, source=""):

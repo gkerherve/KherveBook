@@ -204,9 +204,16 @@ class CellToolBar(QToolBar):
                   "mdi.format-color-text")
         self._add("Highlight", "Highlight…", self._pick_highlight,
                   "mdi.format-color-highlight")
+        self._add("Comment", "Comment out — <!-- … --> (Ctrl+/)",
+                  self._editor_comment, "mdi.comment-text-outline")
         self.addSeparator()
         self._add("Render", "Render the cell (Shift+Enter)",
                   self._notebook.run_current, "mdi.eye-outline")
+
+    def _editor_comment(self):
+        cell = self._notebook.current
+        if cell is not None:
+            cell.editor.toggle_comment()
 
     def _pick_color(self):
         color = QColorDialog.getColor(parent=self.window(),
@@ -305,5 +312,7 @@ class CellToolBar(QToolBar):
                          lambda c=cmd: self._insert(c + " "))
                         for sym, cmd in OPERATORS])
         self.addSeparator()
+        self._add("Comment", "Comment out — % (Ctrl+/)",
+                  self._editor_comment, "mdi.comment-text-outline")
         self._add("Render", "Render the equation (Shift+Enter)",
                   self._notebook.run_current, "mdi.eye-outline")

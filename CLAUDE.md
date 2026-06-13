@@ -10,6 +10,11 @@ KhervePDF, KherveDOC, KhervePlot, KherveDraw).
 
 - Python 3.12 / 3.13 with PyQt5 + matplotlib + numpy.
 - Run via `python KherveBook.py` or `python -m khervebook`.
+- **Full LaTeX** in latex cells needs the `tectonic` binary (PATH or
+  ~/bin) + PyMuPDF; without them, documents fall back to a
+  lightweight text renderer (`latextext.py`) and equations to
+  matplotlib mathtext. Compile = `latexcompile.py` (background
+  QThread; workers held in a module set, never parented to a cell).
 - Crash log: `%TEMP%/khervebook_crash.log`.
 - **Version string** is derived at runtime in `_version.py` from
   `git rev-list --count HEAD` and `git rev-parse --short HEAD`,

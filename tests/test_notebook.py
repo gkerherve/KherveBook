@@ -66,6 +66,25 @@ def test_loop_stops_when_cell_removed(qapp):
     assert not nb.looping
 
 
+def test_latex_and_markdown_highlighting(qapp):
+    from khervebook.cells import LatexCell, MarkdownCell
+
+    def has_formats(cell):
+        cell._highlighter.rehighlight()
+        block = cell.editor.document().findBlockByNumber(0)
+        return bool(block.layout().formats())
+
+    tex = LatexCell()
+    tex.editor.setPlainText(r"\section{Hi} $E=mc^2$ % a comment")
+    assert has_formats(tex)                     # commands/math/comment lit
+    md = MarkdownCell()
+    md.editor.setPlainText("# Heading with **bold** and `code`")
+    assert has_formats(md)
+    # Theme switch re-tints without error.
+    tex._highlighter.set_dark(True)
+    md._highlighter.set_dark(True)
+
+
 def test_page_mode_toggles_cells(qapp):
     from khervebook.notebook import NotebookWidget
     nb = NotebookWidget()

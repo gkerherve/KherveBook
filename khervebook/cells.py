@@ -230,6 +230,103 @@ class PythonHighlighter(QSyntaxHighlighter):
                 self.setFormat(m.start(), m.end() - m.start(), fmt)
 
 
+class LatexHighlighter(QSyntaxHighlighter):
+    """Highlights LaTeX commands, math, braces and comments."""
+
+    #: (command, math, brace, comment) per background brightness.
+    LIGHT = ("#0000C0", "#0b7261", "#9a6700", "#808080")
+    DARK = ("#6f9fff", "#5ec8b0", "#d0a050", "#8a939c")
+
+    def __init__(self, document, dark=False):
+        super().__init__(document)
+        self._build_rules(dark)
+
+    def _build_rules(self, dark: bool):
+        cmd_c, math_c, brace_c, com_c = self.DARK if dark else self.LIGHT
+        self._rules = []
+        # Inline math first (base tint); commands then show through it.
+        math = QTextCharFormat()
+        math.setForeground(QColor(math_c))
+        self._rules.append((re.compile(r"(?<!\\)\$[^$]*\$"), math))
+        cmd = QTextCharFormat()
+        cmd.setForeground(QColor(cmd_c))
+        cmd.setFontWeight(QFont.Bold)
+        self._rules.append((re.compile(r"\\[a-zA-Z@]+\*?"), cmd))
+        self._rules.append((re.compile(r"\\[^a-zA-Z\s]"), cmd))   # \\ \{ \%
+        brace = QTextCharFormat()
+        brace.setForeground(QColor(brace_c))
+        self._rules.append((re.compile(r"[{}\[\]]"), brace))
+        com = QTextCharFormat()                                   # wins last
+        com.setForeground(QColor(com_c))
+        com.setFontItalic(True)
+        self._rules.append((re.compile(r"(?<!\\)%.*$"), com))
+
+    def set_dark(self, dark: bool):
+        self._build_rules(dark)
+        self.rehighlight()
+
+    def highlightBlock(self, text):
+        for pattern, fmt in self._rules:
+            for m in pattern.finditer(text):
+                self.setFormat(m.start(), m.end() - m.start(), fmt)
+
+
+class MarkdownHighlighter(QSyntaxHighlighter):
+    """Highlights markdown headings, emphasis, code, links and HTML."""
+
+    #: (heading, code, link, marker, html) per background brightness.
+    LIGHT = ("#0000C0", "#A31515", "#1a6e8e", "#9a6700", "#0b7261")
+    DARK = ("#6f9fff", "#e8907e", "#5ec8b0", "#d0a050", "#6ccb9e")
+
+    def __init__(self, document, dark=False):
+        super().__init__(document)
+        self._build_rules(dark)
+
+    def _build_rules(self, dark: bool):
+        head_c, code_c, link_c, mark_c, html_c = (
+            self.DARK if dark else self.LIGHT)
+        self._rules = []
+        bold = QTextCharFormat()
+        bold.setFontWeight(QFont.Bold)
+        self._rules.append((re.compile(r"\*\*.+?\*\*|__.+?__"), bold))
+        ital = QTextCharFormat()
+        ital.setFontItalic(True)
+        self._rules.append(
+            (re.compile(r"(?<!\*)\*(?!\*)[^*\n]+?\*(?!\*)"), ital))
+        strike = QTextCharFormat()
+        strike.setFontStrikeOut(True)
+        self._rules.append((re.compile(r"~~.+?~~"), strike))
+        code = QTextCharFormat()
+        code.setForeground(QColor(code_c))
+        code.setFontFamily("Consolas")
+        self._rules.append((re.compile(r"`[^`]+`"), code))
+        link = QTextCharFormat()
+        link.setForeground(QColor(link_c))
+        link.setFontUnderline(True)
+        self._rules.append((re.compile(r"\[[^\]]*\]\([^)]*\)"), link))
+        html = QTextCharFormat()
+        html.setForeground(QColor(html_c))
+        self._rules.append((re.compile(r"</?[a-zA-Z][^>]*>"), html))
+        mark = QTextCharFormat()
+        mark.setForeground(QColor(mark_c))
+        mark.setFontWeight(QFont.Bold)
+        self._rules.append((re.compile(r"^\s*([-*+]|\d+\.)\s"), mark))
+        self._rules.append((re.compile(r"^\s*>\s?"), mark))
+        head = QTextCharFormat()                                  # whole line
+        head.setForeground(QColor(head_c))
+        head.setFontWeight(QFont.Bold)
+        self._rules.append((re.compile(r"^#{1,6}\s.*$"), head))
+
+    def set_dark(self, dark: bool):
+        self._build_rules(dark)
+        self.rehighlight()
+
+    def highlightBlock(self, text):
+        for pattern, fmt in self._rules:
+            for m in pattern.finditer(text):
+                self.setFormat(m.start(), m.end() - m.start(), fmt)
+
+
 class _FitImage(QLabel):
     """An image that always scales to fill its width (keeping aspect),
     re-fitting whenever the cell is resized — no side margins."""
@@ -645,6 +742,9 @@ class MarkdownCell(CellWidget):
     def __init__(self, source=""):
         super().__init__(source)
         self.gutter.setText("md")
+        from .style import tokens
+        self._highlighter = MarkdownHighlighter(self.editor.document(),
+                                                dark=tokens()["dark"])
         self.view = QTextBrowser()
         self.view.setAcceptDrops(False)      # file drops go to the cell
         self.view.setOpenExternalLinks(True)
@@ -714,6 +814,9 @@ class LatexCell(CellWidget):
     def __init__(self, source=""):
         super().__init__(source)
         self.gutter.setText("tex")
+        from .style import tokens
+        self._highlighter = LatexHighlighter(self.editor.document(),
+                                             dark=tokens()["dark"])
         self.view = QLabel()                 # single-equation math image
         self.view.setAlignment(Qt.AlignCenter)
         self.view.hide()

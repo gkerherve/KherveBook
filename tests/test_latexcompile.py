@@ -60,6 +60,22 @@ def test_compile_real_document():
     assert len(pngs) >= 1 and pngs[0][:4] == b"\x89PNG"
 
 
+@pytest.mark.skipif(not latexcompile.available(),
+                    reason="tectonic / PyMuPDF not installed")
+def test_crop_trims_the_empty_page():
+    """A short document on A4 crops to its content, not the whole page."""
+    import io
+    from PIL import Image
+    src = (r"\documentclass[12pt]{article}"
+           r"\usepackage[a4paper]{geometry}"
+           r"\section{Hi}\nA short line of text.")
+    full, _ = latexcompile.compile_to_pngs(src, dpi=120, crop=False)
+    crop, _ = latexcompile.compile_to_pngs(src, dpi=120, crop=True)
+    fh = Image.open(io.BytesIO(full[0])).size[1]
+    ch = Image.open(io.BytesIO(crop[0])).size[1]
+    assert ch < fh / 2          # cropped is far shorter than the A4 page
+
+
 def test_compile_reports_error():
     if not latexcompile.available():
         pytest.skip("no engine")

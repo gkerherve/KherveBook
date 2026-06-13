@@ -107,11 +107,50 @@ def _pymupdf():
         return pymupdf
 
 
-def compile_to_pngs(source: str, dpi: int = 150, timeout: int = 180):
+def _no_page_numbers(tex: str) -> str:
+    """Suppress the page number for the preview, so cropping to content
+    isn't anchored to the footer (notebook cells don't need page nums)."""
+    marker = r"\begin{document}"
+    idx = tex.find(marker)
+    if idx == -1:
+        return tex
+    at = idx + len(marker)
+    return (tex[:at] + "\n\\thispagestyle{empty}\\pagestyle{empty}\n"
+            + tex[at:])
+
+
+def _content_clip(page, fitz):
+    """Bounding box of the page's actual content (text/drawings/images)
+    plus a small margin, so we render that instead of the whole A4/
+    letter sheet with its empty margins. None if the page is blank."""
+    rects = [fitz.Rect(w[:4]) for w in page.get_text("words")]
+    try:
+        rects += [d["rect"] for d in page.get_drawings()]
+    except Exception:
+        pass
+    try:
+        rects += [fitz.Rect(im["bbox"]) for im in page.get_image_info()]
+    except Exception:
+        pass
+    if not rects:
+        return None
+    clip = rects[0]
+    for r in rects[1:]:
+        clip |= r
+    margin = 12                                  # points
+    clip = fitz.Rect(clip.x0 - margin, clip.y0 - margin,
+                     clip.x1 + margin, clip.y1 + margin)
+    return clip & page.rect
+
+
+def compile_to_pngs(source: str, dpi: int = 150, timeout: int = 180,
+                    crop: bool = True):
     """Compile *source* with tectonic; return (list_of_png_bytes, error).
 
     *error* is None on success, otherwise tectonic's log (or a short
     reason). A document that fails to produce a PDF returns ([], log).
+    With *crop* (default), each page is trimmed to its content so it
+    fits the cell width instead of showing the whole empty page.
     """
     tect = find_tectonic()
     if tect is None:
@@ -122,8 +161,11 @@ def compile_to_pngs(source: str, dpi: int = 150, timeout: int = 180):
 
     workdir = Path(tempfile.mkdtemp(prefix="khervebook-tex-"))
     try:
+        tex = wrap_document(source)
+        if crop:
+            tex = _no_page_numbers(tex)
         tex_path = workdir / "document.tex"
-        tex_path.write_text(wrap_document(source), encoding="utf-8")
+        tex_path.write_text(tex, encoding="utf-8")
         kw = dict(capture_output=True, text=True, encoding="utf-8",
                   errors="replace", timeout=timeout)
         if sys.platform == "win32":
@@ -144,7 +186,9 @@ def compile_to_pngs(source: str, dpi: int = 150, timeout: int = 180):
         with fitz.open(pdf_path) as pdf:
             matrix = fitz.Matrix(zoom, zoom)
             for page in pdf:
-                pix = page.get_pixmap(matrix=matrix, alpha=False)
+                clip = _content_clip(page, fitz) if crop else None
+                pix = page.get_pixmap(matrix=matrix, clip=clip,
+                                      alpha=False)
                 pngs.append(pix.tobytes("png"))
         return pngs, None
     finally:

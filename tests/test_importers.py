@@ -214,3 +214,77 @@ def test_drop_ksheet_and_kdoc_into_notebook(qapp, tmp_path):
     kd.write_text(json.dumps(KDOC), encoding="utf-8")
     assert nb.open_file_in_cell(str(kd))
     assert "latex" in [c.CELL_TYPE for c in nb.cells]
+
+
+# -- images and PDFs ----------------------------------------------------
+
+def make_png(path, w=8, h=6, color="#ff0000"):
+    from PyQt5.QtGui import QColor, QImage
+    img = QImage(w, h, QImage.Format_RGB32)
+    img.fill(QColor(color))
+    img.save(str(path), "PNG")
+
+
+def test_image_to_svg_embeds_bytes_and_size(qapp, tmp_path):
+    from khervebook.importers import image_to_svg
+    png = tmp_path / "p.png"
+    make_png(png, 8, 6)
+    svg = image_to_svg(png.read_bytes(), "image/png")
+    assert svg.startswith("<svg") and svg.endswith("</svg>")
+    assert 'data:image/png;base64,' in svg
+    assert 'width="8"' in svg and 'height="6"' in svg   # read from QImage
+
+
+def test_image_to_cells_is_one_svg_cell(qapp, tmp_path):
+    from khervebook.importers import image_to_cells
+    png = tmp_path / "p.png"
+    make_png(png)
+    cells = image_to_cells(str(png))
+    assert len(cells) == 1 and cells[0]["type"] == "svg"
+    assert "base64" in cells[0]["source"]
+
+
+def test_drop_image_makes_rendered_svg_cell(qapp, tmp_path):
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    png = tmp_path / "pic.png"
+    make_png(png)
+    assert nb.open_file_in_cell(str(png))
+    assert nb.current.CELL_TYPE == "svg"
+    assert nb.current.view.isVisibleTo(nb)              # rendered on drop
+    # Survives a .kbook round-trip with the image still embedded.
+    nb2 = NotebookWidget()
+    nb2.load_json(nb.to_json())
+    assert "base64" in nb2.cells[-1].source()
+
+
+def make_pdf(path, pages=2):
+    fitz = pytest.importorskip("fitz")
+    doc = fitz.open()
+    for _ in range(pages):
+        doc.new_page(width=200, height=300)
+    doc.save(str(path))
+    doc.close()
+
+
+def test_pdf_to_cells_one_per_page(qapp, tmp_path):
+    pytest.importorskip("fitz")
+    from khervebook.importers import pdf_to_cells
+    pdf = tmp_path / "doc.pdf"
+    make_pdf(pdf, pages=2)
+    cells = pdf_to_cells(str(pdf))
+    assert len(cells) == 2
+    assert all(c["type"] == "svg" for c in cells)
+    assert all("base64" in c["source"] for c in cells)
+
+
+def test_drop_pdf_makes_svg_cells(qapp, tmp_path):
+    pytest.importorskip("fitz")
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    pdf = tmp_path / "doc.pdf"
+    make_pdf(pdf, pages=2)
+    assert nb.open_file_in_cell(str(pdf))
+    svg_cells = [c for c in nb.cells if c.CELL_TYPE == "svg"]
+    assert len(svg_cells) == 2
+    assert svg_cells[-1].view.isVisibleTo(nb)           # rendered on drop

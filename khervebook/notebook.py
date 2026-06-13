@@ -35,6 +35,7 @@ DROP_TYPES = {
     ".svg": "svg",                        # KhervePaint / any SVG drawing
     ".png": "image", ".jpg": "image", ".jpeg": "image",
     ".gif": "image", ".bmp": "image",
+    ".pdf": "pdf",                        # rendered page-by-page to SVG
     ".kbook": "kbook",
     ".ksheet": "ksheet",                  # KherveSheet workbook
     ".kdocz": "kdoc",                     # kherveDOC document -> markdown
@@ -390,7 +391,7 @@ class NotebookWidget(QScrollArea):
         if kind == "kbook":
             self.open_kbook_requested.emit(str(p))
             return True
-        if kind in ("ksheet", "kdoc", "ktex", "ipynb"):
+        if kind in ("ksheet", "kdoc", "ktex", "ipynb", "image", "pdf"):
             try:
                 if kind == "ipynb":
                     from . import ipynb
@@ -399,7 +400,9 @@ class NotebookWidget(QScrollArea):
                 else:
                     importer = {"ksheet": importers.ksheet_to_cells,
                                 "kdoc": importers.kdoc_to_cells,
-                                "ktex": importers.ktex_to_cells}[kind]
+                                "ktex": importers.ktex_to_cells,
+                                "image": importers.image_to_cells,
+                                "pdf": importers.pdf_to_cells}[kind]
                     items = importer(str(p))
             except Exception:
                 return False
@@ -409,19 +412,16 @@ class NotebookWidget(QScrollArea):
                 self._set_current(cell)
             for item in items:
                 new = self.add_cell_below(item["type"], item["source"])
-                if item["type"] in ("markdown", "latex"):
+                if item["type"] in ("markdown", "latex", "svg"):
                     new.execute(self.kernel)
             self.modified.emit()
             return True
-        if kind == "image":
-            kind, source = "markdown", f"![{p.name}]({p.as_uri()})"
-        else:
-            try:
-                if p.stat().st_size > _MAX_DROP_BYTES:
-                    return False
-                source = p.read_text(encoding="utf-8", errors="replace")
-            except OSError:
+        try:
+            if p.stat().st_size > _MAX_DROP_BYTES:
                 return False
+            source = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return False
 
         if cell is None:
             cell = self.add_cell_below(kind, source)

@@ -157,6 +157,53 @@ def ksheet_to_cells(path: str) -> list:
     return cells
 
 
+# -- images and PDFs -> SVG cells (self-contained) ----------------------
+
+_IMAGE_MIME = {".png": "image/png", ".jpg": "image/jpeg",
+               ".jpeg": "image/jpeg", ".gif": "image/gif",
+               ".bmp": "image/bmp"}
+
+
+def image_to_svg(data: bytes, mime: str = "image/png",
+                 w: int = 0, h: int = 0) -> str:
+    """Wrap raster image *data* in an SVG with the bytes embedded, so it
+    renders in an SVG cell and travels inside the .kbook."""
+    if not w or not h:
+        from PyQt5.QtGui import QImage
+        img = QImage()
+        img.loadFromData(data)
+        w, h = img.width() or 400, img.height() or 300
+    b64 = base64.b64encode(data).decode("ascii")
+    return ('<svg xmlns="http://www.w3.org/2000/svg" '
+            'xmlns:xlink="http://www.w3.org/1999/xlink" '
+            f'width="{w}" height="{h}" viewBox="0 0 {w} {h}">'
+            f'<image width="{w}" height="{h}" '
+            f'xlink:href="data:{mime};base64,{b64}"/></svg>')
+
+
+def image_to_cells(path: str) -> list:
+    """An image file as one self-contained SVG cell."""
+    p = Path(path)
+    mime = _IMAGE_MIME.get(p.suffix.lower(), "image/png")
+    return [{"type": "svg", "source": image_to_svg(p.read_bytes(), mime)}]
+
+
+def pdf_to_cells(path: str, dpi: int = 150) -> list:
+    """A PDF as one SVG cell per page (rendered with PyMuPDF)."""
+    from . import latexcompile
+    fitz = latexcompile._pymupdf()
+    cells = []
+    with fitz.open(path) as pdf:
+        matrix = fitz.Matrix(dpi / 72.0, dpi / 72.0)
+        for page in pdf:
+            pix = page.get_pixmap(matrix=matrix, alpha=False)
+            png = pix.tobytes("png")
+            cells.append({"type": "svg",
+                          "source": image_to_svg(png, "image/png",
+                                                 pix.width, pix.height)})
+    return cells
+
+
 # -- KherveTeX (.ktex / .ktexz) -> a LaTeX cell -------------------------
 
 def is_ktex(path: str) -> bool:

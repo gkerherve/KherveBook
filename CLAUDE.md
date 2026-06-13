@@ -53,7 +53,10 @@ into a new module and import.
                        fenced-block replies inserted as cells.
   - `examples.py`    — Examples menu registry (name, category, builder),
                        like KherveSheet's.
-  - `importers.py`   — .ksheet (HDF5) and .kdocz/.kdoc.json importers.
+  - `importers.py`   — .ksheet (HDF5), .kdocz/.kdoc.json, .ktex and
+                       image/PDF importers. PNG/JPG and each PDF page
+                       become a self-contained SVG cell (bytes embedded
+                       base64), so they fit-to-width and travel in .kbook.
   - `ipynb.py`       — Jupyter/Colab .ipynb import & export (lossless
                        round-trip via cell metadata).
   - `notebook.py`    — `NotebookWidget`: scrollable cell column, shared

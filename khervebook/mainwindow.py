@@ -107,6 +107,8 @@ class MainWindow(QMainWindow):
         f.addAction(self._act("&Save", "Ctrl+S", self.save_file))
         f.addAction(self._act("Save &As...", "Ctrl+Shift+S", self.save_as))
         f.addSeparator()
+        f.addAction(self._act("Insert &Image / PDF...", None,
+                              self.insert_image_or_pdf))
         f.addAction(self._act("&Import Jupyter/Colab (.ipynb)...", None,
                               self.import_ipynb))
         f.addAction(self._act("E&xport as Jupyter/Colab (.ipynb)...", None,
@@ -396,6 +398,18 @@ class MainWindow(QMainWindow):
                                  f"Could not export notebook:\n{exc}")
             return
         self.explorer.show_file(name)
+
+    IMAGE_FILTER = ("Images and PDF (*.png *.jpg *.jpeg *.gif *.bmp *.pdf);;"
+                    "All files (*)")
+
+    def insert_image_or_pdf(self):
+        name, _ = QFileDialog.getOpenFileName(
+            self, "Insert image or PDF", "", self.IMAGE_FILTER)
+        if not name:
+            return
+        if not self.notebook.open_file_in_cell(name):
+            QMessageBox.critical(self, APP_NAME,
+                                 f"Could not insert:\n{Path(name).name}")
 
     def closeEvent(self, event):
         if self._confirm_discard():

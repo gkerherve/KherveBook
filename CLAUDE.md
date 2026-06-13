@@ -54,8 +54,10 @@ into a new module and import.
                        JSON (de)serialisation.
   - `cells.py`       — `CellWidget` base (gutter run button) +
                        `CodeCell`, `MarkdownCell`, `LatexCell`.
-  - `sheetcell.py`   — `SheetCell`: spreadsheet grid, `=` formulas in
-                       Python with A1 refs over the kernel namespace.
+  - `sheetcell.py`   — `SheetCell`: embedded workbook (many sheets +
+                       plots, one view at a time via a left drop-down);
+                       `=` formulas in Python with A1 refs/ranges over
+                       the kernel namespace, recomputed live as you type.
   - `kernel.py`      — in-process Python kernel: shared namespace
                        (np/plt/pd/scipy preloaded), timeout guard,
                        stdout/stderr capture, trailing-expression echo,
@@ -66,13 +68,17 @@ into a new module and import.
 
 ## Document format
 
-`.kbook` is JSON: `{"format": "kbook", "version": 1, "cells":
-[{"type": "code"|"markdown"|"latex"|"sheet", "source": "..."}]}`.
-A sheet cell's `source` is itself JSON: `{"rows", "cols", "data":
-{"A1": "raw text or =formula"}}`. When a cell
-gains new persisted properties, bump `FORMAT_VERSION` in `notebook.py`
-and keep `load_json` backward compatible. Importing/exporting `.ipynb`
-is on the roadmap.
+`.kbook` is JSON: `{"format": "kbook", "version": 3, "cells":
+[{"type": "code"|"markdown"|"latex"|"sheet", "source": "...",
+optional "title", "collapsed", "column"}]}`. The optional per-cell
+keys: `title` (heading shown at the top), `collapsed` (minimised to
+its title/summary), `column` (sits beside the previous cell in the
+same row). A sheet cell's `source` is itself JSON: `{"sheets":
+[{"name", "rows", "cols", "data": {"A1": "raw text or =formula"}}],
+"active": "<sheet name>"}` (the legacy single-grid `{"rows","cols",
+"data"}` still loads). When a cell gains new persisted properties,
+bump `FORMAT_VERSION` in `notebook.py` and keep `load_json` backward
+compatible. Importing/exporting `.ipynb` is on the roadmap.
 
 ## UI conventions
 

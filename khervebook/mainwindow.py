@@ -249,6 +249,14 @@ class MainWindow(QMainWindow):
                                "mdi.fast-forward",
                                "Restart and run every cell"))
         tb.addSeparator()
+        # Reuse the View-menu action so the button and menu item share
+        # state; set its icon here so it recolours on a theme rebuild.
+        self.page_mode_act.setIcon(icon("mdi.view-day"))
+        self.page_mode_act.setToolTip(
+            "Page Mode: one continuous white page, cell borders hidden "
+            "(Ctrl+Shift+P)")
+        tb.addAction(self.page_mode_act)
+        tb.addSeparator()
 
         self.cell_type_combo = QComboBox()
         for label, _key in self.CELL_TYPES:

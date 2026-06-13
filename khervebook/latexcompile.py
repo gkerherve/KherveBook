@@ -72,6 +72,22 @@ _PREAMBLE_CMDS = (
 )
 
 
+def _strip_comment(line: str) -> str:
+    """Drop a LaTeX comment (text after an unescaped %) from *line*."""
+    out = []
+    for i, ch in enumerate(line):
+        if ch == "%" and (i == 0 or line[i - 1] != "\\"):
+            break
+        out.append(ch)
+    return "".join(out)
+
+
+def _has_uncommented(source: str, needle: str) -> bool:
+    """True if *needle* appears outside any LaTeX comment."""
+    return any(needle in _strip_comment(line)
+               for line in source.splitlines())
+
+
 def wrap_document(source: str) -> str:
     """Make *source* a compilable document.
 
@@ -80,15 +96,18 @@ def wrap_document(source: str) -> str:
       KherveTeX often pastes): insert \\begin/\\end{document} after the
       preamble.
     - a bare fragment: wrap in a minimal article preamble.
+
+    Commented-out \\documentclass / \\begin{document} (e.g. a whole
+    preamble disabled with %) are ignored, so the body still compiles.
     """
-    if "\\begin{document}" in source:
+    if _has_uncommented(source, "\\begin{document}"):
         return source
-    if "\\documentclass" in source:
+    if _has_uncommented(source, "\\documentclass"):
         lines = source.split("\n")
         preamble_end = 0
         for i, line in enumerate(lines):
-            s = line.strip()
-            if not s or s.startswith("%") or s.startswith(_PREAMBLE_CMDS):
+            s = _strip_comment(line).strip()
+            if not s or s.startswith(_PREAMBLE_CMDS):
                 preamble_end = i + 1
             else:
                 break
@@ -110,13 +129,12 @@ def _pymupdf():
 def _no_page_numbers(tex: str) -> str:
     """Suppress the page number for the preview, so cropping to content
     isn't anchored to the footer (notebook cells don't need page nums)."""
-    marker = r"\begin{document}"
-    idx = tex.find(marker)
-    if idx == -1:
-        return tex
-    at = idx + len(marker)
-    return (tex[:at] + "\n\\thispagestyle{empty}\\pagestyle{empty}\n"
-            + tex[at:])
+    lines = tex.split("\n")
+    for i, line in enumerate(lines):
+        if "\\begin{document}" in _strip_comment(line):
+            lines.insert(i + 1, "\\thispagestyle{empty}\\pagestyle{empty}")
+            return "\n".join(lines)
+    return tex
 
 
 def _content_clip(page, fitz):

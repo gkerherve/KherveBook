@@ -48,6 +48,24 @@ def test_wrap_document_wraps_fragment():
     assert "\\documentclass" in out and "E = mc^2" in out
 
 
+def test_wrap_document_ignores_commented_structure():
+    # Whole preamble (incl. \begin{document}) commented out with %.
+    src = ("% \\documentclass{article}\n"
+           "% \\begin{document}\n"
+           "\\section{Hi}\nSome body text.")
+    out = latexcompile.wrap_document(src)
+    # A real (uncommented) document env is added around the body.
+    assert any(ln.strip().startswith("\\begin{document}")
+               for ln in out.splitlines())
+    assert "\\end{document}" in out
+
+
+def test_strip_comment_respects_escaped_percent():
+    assert latexcompile._strip_comment(r"50\% done % note") == r"50\% done "
+    assert not latexcompile._has_uncommented(r"% \begin{document}",
+                                             "\\begin{document}")
+
+
 @pytest.mark.skipif(not latexcompile.available(),
                     reason="tectonic / PyMuPDF not installed")
 def test_compile_real_document():

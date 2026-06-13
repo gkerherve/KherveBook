@@ -15,8 +15,8 @@ import json
 from pathlib import Path
 
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
-from PyQt5.QtWidgets import (QInputDialog, QMenu, QScrollArea, QVBoxLayout,
-                             QWidget)
+from PyQt5.QtWidgets import (QHBoxLayout, QInputDialog, QMenu, QScrollArea,
+                             QVBoxLayout, QWidget)
 
 from .cells import CodeCell, make_cell
 from .kernel import Kernel
@@ -58,6 +58,8 @@ class NotebookWidget(QScrollArea):
         self._layout.setSpacing(6)
         self.setWidget(self._container)
         self.cells = []
+        self._rows = []                     # row container widgets
+        self._suspend_layout = False
         self.current = None
         self._clipboard = None              # dict from a cut/copied cell
         self._loop_cell = None              # cell being run continuously
@@ -79,17 +81,55 @@ class NotebookWidget(QScrollArea):
         if index is None:
             index = len(self.cells)
         self.cells.insert(index, cell)
-        self._layout.insertWidget(index, cell)
+        self._relayout()
         self.modified.emit()
         return cell
+
+    def _relayout(self):
+        """Rebuild the layout, grouping consecutive 'column' cells into
+        one horizontal row. self.cells stays the flat document order."""
+        if self._suspend_layout:
+            return
+        self._container.setUpdatesEnabled(False)
+        for cell in self.cells:             # detach so row deletes are safe
+            cell.setParent(None)
+        for row in self._rows:
+            self._layout.removeWidget(row)
+            row.deleteLater()
+        self._rows = []
+        i, n = 0, len(self.cells)
+        while i < n:
+            group = [self.cells[i]]
+            j = i + 1
+            while j < n and self.cells[j].beside_previous:
+                group.append(self.cells[j])
+                j += 1
+            row = QWidget()
+            hbox = QHBoxLayout(row)
+            hbox.setContentsMargins(0, 0, 0, 0)
+            hbox.setSpacing(6)
+            for c in group:
+                hbox.addWidget(c, 1)
+            self._layout.addWidget(row)
+            self._rows.append(row)
+            i = j
+        self._container.setUpdatesEnabled(True)
+
+    def set_cell_column(self, cell, on: bool):
+        """Place *cell* beside the previous one (same row), or on its own."""
+        if on and self.cells.index(cell) == 0:
+            return                          # the first cell starts a row
+        cell.set_beside_previous(on)
+        self._relayout()
+        self.modified.emit()
 
     def remove_current(self):
         if self.current is None or len(self.cells) <= 1:
             return
         idx = self.cells.index(self.current)
-        cell = self.cells.pop(idx)
-        cell.deleteLater()
+        self.cells.pop(idx)
         self.current = None
+        self._relayout()                    # deletes the removed cell's row
         self._set_current(self.cells[min(idx, len(self.cells) - 1)])
         self.current.editor.setFocus()
         self.modified.emit()
@@ -102,7 +142,7 @@ class NotebookWidget(QScrollArea):
         if not 0 <= new < len(self.cells):
             return
         self.cells.insert(new, self.cells.pop(idx))
-        self._layout.insertWidget(new, self.current)
+        self._relayout()
         self.modified.emit()
 
     def _set_current(self, cell):
@@ -153,9 +193,13 @@ class NotebookWidget(QScrollArea):
             return
         idx = self.cells.index(cell)
         source = cell.source()
+        col, title = cell.beside_previous, cell.title
         self.cells.pop(idx)
         cell.deleteLater()
         new = self.add_cell(cell_type, source, idx)
+        new.set_beside_previous(col)        # keep its place in the row
+        new.set_title(title)
+        self._relayout()
         self.current = None
         self._set_current(new)
         new.editor.setFocus()
@@ -237,6 +281,13 @@ class NotebookWidget(QScrollArea):
         menu.addSeparator()
         menu.addAction("Move Up", lambda: self.move_current(-1))
         menu.addAction("Move Down", lambda: self.move_current(1))
+        idx = self.cells.index(cell)
+        if cell.beside_previous:
+            menu.addAction("Move to Own Row",
+                           lambda: self.set_cell_column(cell, False))
+        elif idx > 0:
+            menu.addAction("Place Beside Cell Above",
+                           lambda: self.set_cell_column(cell, True))
         menu.addSeparator()
         menu.addAction("Delete Cell", self.remove_current)
         menu.exec_(global_pos)
@@ -355,6 +406,7 @@ class NotebookWidget(QScrollArea):
     def load_json(self, text: str):
         self.stop_loop()
         doc = json.loads(text)
+        self._suspend_layout = True         # one relayout at the end
         for cell in self.cells:
             cell.deleteLater()
         self.cells = []
@@ -367,3 +419,7 @@ class NotebookWidget(QScrollArea):
                 cell.set_title(item["title"])
             if item.get("collapsed"):
                 cell.set_collapsed(True)
+            if item.get("column"):
+                cell.set_beside_previous(True)
+        self._suspend_layout = False
+        self._relayout()

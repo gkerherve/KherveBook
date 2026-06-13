@@ -188,6 +188,7 @@ class CellWidget(QFrame):
         # Content: optional title, a one-line summary (collapsed), body.
         self._collapsed = False
         self._title = ""
+        self._column = False        # True: sit beside the previous cell
         content = QVBoxLayout()
         content.setSpacing(0)
         self.title_label = QLabel("")
@@ -259,6 +260,15 @@ class CellWidget(QFrame):
         if self._collapsed:                 # refresh summary visibility
             self.set_collapsed(True)
 
+    # -- row layout --------------------------------------------------------
+    @property
+    def beside_previous(self) -> bool:
+        """True when this cell shares a row with the cell before it."""
+        return self._column
+
+    def set_beside_previous(self, on: bool):
+        self._column = bool(on)
+
     # -- file drops (from the explorer or the OS) ------------------------
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -298,6 +308,8 @@ class CellWidget(QFrame):
             d["title"] = self._title
         if self._collapsed:
             d["collapsed"] = True
+        if self._column:
+            d["column"] = True
         return d
 
 

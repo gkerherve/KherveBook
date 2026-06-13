@@ -66,6 +66,32 @@ def test_loop_stops_when_cell_removed(qapp):
     assert not nb.looping
 
 
+def test_cells_in_a_row(qapp):
+    """Two cells can share a row; structure round-trips."""
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    nb.cells[0].set_source("x = 1")
+    latex = nb.add_cell_below("latex", "E = mc^2")
+    md = nb.add_cell_below("markdown", "# notes")
+    # Put the latex cell beside the code cell (one row of two).
+    nb.set_cell_column(latex, True)
+    assert latex.beside_previous and not md.beside_previous
+    # The code+latex cells now live in one row widget, markdown in another.
+    assert len(nb._rows) == 2
+    assert nb._rows[0].layout().count() == 2     # code | latex
+    assert nb._rows[1].layout().count() == 1     # markdown
+    # First cell can never join a previous row.
+    nb.set_cell_column(nb.cells[0], True)
+    assert not nb.cells[0].beside_previous
+    # Round-trips.
+    nb2 = NotebookWidget()
+    nb2.load_json(nb.to_json())
+    assert nb2.cells[1].beside_previous and len(nb2._rows) == 2
+    # Splitting back to its own row.
+    nb2.set_cell_column(nb2.cells[1], False)
+    assert len(nb2._rows) == 3
+
+
 def test_cell_title_and_round_trip(qapp):
     from khervebook.notebook import NotebookWidget
     nb = NotebookWidget()

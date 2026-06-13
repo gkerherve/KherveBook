@@ -108,7 +108,7 @@ QComboBox QAbstractItemView {{ background: {t['card']};
     selection-background-color: {t['hover']};
     selection-color: {t['text']}; }}
 
-QScrollArea {{ border: none; background: {t['window']}; }}
+QScrollArea#notebook_scroll {{ border: none; background: {t['window']}; }}
 QScrollBar:vertical {{ background: transparent; width: 11px; margin: 2px; }}
 QScrollBar::handle:vertical {{ background: {t['border']};
     border-radius: 4px; min-height: 30px; }}

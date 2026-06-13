@@ -50,6 +50,7 @@ class NotebookWidget(QScrollArea):
     def __init__(self):
         super().__init__()
         self.kernel = Kernel()
+        self.setObjectName("notebook_scroll")   # the grey-bg scroll area
         self.setAcceptDrops(True)
         self.setWidgetResizable(True)
         self._container = QWidget()

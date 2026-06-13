@@ -28,7 +28,8 @@ def _text(value) -> str:
 # -- KherveSheet (.ksheet — HDF5) ---------------------------------------
 
 def ksheet_to_cells(path: str) -> list:
-    """One sheet cell per workbook sheet, trimmed to its used range.
+    """The whole workbook as ONE multi-sheet cell, each sheet trimmed
+    to its used range — switch between them with the cell's View menu.
 
     Values and formula texts import as-is. KherveSheet's Excel-style
     formulas (=SUM(A:A)) and =PY cells keep their raw text — they
@@ -36,7 +37,7 @@ def ksheet_to_cells(path: str) -> list:
     """
     import h5py     # optional dependency; ImportError -> not recognised
 
-    cells = []
+    sheets = []
     with h5py.File(path, "r") as f:
         if _text(f.attrs.get("format", "")) != "ksheet":
             raise ValueError("not a .ksheet file")
@@ -54,15 +55,15 @@ def ksheet_to_cells(path: str) -> list:
                 r, c = divmod(idx, cols)
                 data[f"{col_letter(c)}{r + 1}"] = value
                 max_r, max_c = max(max_r, r), max(max_c, c)
-            name = _text(sg.attrs.get("name", f"sheet {si + 1}"))
-            if count > 1:
-                cells.append({"type": "markdown",
-                              "source": f"**{name}**"})
-            cells.append({"type": "sheet", "source": json.dumps({
-                "rows": max(max_r + 1, DEFAULT_ROWS),
-                "cols": max(max_c + 1, DEFAULT_COLS),
-                "data": data})})
-    return cells
+            name = _text(sg.attrs.get("name", f"Sheet {si + 1}"))
+            sheets.append({"name": name,
+                           "rows": max(max_r + 1, DEFAULT_ROWS),
+                           "cols": max(max_c + 1, DEFAULT_COLS),
+                           "data": data})
+    if not sheets:
+        return []
+    return [{"type": "sheet", "source": json.dumps(
+        {"sheets": sheets, "active": sheets[0]["name"]})}]
 
 
 # -- kherveDOC (.kdocz zip / .kdoc.json) --------------------------------

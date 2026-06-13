@@ -136,6 +136,7 @@ class CellWidget(QFrame):
     stop_clicked = pyqtSignal(object)    # self — stop continuous run
     menu_requested = pyqtSignal(object, object)   # self, global pos
     file_dropped = pyqtSignal(str, object)        # path, self
+    content_changed = pyqtSignal()       # edited (non-editor cells)
     focused = pyqtSignal(object)         # self
 
     def __init__(self, source=""):

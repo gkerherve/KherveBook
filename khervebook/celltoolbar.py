@@ -285,6 +285,10 @@ class CellToolBar(QToolBar):
         self._add("Delete column", "Delete the selected column",
                   lambda: self._sheet_op("del_col"),
                   "mdi.table-column-remove")
+        self.addSeparator()
+        self._add("Add sheet", "Add another sheet to this workbook cell",
+                  lambda: self._sheet_op("add_sheet"),
+                  "mdi.table-plus")
 
     # -- LaTeX mode -----------------------------------------------------------
     def _build_latex(self):

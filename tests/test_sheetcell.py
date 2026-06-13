@@ -113,13 +113,13 @@ def test_auto_recalc_on_edit(qapp):
     assert sheet.table.item(0, 1).text() == "50"
 
 
-def test_formula_plot_displays_below_grid(qapp):
+def test_formula_plot_becomes_view(qapp):
     from khervebook.kernel import Kernel
     sheet = make_sheet(qapp, {"A1": "=plt.plot([1, 2, 3]) and plt.gcf()"})
     sheet.execute(Kernel())
     assert sheet.table.item(0, 0).text() == "[plot]"
-    assert len(sheet._figure_labels) == 1
-    assert not sheet._figure_labels[0].pixmap().isNull()
+    assert len(sheet._plot_labels) == 1
+    assert not sheet._plot_labels[0].pixmap().isNull()
     # The raw formula is still there for editing.
     assert sheet._raw(0, 0).startswith("=plt.plot")
 
@@ -134,8 +134,45 @@ def test_formula_error_shown(qapp):
 def test_source_round_trip(qapp):
     sheet = make_sheet(qapp, {"A1": "x", "B2": "=A1"})
     doc = json.loads(sheet.source())
-    assert doc["data"] == {"A1": "x", "B2": "=A1"}
-    assert doc["rows"] == 4 and doc["cols"] == 3
+    assert len(doc["sheets"]) == 1
+    sheet0 = doc["sheets"][0]
+    assert sheet0["data"] == {"A1": "x", "B2": "=A1"}
+    assert sheet0["rows"] == 4 and sheet0["cols"] == 3
+
+
+def test_multi_sheet_views_and_round_trip(qapp):
+    import json as _json
+    from khervebook.sheetcell import SheetCell
+    src = _json.dumps({"sheets": [
+        {"name": "Alpha", "rows": 3, "cols": 2, "data": {"A1": "1"}},
+        {"name": "Beta", "rows": 3, "cols": 2, "data": {"A1": "2"}}],
+        "active": "Beta"})
+    cell = SheetCell(src)
+    assert cell.view_titles() == ["Alpha", "Beta"]
+    assert cell.current_view_index() == 1          # active = Beta
+    assert cell._raw(0, 0) == "2"                   # Beta is the active grid
+    cell.set_view_index(0)
+    assert cell._raw(0, 0) == "1"                   # now Alpha
+    # Two sheets publish as two grids.
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    nb.add_cell("sheet", src)
+    nb.cells[-1].execute(nb.kernel)
+    assert nb.kernel.namespace["sheet1"][0][0] == 1
+    assert nb.kernel.namespace["sheet2"][0][0] == 2
+    # Round-trips both sheets.
+    doc = _json.loads(cell.source())
+    assert [s["name"] for s in doc["sheets"]] == ["Alpha", "Beta"]
+
+
+def test_plot_becomes_a_view(qapp):
+    from khervebook.kernel import Kernel
+    sheet = make_sheet(qapp, {"A1": "=plt.plot([1, 2, 3]) and plt.gcf()"})
+    sheet.execute(Kernel())
+    titles = sheet.view_titles()
+    assert "Plot 1" in titles                       # plot is a selectable view
+    sheet.set_view_index(titles.index("Plot 1"))
+    assert sheet.table is None                       # plot view, no grid
 
 
 def test_convert_text_to_sheet(qapp):

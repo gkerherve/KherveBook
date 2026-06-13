@@ -75,8 +75,7 @@ class NotebookWidget(QScrollArea):
         cell.file_dropped.connect(self.open_file_in_cell)
         cell.focused.connect(self._set_current)
         cell.editor.textChanged.connect(self.modified.emit)
-        if hasattr(cell, "table"):
-            cell.table.itemChanged.connect(lambda *_: self.modified.emit())
+        cell.content_changed.connect(self.modified.emit)
         if index is None:
             index = len(self.cells)
         self.cells.insert(index, cell)
@@ -215,6 +214,16 @@ class NotebookWidget(QScrollArea):
                        lambda: cell.set_collapsed(not cell.collapsed))
         menu.addAction("Edit Title…" if cell.title else "Set Title…",
                        lambda: self._set_cell_title(cell))
+        if isinstance(cell, sheetcell.SheetCell):
+            view_menu = menu.addMenu("View")
+            for k, title in enumerate(cell.view_titles()):
+                act = view_menu.addAction(title)
+                act.setCheckable(True)
+                act.setChecked(k == cell.current_view_index())
+                act.triggered.connect(
+                    lambda _=False, i=k: cell.set_view_index(i))
+            view_menu.addSeparator()
+            view_menu.addAction("Add Sheet", cell.add_sheet)
         menu.addSeparator()
         menu.addAction("Cut Cell", self.cut_current)
         menu.addAction("Copy Cell", self.copy_current)

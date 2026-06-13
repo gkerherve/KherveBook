@@ -39,24 +39,25 @@ def test_ksheet_import(tmp_path):
                         {(0, 0): "x", (0, 1): "y",
                          (1, 0): "1", (1, 1): "=A2*2"})])
     cells = ksheet_to_cells(str(path))
-    assert len(cells) == 1                  # single sheet -> no header
+    assert len(cells) == 1                  # whole workbook = one cell
     assert cells[0]["type"] == "sheet"
     doc = json.loads(cells[0]["source"])
-    assert doc["data"]["A1"] == "x"
-    assert doc["data"]["B2"] == "=A2*2"     # formula text preserved
-    assert doc["rows"] == 6                 # trimmed to used range
+    sheet0 = doc["sheets"][0]
+    assert sheet0["name"] == "Data"
+    assert sheet0["data"]["A1"] == "x"
+    assert sheet0["data"]["B2"] == "=A2*2"  # formula text preserved
+    assert sheet0["rows"] == 6              # trimmed to used range
 
 
-def test_ksheet_multi_sheet_names(tmp_path):
+def test_ksheet_multi_sheet_single_cell(tmp_path):
     from khervebook.importers import ksheet_to_cells
     path = tmp_path / "book.ksheet"
     make_ksheet(path, [("Alpha", 5, 3, {(0, 0): "1"}),
                        ("Beta", 5, 3, {(0, 0): "2"})])
     cells = ksheet_to_cells(str(path))
-    types = [c["type"] for c in cells]
-    assert types == ["markdown", "sheet", "markdown", "sheet"]
-    assert "Alpha" in cells[0]["source"]
-    assert "Beta" in cells[2]["source"]
+    assert len(cells) == 1                  # both sheets in ONE cell
+    doc = json.loads(cells[0]["source"])
+    assert [s["name"] for s in doc["sheets"]] == ["Alpha", "Beta"]
 
 
 KDOC = {

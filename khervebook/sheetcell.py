@@ -1,14 +1,14 @@
-"""Sheet cell — a KherveSheet-style spreadsheet grid inside a notebook.
+"""Sheet cell — an embedded KherveSheet workbook inside a notebook.
 
-A fourth cell type next to code/markdown/latex: an editable grid
-whose cells may hold values or ``=`` formulas. Formulas use Python
-syntax, can reference grid cells A1-style and see the notebook
-kernel's namespace, so ``=np.pi * A2**2`` works — including
-variables defined in code cells. Running the cell (gutter button /
-Shift+Enter) recomputes all formulas, mirroring how markdown and
-latex cells render on run.
+One sheet cell holds a whole workbook: several named sheets plus any
+plots their formulas produce. Only one view is shown at a time; pick
+it from the drop-down on the left or the right-click "View" menu.
+Each grid cell may hold a value or an ``=`` formula in Python syntax,
+with A1 references, A1:B5 ranges and full access to the notebook
+kernel's namespace, so ``=np.pi * A2**2`` works — including variables
+from code cells. Formulas recompute automatically as you type.
 
-Adapted from KherveSheet's python_engine, scaled down to one grid.
+Adapted from KherveSheet's python_engine.
 
 Copyright (C) 2026 Gwilherm Kerherve
 
@@ -23,9 +23,9 @@ import re
 
 from PyQt5.QtCore import QEvent, Qt, QTimer
 from PyQt5.QtGui import QPixmap
-from PyQt5.QtWidgets import (QHBoxLayout, QLabel, QLineEdit, QSizePolicy,
-                             QStyledItemDelegate, QTableWidget,
-                             QTableWidgetItem)
+from PyQt5.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QLineEdit,
+                             QSizePolicy, QStackedWidget, QStyledItemDelegate,
+                             QTableWidget, QTableWidgetItem, QWidget)
 
 from .cells import MONO, CELL_CLASSES, CellWidget
 from .kernel import Kernel
@@ -83,7 +83,7 @@ class _RawDelegate(QStyledItemDelegate):
 
 
 class SheetCell(CellWidget):
-    """Spreadsheet cell: values and =formulas over the shared kernel."""
+    """Embedded workbook: many sheets + plots, one view shown at a time."""
 
     CELL_TYPE = "sheet"
 
@@ -92,8 +92,28 @@ class SheetCell(CellWidget):
         self.gutter.setText("sheet")
         self.editor.hide()
 
-        # Formula bar: selected ref + raw content, like KherveSheet.
-        bar = QHBoxLayout()
+        self._tables = []           # one QTableWidget per sheet
+        self._names = []            # parallel sheet names
+        self._plot_labels = []      # QLabel per plot view
+        self._views = []            # [("sheet", i) | ("plot", j), ...]
+        self._values = []           # last computed values, per table
+        self.table = None           # active grid (None on a plot view)
+
+        # Header: the view selector drop-down, on the left.
+        header = QHBoxLayout()
+        header.addWidget(QLabel("View:"))
+        self.view_combo = QComboBox()
+        self.view_combo.setToolTip("Choose which sheet or plot to show")
+        self.view_combo.setMinimumWidth(150)
+        self.view_combo.currentIndexChanged.connect(self._on_view_changed)
+        header.addWidget(self.view_combo)
+        header.addStretch(1)
+        self.column.addLayout(header)
+
+        # Formula bar (hidden on plot views).
+        self._formula_widget = QWidget()
+        bar = QHBoxLayout(self._formula_widget)
+        bar.setContentsMargins(0, 0, 0, 0)
         self.ref_label = QLabel("A1")
         self.ref_label.setFont(MONO)
         self.ref_label.setFixedWidth(40)
@@ -104,31 +124,41 @@ class SheetCell(CellWidget):
             "value or =formula  (Python; A1 refs, A1:B5 ranges)")
         self.formula_edit.returnPressed.connect(self._commit_formula)
         bar.addWidget(self.formula_edit)
-        self.column.addLayout(bar)
+        self.column.addWidget(self._formula_widget)
 
-        self.table = QTableWidget(DEFAULT_ROWS, DEFAULT_COLS)
-        self.table.setItemDelegate(_RawDelegate(self.table))
-        self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.table.itemChanged.connect(lambda _item: self.focused.emit(self))
-        self.table.currentCellChanged.connect(self._sync_formula_bar)
-        self.table.installEventFilter(self)
-        self.column.addWidget(self.table)
-        self._figure_labels = []        # plots produced by formulas
-        self._refresh_headers()
-        self._fit_height()
+        self.stack = QStackedWidget()
+        self.stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.column.addWidget(self.stack)
 
-        # Excel-like behaviour: recompute shortly after any edit.
+        # Recompute shortly after any edit (Excel-like live formulas).
         self._recalc_timer = QTimer(self)
         self._recalc_timer.setSingleShot(True)
         self._recalc_timer.setInterval(300)
         self._recalc_timer.timeout.connect(self.recalculate)
-        self.table.itemChanged.connect(
-            lambda _item: self._recalc_timer.start())
         self._computed_once = False
 
-        if source:
-            self.set_source(source)
+        self.set_source(source)
 
+    # -- table factory -----------------------------------------------------
+    def _make_table(self) -> QTableWidget:
+        table = QTableWidget(DEFAULT_ROWS, DEFAULT_COLS)
+        table.setItemDelegate(_RawDelegate(table))
+        table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        table.itemChanged.connect(self._on_item_changed)
+        table.currentCellChanged.connect(self._sync_formula_bar)
+        table.setContextMenuPolicy(Qt.CustomContextMenu)
+        table.customContextMenuRequested.connect(
+            lambda pos, t=table: self.menu_requested.emit(
+                self, t.viewport().mapToGlobal(pos)))
+        table.installEventFilter(self)
+        return table
+
+    def _on_item_changed(self, _item):
+        self.focused.emit(self)
+        self.content_changed.emit()
+        self._recalc_timer.start()
+
+    # -- compute lifecycle -------------------------------------------------
     def _notebook(self):
         w = self.parent()
         while w is not None and not hasattr(w, "kernel"):
@@ -136,38 +166,45 @@ class SheetCell(CellWidget):
         return w
 
     def recalculate(self):
-        """Recompute against the owning notebook's kernel, if any."""
         nb = self._notebook()
         if nb is not None:
             self.execute(nb.kernel)
 
     def showEvent(self, event):
         super().showEvent(event)
-        # Loaded notebooks show computed values without a manual run.
         if not self._computed_once:
             self._recalc_timer.start()
 
     # -- CellWidget API ----------------------------------------------------
     def source(self) -> str:
-        data = {}
-        for r in range(self.table.rowCount()):
-            for c in range(self.table.columnCount()):
-                raw = self._raw(r, c)
-                if raw:
-                    data[f"{col_letter(c)}{r + 1}"] = raw
-        return json.dumps({"rows": self.table.rowCount(),
-                           "cols": self.table.columnCount(),
-                           "data": data})
+        sheets = []
+        for name, table in zip(self._names, self._tables):
+            data = {}
+            for r in range(table.rowCount()):
+                for c in range(table.columnCount()):
+                    raw = self._raw_of(table, r, c)
+                    if raw:
+                        data[f"{col_letter(c)}{r + 1}"] = raw
+            sheets.append({"name": name, "rows": table.rowCount(),
+                           "cols": table.columnCount(), "data": data})
+        active = self._names[self._active_sheet()] if self._names else ""
+        return json.dumps({"sheets": sheets, "active": active})
 
     def set_source(self, text: str):
+        # Parse into a list of sheet models.
+        models = []
         try:
             doc = json.loads(text)
-            rows = int(doc.get("rows", DEFAULT_ROWS))
-            cols = int(doc.get("cols", DEFAULT_COLS))
-            data = doc.get("data", {})
+            if isinstance(doc, dict) and "sheets" in doc:
+                models = doc["sheets"]
+                active_name = doc.get("active", "")
+            elif isinstance(doc, dict) and "data" in doc:   # legacy single
+                models = [{"name": "Sheet1", **doc}]
+                active_name = "Sheet1"
+            else:
+                raise ValueError
         except Exception:
-            # Converting a text cell: import lines as rows, tabs/commas
-            # as columns.
+            # Plain text / CSV: lines as rows, tabs/commas as columns.
             lines = [ln for ln in text.splitlines() if ln.strip()]
             grid = [re.split(r"\t|,", ln) for ln in lines]
             rows = max(DEFAULT_ROWS, len(grid))
@@ -175,31 +212,77 @@ class SheetCell(CellWidget):
             data = {f"{col_letter(c)}{r + 1}": cell
                     for r, row in enumerate(grid)
                     for c, cell in enumerate(row) if cell.strip()}
-        self.table.blockSignals(True)
-        self.table.setRowCount(rows)
-        self.table.setColumnCount(cols)
-        self.table.clearContents()
-        for ref, raw in data.items():
+            models = [{"name": "Sheet1", "rows": rows, "cols": cols,
+                       "data": data}]
+            active_name = "Sheet1"
+        if not models:
+            models = [{"name": "Sheet1", "rows": DEFAULT_ROWS,
+                       "cols": DEFAULT_COLS, "data": {}}]
+            active_name = "Sheet1"
+
+        # Tear down any previous tables/plots.
+        for table in self._tables:
+            self.stack.removeWidget(table)
+            table.deleteLater()
+        for lab in self._plot_labels:
+            self.stack.removeWidget(lab)
+            lab.deleteLater()
+        self._tables, self._names, self._plot_labels = [], [], []
+
+        for i, model in enumerate(models):
+            name = str(model.get("name") or f"Sheet{i + 1}")
+            table = self._make_table()
+            self._populate(table, model)
+            self._tables.append(table)
+            self._names.append(name)
+            self.stack.addWidget(table)
+        self.table = self._tables[0]
+
+        names = [n for n in self._names]
+        start = names.index(active_name) if active_name in names else 0
+        self._rebuild_views(select=("sheet", start))
+
+    @staticmethod
+    def _populate(table, model):
+        rows = int(model.get("rows", DEFAULT_ROWS))
+        cols = int(model.get("cols", DEFAULT_COLS))
+        table.blockSignals(True)
+        table.setRowCount(rows)
+        table.setColumnCount(cols)
+        table.setHorizontalHeaderLabels([col_letter(c) for c in range(cols)])
+        for ref, raw in (model.get("data") or {}).items():
             m = _REF.fullmatch(ref)
             if not m:
                 continue
             r, c = int(m.group(2)) - 1, letter_col(m.group(1))
-            self._set_item(r, c, raw, raw)
-        self.table.blockSignals(False)
-        self._refresh_headers()
-        self._fit_height()
+            if r < rows and c < cols:
+                item = QTableWidgetItem()
+                item.setData(Qt.UserRole, raw)
+                item.setText(raw)
+                table.setItem(r, c, item)
+        table.blockSignals(False)
 
     def execute(self, kernel):
-        """Recompute every =formula against the kernel namespace, then
-        publish the grid into the namespace as sheet1/sheet2/..."""
+        """Recompute every sheet, gather plots, publish grids to kernel."""
         self._computed_once = True
         kernel._seed_namespace()
+        self._values = []
+        all_pngs = []
+        for table in self._tables:
+            values, pngs = self._compute_table(table, kernel)
+            self._values.append(values)
+            all_pngs.extend(pngs)
+        self._rebuild_plots(all_pngs)
+        self._publish(kernel)
+
+    def _compute_table(self, table, kernel):
+        """Resolve one grid's formulas; return (values, [plot pngs])."""
         plt = kernel.namespace.get("plt")
         before = set(plt.get_fignums()) if plt else set()
         values, formulas = {}, {}
-        for r in range(self.table.rowCount()):
-            for c in range(self.table.columnCount()):
-                raw = self._raw(r, c)
+        for r in range(table.rowCount()):
+            for c in range(table.columnCount()):
+                raw = self._raw_of(table, r, c)
                 if not raw:
                     continue
                 if raw.lstrip().startswith("="):
@@ -218,7 +301,7 @@ class SheetCell(CellWidget):
                     values[rc] = self._eval(expr, values, blocked,
                                             kernel.namespace)
                 except KeyError:
-                    continue            # depends on a not-yet-computed cell
+                    continue
                 except Exception as exc:
                     values[rc] = f"#ERR {exc.__class__.__name__}"
                 del pending[rc]
@@ -228,21 +311,20 @@ class SheetCell(CellWidget):
         for rc in pending:
             values[rc] = "#ERR circular"
 
-        # Figures: trailing Figure values and any pyplot figures a
-        # formula created both display below the grid, like code cells.
         pngs, captured = [], set()
-        self.table.blockSignals(True)
-        for rc, expr in formulas.items():
-            raw = self._raw(*rc)
+        table.blockSignals(True)
+        for rc in formulas:
+            raw = self._raw_of(table, *rc)
             value = values[rc]
             if Kernel._is_figure(value):
                 pngs.append(Kernel._fig_png(value))
                 captured.add(getattr(value, "number", None))
                 values[rc] = "[plot]"
-                self._set_item(rc[0], rc[1], raw, "[plot]")
+                self._set_item_of(table, rc[0], rc[1], raw, "[plot]")
             else:
-                self._set_item(rc[0], rc[1], raw, format_value(value))
-        self.table.blockSignals(False)
+                self._set_item_of(table, rc[0], rc[1], raw,
+                                  format_value(value))
+        table.blockSignals(False)
         if plt:
             for num in plt.get_fignums():
                 if num in before:
@@ -250,28 +332,11 @@ class SheetCell(CellWidget):
                 if num not in captured:
                     pngs.append(Kernel._fig_png(plt.figure(num)))
                 plt.close(num)
-        self._show_figures(pngs)
-        self._publish(kernel, values)
-
-    def _show_figures(self, pngs):
-        if len(pngs) != len(self._figure_labels):
-            for lab in self._figure_labels:
-                lab.deleteLater()
-            self._figure_labels = []
-            for _png in pngs:
-                lab = QLabel()
-                self.column.addWidget(lab)
-                self._figure_labels.append(lab)
-        for lab, png in zip(self._figure_labels, pngs):
-            pix = QPixmap()
-            pix.loadFromData(png, "PNG")
-            lab.setPixmap(pix)
+        return values, pngs
 
     @staticmethod
     def _eval(expr, values, blocked, namespace):
-        """Evaluate one formula. *blocked* cells (still-pending
-        formulas) raise KeyError so the pass loop retries later;
-        empty cells read as 0."""
+        """Evaluate one formula; empty cells read 0, pending cells retry."""
         def lookup(r, c):
             if (r, c) in blocked:
                 raise KeyError((r, c))
@@ -283,9 +348,9 @@ class SheetCell(CellWidget):
                              letter_col(match.group(3))))
             rows = [[lookup(r, c) for c in range(c1, c2 + 1)]
                     for r in range(r1 - 1, r2)]
-            if len(rows) == 1:                  # single row -> flat list
+            if len(rows) == 1:
                 return repr(rows[0])
-            if all(len(row) == 1 for row in rows):   # single column
+            if all(len(row) == 1 for row in rows):
                 return repr([row[0] for row in rows])
             return repr(rows)
 
@@ -296,99 +361,206 @@ class SheetCell(CellWidget):
         py = _REF.sub(sub_ref, _RANGE.sub(sub_range, expr))
         return eval(py, namespace)   # noqa: S307
 
-    def _publish(self, kernel, values):
-        """Expose the computed grid to code cells (sheet1, sheet2, ...)."""
-        name = self._kernel_name()
-        self.gutter.setText(name)
-        grid = [[values.get((r, c)) for c in range(self.table.columnCount())]
-                for r in range(self.table.rowCount())]
-        kernel.namespace[name] = grid
+    def _publish(self, kernel):
+        """Expose each sheet to code cells as sheet1, sheet2, ... globally."""
+        base = self._global_sheet_base()
+        for i, table in enumerate(self._tables):
+            values = self._values[i] if i < len(self._values) else {}
+            grid = [[values.get((r, c))
+                     for c in range(table.columnCount())]
+                    for r in range(table.rowCount())]
+            kernel.namespace[f"sheet{base + i + 1}"] = grid
+        self.gutter.setText("sheet")
 
-    def _kernel_name(self) -> str:
-        """sheetN by document order among the notebook's sheet cells."""
+    def _global_sheet_base(self) -> int:
         w = self.parent()
         while w is not None and not hasattr(w, "cells"):
             w = w.parent()
         cells = getattr(w, "cells", None)
-        if cells and self in cells:
-            n = 1 + sum(1 for c in cells[:cells.index(self)]
-                        if isinstance(c, SheetCell))
+        if not cells or self not in cells:
+            return 0
+        return sum(len(c._tables) for c in cells[:cells.index(self)]
+                   if isinstance(c, SheetCell))
+
+    # -- views (sheets + plots) -------------------------------------------
+    def _active_sheet(self) -> int:
+        kind, i = (self._views[self.view_combo.currentIndex()]
+                   if self._views else ("sheet", 0))
+        return i if kind == "sheet" else 0
+
+    def _rebuild_plots(self, pngs):
+        """Refresh the plot views after a compute, keeping the selection."""
+        prev = (self._views[self.view_combo.currentIndex()]
+                if self._views and self.view_combo.currentIndex() >= 0
+                else ("sheet", 0))
+        for lab in self._plot_labels:
+            self.stack.removeWidget(lab)
+            lab.deleteLater()
+        self._plot_labels = []
+        for png in pngs:
+            lab = QLabel()
+            lab.setAlignment(Qt.AlignCenter)
+            pix = QPixmap()
+            pix.loadFromData(png, "PNG")
+            lab.setPixmap(pix)
+            self.stack.addWidget(lab)
+            self._plot_labels.append(lab)
+        # Keep a plot selection only if that plot still exists.
+        if prev[0] == "plot" and prev[1] >= len(pngs):
+            prev = ("sheet", self._active_sheet())
+        self._rebuild_views(select=prev)
+
+    def _rebuild_views(self, select=("sheet", 0)):
+        self._views = ([("sheet", i) for i in range(len(self._tables))]
+                       + [("plot", j) for j in range(len(self._plot_labels))])
+        titles = list(self._names) + [f"Plot {j + 1}"
+                                      for j in range(len(self._plot_labels))]
+        try:
+            index = self._views.index(tuple(select))
+        except ValueError:
+            index = 0
+        self.view_combo.blockSignals(True)
+        self.view_combo.clear()
+        self.view_combo.addItems(titles)
+        self.view_combo.setCurrentIndex(max(0, index))
+        self.view_combo.blockSignals(False)
+        self._on_view_changed(self.view_combo.currentIndex())
+
+    def _on_view_changed(self, index):
+        if not self._views or index < 0:
+            return
+        self.stack.setCurrentIndex(index)
+        kind, i = self._views[index]
+        if kind == "sheet":
+            self.table = self._tables[i]
+            self._formula_widget.show()
+            self._sync_formula_bar(self.table.currentRow(),
+                                   self.table.currentColumn())
+            self.stack.setFixedHeight(self._table_height(self.table))
         else:
-            n = 1
-        return f"sheet{n}"
+            self.table = None
+            self._formula_widget.hide()
+            pix = self._plot_labels[i].pixmap()
+            self.stack.setFixedHeight((pix.height() if pix else 200) + 6)
+
+    # -- right-click view menu helpers (used by NotebookWidget) -----------
+    def view_titles(self):
+        return [self.view_combo.itemText(k)
+                for k in range(self.view_combo.count())]
+
+    def current_view_index(self) -> int:
+        return self.view_combo.currentIndex()
+
+    def set_view_index(self, index: int):
+        self.view_combo.setCurrentIndex(index)
 
     # -- formula bar -------------------------------------------------------
     def _sync_formula_bar(self, row, col, *_old):
-        if row < 0 or col < 0:
+        if self.table is None or row < 0 or col < 0:
             return
         self.ref_label.setText(f"{col_letter(col)}{row + 1}")
-        self.formula_edit.setText(self._raw(row, col))
+        self.formula_edit.setText(self._raw_of(self.table, row, col))
 
     def _commit_formula(self):
-        row, col = self.table.currentRow(), self.table.currentColumn()
-        if row < 0 or col < 0:
-            row, col = 0, 0
+        if self.table is None:
+            return
+        row = max(0, self.table.currentRow())
+        col = max(0, self.table.currentColumn())
         text = self.formula_edit.text()
-        self._set_item(row, col, text, text)
+        self._set_item_of(self.table, row, col, text, text)
         self.table.setFocus()
 
-    # -- grid plumbing -------------------------------------------------------
-    def _raw(self, r, c) -> str:
-        item = self.table.item(r, c)
+    # -- grid plumbing -----------------------------------------------------
+    @staticmethod
+    def _raw_of(table, r, c) -> str:
+        item = table.item(r, c)
         if item is None:
             return ""
         raw = item.data(Qt.UserRole)
         return raw if raw is not None else item.text()
 
-    def _set_item(self, r, c, raw, display):
-        item = self.table.item(r, c)
+    @staticmethod
+    def _set_item_of(table, r, c, raw, display):
+        item = table.item(r, c)
         if item is None:
             item = QTableWidgetItem()
-            self.table.setItem(r, c, item)
+            table.setItem(r, c, item)
         item.setData(Qt.UserRole, raw)
         item.setText(display)
 
-    def _refresh_headers(self):
-        self.table.setHorizontalHeaderLabels(
-            [col_letter(c) for c in range(self.table.columnCount())])
+    def _raw(self, r, c) -> str:
+        return self._raw_of(self.table, r, c) if self.table else ""
 
-    def _fit_height(self):
-        h = self.table.horizontalHeader().height() + 6
-        for r in range(self.table.rowCount()):
-            h += self.table.rowHeight(r)
-        self.table.setFixedHeight(h)
+    def _set_item(self, r, c, raw, display):
+        if self.table is not None:
+            self._set_item_of(self.table, r, c, raw, display)
+
+    @staticmethod
+    def _table_height(table) -> int:
+        h = table.horizontalHeader().height() + 6
+        for r in range(table.rowCount()):
+            h += table.rowHeight(r)
+        return h
 
     def eventFilter(self, obj, event):
         try:
-            if (obj is getattr(self, "table", None)
-                    and event.type() == QEvent.FocusIn):
+            if (event.type() == QEvent.FocusIn
+                    and obj in getattr(self, "_tables", [])):
                 self.focused.emit(self)
-            return super().eventFilter(obj, event)
-        except RuntimeError:        # widget already deleted at shutdown
+            return CellWidget.eventFilter(self, obj, event)
+        except RuntimeError:
             return False
 
-    # -- toolbar operations ---------------------------------------------------
+    # -- toolbar operations (active grid) ---------------------------------
     def add_row(self):
+        if self.table is None:
+            return
         self.table.insertRow(self.table.rowCount())
-        self._fit_height()
+        self.stack.setFixedHeight(self._table_height(self.table))
+        self.content_changed.emit()
 
     def add_col(self):
+        if self.table is None:
+            return
         self.table.insertColumn(self.table.columnCount())
-        self._refresh_headers()
+        self.table.setHorizontalHeaderLabels(
+            [col_letter(c) for c in range(self.table.columnCount())])
+        self.content_changed.emit()
 
     def del_row(self):
-        if self.table.rowCount() > 1:
-            self.table.removeRow(self.table.currentRow()
-                                 if self.table.currentRow() >= 0
-                                 else self.table.rowCount() - 1)
-            self._fit_height()
+        if self.table is None or self.table.rowCount() <= 1:
+            return
+        row = self.table.currentRow()
+        self.table.removeRow(row if row >= 0 else self.table.rowCount() - 1)
+        self.stack.setFixedHeight(self._table_height(self.table))
+        self.content_changed.emit()
 
     def del_col(self):
-        if self.table.columnCount() > 1:
-            self.table.removeColumn(self.table.currentColumn()
-                                    if self.table.currentColumn() >= 0
-                                    else self.table.columnCount() - 1)
-            self._refresh_headers()
+        if self.table is None or self.table.columnCount() <= 1:
+            return
+        col = self.table.currentColumn()
+        self.table.removeColumn(
+            col if col >= 0 else self.table.columnCount() - 1)
+        self.table.setHorizontalHeaderLabels(
+            [col_letter(c) for c in range(self.table.columnCount())])
+        self.content_changed.emit()
+
+    def add_sheet(self):
+        """Append a new blank sheet and switch to it."""
+        n = len(self._tables) + 1
+        name = f"Sheet{n}"
+        while name in self._names:
+            n += 1
+            name = f"Sheet{n}"
+        table = self._make_table()
+        self._populate(table, {"rows": DEFAULT_ROWS, "cols": DEFAULT_COLS,
+                               "data": {}})
+        self._tables.append(table)
+        self._names.append(name)
+        self.stack.addWidget(table)
+        self.table = table
+        self._rebuild_views(select=("sheet", len(self._tables) - 1))
+        self.content_changed.emit()
 
 
 CELL_CLASSES["sheet"] = SheetCell

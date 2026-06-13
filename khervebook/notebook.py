@@ -35,7 +35,8 @@ DROP_TYPES = {
     ".gif": "image", ".bmp": "image",
     ".kbook": "kbook",
     ".ksheet": "ksheet",                  # KherveSheet workbook
-    ".kdocz": "kdoc", ".ktexz": "kdoc",   # kherveDOC document
+    ".kdocz": "kdoc",                     # kherveDOC document -> markdown
+    ".ktex": "ktex", ".ktexz": "ktex",    # KherveTeX document -> latex
     ".ipynb": "ipynb",                    # Jupyter / Colab notebook
 }
 _MAX_DROP_BYTES = 2_000_000
@@ -377,23 +378,25 @@ class NotebookWidget(QScrollArea):
         from . import importers
         p = Path(path)
         kind = DROP_TYPES.get(p.suffix.lower())
-        if kind is None and importers.is_kdoc(str(p)):
+        if kind is None and importers.is_ktex(str(p)):
+            kind = "ktex"                  # .ktex.json double suffix
+        elif kind is None and importers.is_kdoc(str(p)):
             kind = "kdoc"                  # .kdoc.json double suffix
         if kind is None or not p.is_file():
             return False
         if kind == "kbook":
             self.open_kbook_requested.emit(str(p))
             return True
-        if kind in ("ksheet", "kdoc", "ipynb"):
+        if kind in ("ksheet", "kdoc", "ktex", "ipynb"):
             try:
                 if kind == "ipynb":
                     from . import ipynb
                     items = ipynb.from_ipynb(
                         p.read_text(encoding="utf-8"))
                 else:
-                    importer = (importers.ksheet_to_cells
-                                if kind == "ksheet"
-                                else importers.kdoc_to_cells)
+                    importer = {"ksheet": importers.ksheet_to_cells,
+                                "kdoc": importers.kdoc_to_cells,
+                                "ktex": importers.ktex_to_cells}[kind]
                     items = importer(str(p))
             except Exception:
                 return False

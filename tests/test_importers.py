@@ -125,6 +125,38 @@ KDOC = {
 }
 
 
+def test_ktex_to_latex(tmp_path):
+    from khervebook.importers import ktex_to_latex, ktex_to_cells, is_ktex
+    model = {
+        "type": "Document",
+        "meta": {"title": "My Paper", "author": "Me",
+                 "packages": ["multicol", "float", "setspace"]},
+        "children": [
+            {"type": "Section", "level": 1, "numbered": False,
+             "children": [{"type": "Text", "text": "Intro", "marks": []}]},
+            {"type": "Paragraph", "children": [
+                {"type": "Text", "text": "Bold ", "marks": []},
+                {"type": "Text", "text": "word", "marks": ["bold"]},
+                {"type": "Text", "text": " and 100% & $5.", "marks": []},
+                {"type": "MathInline", "latex": "x^2"}]},
+            {"type": "MathBlock", "latex": r"\int x\,dx", "numbered": True},
+        ],
+    }
+    path = tmp_path / "doc.ktex.json"
+    path.write_text(json.dumps(model), encoding="utf-8")
+    assert is_ktex(str(path))
+    tex = ktex_to_latex(str(path))
+    # Clean minimal preamble, no KherveTeX bloat.
+    assert "\\documentclass" in tex
+    assert "multicol" not in tex and "Kstroke" not in tex
+    assert "\\section*{Intro}" in tex            # unnumbered
+    assert "\\textbf{word}" in tex
+    assert "100\\% \\& \\$5" in tex              # special chars escaped
+    assert "\\begin{equation}" in tex
+    cells = ktex_to_cells(str(path))
+    assert cells[0]["type"] == "latex"
+
+
 def test_kdoc_json_import(tmp_path):
     from khervebook.importers import kdoc_to_cells
     path = tmp_path / "demo.kdoc.json"

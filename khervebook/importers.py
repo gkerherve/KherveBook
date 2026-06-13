@@ -144,12 +144,153 @@ def ksheet_to_cells(path: str) -> list:
         {"sheets": sheets, "active": sheets[0]["name"], "plots": plots})}]
 
 
+# -- KherveTeX (.ktex / .ktexz) -> a LaTeX cell -------------------------
+
+def is_ktex(path: str) -> bool:
+    name = Path(path).name.lower()
+    return name.endswith((".ktex", ".ktexz", ".ktex.json"))
+
+
+#: structured-model mark -> (LaTeX prefix, suffix).
+_KTEX_MARKS = {
+    "bold": ("\\textbf{", "}"), "italic": ("\\textit{", "}"),
+    "underline": ("\\underline{", "}"), "code": ("\\texttt{", "}"),
+    "strikethrough": ("\\sout{", "}"), "smallcaps": ("\\textsc{", "}"),
+    "subscript": ("\\textsubscript{", "}"),
+    "superscript": ("\\textsuperscript{", "}"),
+    "emph": ("\\emph{", "}"),
+}
+_SECTION_CMD = {1: "section", 2: "subsection", 3: "subsubsection"}
+
+
+_LATEX_ESCAPE = {
+    "\\": "\\textbackslash{}", "&": "\\&", "%": "\\%", "#": "\\#",
+    "_": "\\_", "$": "\\$", "{": "\\{", "}": "\\}",
+    "~": "\\textasciitilde{}", "^": "\\textasciicircum{}",
+}
+
+
+def _ktex_escape(text: str) -> str:
+    return "".join(_LATEX_ESCAPE.get(ch, ch) for ch in text)
+
+
+def _ktex_inline(nodes) -> str:
+    out = ""
+    for n in nodes or []:
+        kind = n.get("type")
+        if kind == "Text":
+            s = _ktex_escape(n.get("text", ""))   # escape, then mark up
+            for mark in n.get("marks") or []:
+                pre, post = _KTEX_MARKS.get(mark, ("", ""))
+                s = pre + s + post
+            out += s
+        elif kind == "MathInline":
+            out += "$" + n.get("latex", "") + "$"  # math stays verbatim
+    return out
+
+
+def _ktex_item(item) -> str:
+    if isinstance(item, dict):
+        return _ktex_inline(item.get("children") or [item])
+    if isinstance(item, list):
+        return _ktex_inline(item)
+    return str(item)
+
+
+def _ktex_blocks(nodes, lines):
+    for n in nodes or []:
+        kind = n.get("type")
+        if kind == "Section":
+            cmd = _SECTION_CMD.get(int(n.get("level", 1)), "section")
+            star = "" if n.get("numbered", True) else "*"
+            lines.append(f"\\{cmd}{star}{{{_ktex_inline(n.get('children'))}}}")
+            lines.append("")
+        elif kind == "Paragraph":
+            lines.append(_ktex_inline(n.get("children")))
+            lines.append("")
+        elif kind in ("MathBlock", "EquationBlock"):
+            eq = n.get("latex", "")
+            if n.get("numbered"):
+                lines.append("\\begin{equation}\n" + eq + "\n\\end{equation}")
+            else:
+                lines.append("\\[ " + eq + " \\]")
+            lines.append("")
+        elif kind in ("RawLatex", "Raw"):
+            lines.append(n.get("latex", n.get("text", "")))
+            lines.append("")
+        elif kind == "List":
+            env = "enumerate" if n.get("ordered") else "itemize"
+            lines.append("\\begin{" + env + "}")
+            for item in n.get("items") or []:
+                lines.append("  \\item " + _ktex_item(item))
+            lines.append("\\end{" + env + "}\n")
+        elif kind == "Table":
+            rows = [[str(c) for c in row] for row in n.get("rows") or []]
+            if rows:
+                cols = max(len(r) for r in rows)
+                lines.append("\\begin{tabular}{" + "l" * cols + "}")
+                lines.append("\\hline")
+                for row in rows:
+                    row = row + [""] * (cols - len(row))
+                    lines.append(" & ".join(row) + " \\\\")
+                lines.append("\\hline")
+                lines.append("\\end{tabular}\n")
+        elif kind == "Figure":
+            src = n.get("path") or ""
+            lines.append("\\begin{figure}[h]\n\\centering")
+            lines.append("\\includegraphics[width=0.7\\textwidth]"
+                         "{" + src + "}")
+            if n.get("caption"):
+                lines.append("\\caption{" + n["caption"] + "}")
+            lines.append("\\end{figure}\n")
+        elif n.get("children"):
+            _ktex_blocks(n["children"], lines)
+
+
+def ktex_to_latex(path: str) -> str:
+    """A KherveTeX document -> clean LaTeX source for a latex cell.
+
+    Uses a minimal preamble (amsmath/amssymb/graphicx/ulem/geometry),
+    dropping KherveTeX's extra packages (multicol, float, setspace) and
+    the \\Kstroke macro that bloat the original .tex.
+    """
+    p = Path(path)
+    if p.suffix.lower() in (".ktexz", ".kdocz"):
+        with zipfile.ZipFile(p) as z:
+            doc = json.loads(z.read("document.json").decode("utf-8"))
+    else:
+        doc = json.loads(p.read_text(encoding="utf-8"))
+    meta = doc.get("meta") or {}
+    cls = meta.get("documentclass") or "article"
+    lines = [
+        f"\\documentclass[12pt]{{{cls}}}",
+        "\\usepackage{amsmath, amssymb, graphicx}",
+        "\\usepackage[normalem]{ulem}",
+        "\\usepackage[margin=2.5cm]{geometry}",
+    ]
+    title, author = meta.get("title"), meta.get("author")
+    if title:
+        lines.append("\\title{" + title + "}")
+    if author:
+        lines.append("\\author{" + author + "}")
+    lines.append("\\begin{document}")
+    if title:
+        lines.append("\\maketitle")
+    _ktex_blocks(doc.get("children"), lines)
+    lines.append("\\end{document}")
+    return "\n".join(lines)
+
+
+def ktex_to_cells(path: str) -> list:
+    """A KherveTeX document as a single latex cell (clean LaTeX)."""
+    return [{"type": "latex", "source": ktex_to_latex(path)}]
+
+
 # -- kherveDOC (.kdocz zip / .kdoc.json) --------------------------------
 
 def is_kdoc(path: str) -> bool:
     name = Path(path).name.lower()
-    return (name.endswith((".kdocz", ".ktexz"))
-            or name.endswith((".kdoc.json", ".ktex.json")))
+    return name.endswith((".kdocz", ".kdoc.json"))
 
 
 _MARKS = {

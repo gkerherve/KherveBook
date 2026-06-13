@@ -40,8 +40,28 @@ WELCOME_CELLS = [
         "axes.set_ylabel('y')\n"
         "axes.set_title('title')\n"
         "fig")},
+    {"type": "markdown", "source": (
+        "## LaTeX, typeset properly\n\n"
+        "**LaTeX cells** render equations instantly with matplotlib "
+        "mathtext — type the maths and run. A few classics (these three "
+        "rows are LaTeX cells, two of them sitting side by side):")},
     {"type": "latex", "source":
         r"\int_0^\infty e^{-x^2}\,dx = \frac{\sqrt{\pi}}{2}"},
+    {"type": "latex", "source": r"e^{i\pi} + 1 = 0"},
+    {"type": "latex", "source":
+        r"\sum_{n=1}^{\infty} \frac{1}{n^2} = \frac{\pi^2}{6}",
+        "column": True},
+    {"type": "latex", "source":
+        r"i\hbar\frac{\partial \Psi}{\partial t} = \hat{H}\Psi"},
+    {"type": "latex", "source":
+        r"\nabla \times \vec{E} = -\frac{\partial \vec{B}}{\partial t}",
+        "column": True},
+    {"type": "markdown", "source": (
+        "And a whole **LaTeX document** — sections, numbered equations, "
+        "tables, figures — compiles with the real `tectonic` engine and "
+        "shows the typeset pages. See **Examples → LaTeX → LaTeX "
+        "Document**. You can also drop a `.tex` or KherveTeX `.ktex` "
+        "file straight onto the notebook.")},
     {"type": "markdown", "source": (
         "**Sheet cells** embed a KherveSheet-style spreadsheet with a "
         "formula bar. `=` formulas are Python with A1 refs and `A1:B5` "

@@ -15,7 +15,7 @@ the Free Software Foundation, either version 3 of the License, or
 import io
 import re
 
-from PyQt5.QtCore import QEvent, QSize, Qt, pyqtSignal
+from PyQt5.QtCore import QEvent, QSize, Qt, QThread, pyqtSignal
 from PyQt5.QtGui import (QColor, QFont, QFontMetrics, QPixmap,
                          QSyntaxHighlighter, QTextCharFormat)
 from PyQt5.QtWidgets import (QAction, QFrame, QHBoxLayout, QLabel,
@@ -495,10 +495,42 @@ class MarkdownCell(CellWidget):
         self.editor.setFocus()
 
 
+#: Live compile workers, kept off the cells so deleting a cell mid-
+#: compile never destroys a running QThread (a hard crash on Windows).
+_LATEX_WORKERS = set()
+
+
+class _LatexCompileWorker(QThread):
+    """Compiles LaTeX off the UI thread (tectonic can take seconds)."""
+
+    done = pyqtSignal(str, list)     # source, list[png bytes]
+    failed = pyqtSignal(str, str)    # source, log
+
+    def __init__(self, source, parent=None):
+        super().__init__(parent)
+        self._source = source
+
+    def run(self):
+        from .latexcompile import compile_to_pngs
+        try:
+            pngs, err = compile_to_pngs(self._source)
+        except Exception as exc:
+            self.failed.emit(self._source, str(exc))
+            return
+        if pngs:
+            self.done.emit(self._source, pngs)
+        else:
+            self.failed.emit(self._source, err or "LaTeX produced no output")
+
+
 class LatexCell(CellWidget):
-    """LaTeX equation cell rendered with matplotlib mathtext."""
+    """LaTeX cell. A single equation renders instantly with matplotlib
+    mathtext; a document compiles with the real LaTeX engine (tectonic)
+    and shows the typeset pages — full LaTeX, not an approximation. When
+    no engine is installed it falls back to the lightweight text view."""
 
     CELL_TYPE = "latex"
+    PAGE_WIDTH = 760                 # displayed page width (px)
 
     def __init__(self, source=""):
         super().__init__(source)
@@ -508,7 +540,7 @@ class LatexCell(CellWidget):
         self.view.hide()
         self.view.mouseDoubleClickEvent = self._edit_again
         self.column.addWidget(self.view)
-        self.doc_view = QTextBrowser()       # document-style LaTeX
+        self.doc_view = QTextBrowser()       # text fallback / error log
         self.doc_view.setAcceptDrops(False)
         self.doc_view.setOpenExternalLinks(True)
         self.doc_view.setFrameShape(QFrame.NoFrame)
@@ -516,27 +548,127 @@ class LatexCell(CellWidget):
         self.doc_view.hide()
         self.doc_view.mouseDoubleClickEvent = self._edit_again
         self.column.addWidget(self.doc_view)
+        self.status = QLabel("")             # "Compiling…" indicator
+        self.status.setStyleSheet("color: #57606a; font-style: italic;")
+        self.status.hide()
+        self.column.addWidget(self.status)
+        self.pages_box = QWidget()           # compiled PDF pages
+        self._pages_layout = QVBoxLayout(self.pages_box)
+        self._pages_layout.setContentsMargins(0, 0, 0, 0)
+        self._pages_layout.setSpacing(8)
+        self.pages_box.hide()
+        self.pages_box.mouseDoubleClickEvent = self._edit_again
+        self.column.addWidget(self.pages_box)
+        self._page_labels = []
+        self._pending = ""
+        self._compiled_source = None
 
     def execute(self, kernel):
-        from .latextext import is_document, latex_to_html
+        from . import latexcompile
+        from .latextext import is_document
         tex = self.source().strip()
         if not tex:
             return
         self.editor.hide()
-        if is_document(tex):
-            # Whole-document LaTeX: render best-effort formatted prose.
-            self.view.hide()
-            self.doc_view.document().setHtml(latex_to_html(tex))
-            self.doc_view.document().adjustSize()
-            height = int(self.doc_view.document().size().height()) + 16
-            self.doc_view.setFixedHeight(max(40, height))
-            self.doc_view.show()
+        document = is_document(tex) or "\\begin{" in tex
+        if document and latexcompile.available():
+            self._compile(tex)
+        elif document:
+            self._show_html(tex)
+        else:
+            self._show_math(tex)
+
+    # -- full LaTeX compile -----------------------------------------------
+    def _compile(self, tex):
+        if tex == self._compiled_source and self._page_labels:
+            self._show_pages()                     # unchanged → reuse
             return
+        self._pending = tex
+        self.view.hide()
         self.doc_view.hide()
+        self.pages_box.hide()
+        self.status.setText("Compiling LaTeX…  "
+                            "(first run downloads packages)")
+        self.status.show()
+        # No cell parent: the worker outlives the cell if it's deleted
+        # mid-compile, and is freed when it finishes (never destroyed
+        # while running). A deleted cell auto-disconnects its slots.
+        worker = _LatexCompileWorker(tex)
+        _LATEX_WORKERS.add(worker)
+        worker.done.connect(self._on_pages)
+        worker.failed.connect(self._on_error)
+        worker.finished.connect(
+            lambda w=worker: (_LATEX_WORKERS.discard(w), w.deleteLater()))
+        worker.start()
+
+    def _on_pages(self, source, pngs):
+        if source != self._pending:                # a newer compile wins
+            return
+        for lab in self._page_labels:
+            lab.deleteLater()
+        self._page_labels = []
+        for png in pngs:
+            pix = QPixmap()
+            pix.loadFromData(png, "PNG")
+            if pix.width() > self.PAGE_WIDTH:
+                pix = pix.scaledToWidth(self.PAGE_WIDTH,
+                                        Qt.SmoothTransformation)
+            lab = QLabel()
+            lab.setAlignment(Qt.AlignCenter)
+            lab.setPixmap(pix)
+            self._pages_layout.addWidget(lab)
+            self._page_labels.append(lab)
+        self._compiled_source = source
+        self.status.hide()
+        self._show_pages()
+
+    def _on_error(self, source, log):
+        if source != self._pending:
+            return
+        import html as _html
+        tail = "\n".join((log or "").strip().splitlines()[-30:])
+        self.status.hide()
+        self.pages_box.hide()
+        self.view.hide()
+        self.doc_view.setHtml(
+            "<p style='color:#b71c1c'><b>LaTeX compile error</b> — fix "
+            "the source and run again.</p><pre style='white-space:pre-wrap;"
+            "color:#b71c1c'>" + _html.escape(tail) + "</pre>")
+        self.doc_view.document().adjustSize()
+        h = int(self.doc_view.document().size().height()) + 16
+        self.doc_view.setFixedHeight(max(60, h))
+        self.doc_view.show()
+
+    def _show_pages(self):
+        self.editor.hide()
+        self.view.hide()
+        self.doc_view.hide()
+        self.status.hide()
+        self.pages_box.show()
+
+    # -- fallbacks --------------------------------------------------------
+    def _show_html(self, tex):
+        from .latextext import latex_to_html
+        self.view.hide()
+        self.pages_box.hide()
+        self.doc_view.document().setHtml(latex_to_html(tex))
+        self.doc_view.document().adjustSize()
+        height = int(self.doc_view.document().size().height()) + 16
+        self.doc_view.setFixedHeight(max(40, height))
+        self.doc_view.show()
+
+    def _show_math(self, tex):
+        self.doc_view.hide()
+        self.pages_box.hide()
         try:
             png = self._render(tex)
-        except Exception as exc:  # bad TeX should not crash the app
-            self.view.setText(f"LaTeX error: {exc}")
+        except Exception as exc:
+            # mathtext is limited; for full LaTeX wrap in an environment
+            # (\begin{equation}…) or a document, which compiles instead.
+            self.view.setText(f"LaTeX (mathtext) error: {exc}\n"
+                              "Use \\begin{equation}…\\end{equation} or a "
+                              "full document for the complete LaTeX engine.")
+            self.view.setWordWrap(True)
             self.view.setStyleSheet("color: #b71c1c;")
         else:
             pix = QPixmap()
@@ -565,6 +697,7 @@ class LatexCell(CellWidget):
     def _edit_again(self, _event):
         self.view.hide()
         self.doc_view.hide()
+        self.pages_box.hide()
         self.editor.show()
         self.editor.setFocus()
 

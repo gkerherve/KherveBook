@@ -30,12 +30,15 @@ def test_converter_maps_common_commands():
     assert "documentclass" not in html        # preamble dropped
 
 
-def test_latex_cell_renders_document(qapp):
+def test_latex_cell_text_fallback(qapp, monkeypatch):
+    """With no LaTeX engine, a document uses the lightweight text view."""
     from khervebook.kernel import Kernel
+    from khervebook import latexcompile
     from khervebook.cells import LatexCell
+    monkeypatch.setattr(latexcompile, "available", lambda: False)
     cell = LatexCell(r"\section{Hi}" "\n\n" r"A \textbf{bold} word.")
     cell.execute(Kernel())
-    assert cell.doc_view.isVisibleTo(cell)     # document view shown
+    assert cell.doc_view.isVisibleTo(cell)     # text view shown
     assert not cell.view.isVisibleTo(cell)     # not the math image
     assert "bold" in cell.doc_view.toPlainText()
 

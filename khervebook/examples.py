@@ -157,8 +157,8 @@ def _oscillator():
 def _projectile():
     return [
         _md("# Projectile Motion\nRange depends on launch angle:"),
-        _tex(r"x(t) = v_0\cos\theta\, t \qquad "
-             r"y(t) = v_0\sin\theta\, t - \tfrac{1}{2} g t^2"),
+        _tex(r"x(t) = v_0\cos\theta\, t \quad\quad "
+             r"y(t) = v_0\sin\theta\, t - \frac{1}{2} g t^2"),
         _code(
             "v0, g = 20.0, 9.81\n"
             "fig, ax = plt.subplots()\n"
@@ -624,7 +624,7 @@ def _gbm():
     return [
         _md("# Stock Price Paths\nGeometric Brownian motion: 50 "
             "simulated years of daily prices."),
-        _tex(r"S_{t+\Delta t} = S_t \exp\!\left[(\mu - \tfrac{1}{2}"
+        _tex(r"S_{t+\Delta t} = S_t \exp\left[(\mu - \frac{1}{2}"
              r"\sigma^2)\Delta t + \sigma\sqrt{\Delta t}\,Z\right]"),
         _code(
             "rng = np.random.default_rng(7)\n"

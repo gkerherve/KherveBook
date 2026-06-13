@@ -36,6 +36,7 @@ DROP_TYPES = {
     ".kbook": "kbook",
     ".ksheet": "ksheet",                  # KherveSheet workbook
     ".kdocz": "kdoc", ".ktexz": "kdoc",   # kherveDOC document
+    ".ipynb": "ipynb",                    # Jupyter / Colab notebook
 }
 _MAX_DROP_BYTES = 2_000_000
 
@@ -360,11 +361,17 @@ class NotebookWidget(QScrollArea):
         if kind == "kbook":
             self.open_kbook_requested.emit(str(p))
             return True
-        if kind in ("ksheet", "kdoc"):
+        if kind in ("ksheet", "kdoc", "ipynb"):
             try:
-                importer = (importers.ksheet_to_cells if kind == "ksheet"
-                            else importers.kdoc_to_cells)
-                items = importer(str(p))
+                if kind == "ipynb":
+                    from . import ipynb
+                    items = ipynb.from_ipynb(
+                        p.read_text(encoding="utf-8"))
+                else:
+                    importer = (importers.ksheet_to_cells
+                                if kind == "ksheet"
+                                else importers.kdoc_to_cells)
+                    items = importer(str(p))
             except Exception:
                 return False
             if not items:
@@ -424,15 +431,27 @@ class NotebookWidget(QScrollArea):
         return json.dumps(doc, indent=1)
 
     def load_json(self, text: str):
+        self._apply_cells(json.loads(text).get("cells", []))
+
+    def load_ipynb(self, text: str):
+        """Replace the notebook with an imported Jupyter/Colab .ipynb."""
+        from . import ipynb
+        self._apply_cells(ipynb.from_ipynb(text))
+
+    def to_ipynb(self) -> str:
+        """Serialise the notebook to a Jupyter/Colab .ipynb string."""
+        from . import ipynb
+        return ipynb.to_ipynb([c.to_dict() for c in self.cells])
+
+    def _apply_cells(self, items):
         self.stop_loop()
-        doc = json.loads(text)
         self._suspend_layout = True         # one relayout at the end
         for cell in self.cells:
             cell.deleteLater()
         self.cells = []
         self.current = None
         self.kernel.reset()
-        for item in doc.get("cells", []) or [{"type": "code", "source": ""}]:
+        for item in (items or [{"type": "code", "source": ""}]):
             cell = self.add_cell(item.get("type", "code"),
                                  item.get("source", ""))
             if item.get("title"):

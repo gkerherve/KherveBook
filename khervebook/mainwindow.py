@@ -103,6 +103,11 @@ class MainWindow(QMainWindow):
         f.addAction(self._act("&Save", "Ctrl+S", self.save_file))
         f.addAction(self._act("Save &As...", "Ctrl+Shift+S", self.save_as))
         f.addSeparator()
+        f.addAction(self._act("&Import Jupyter/Colab (.ipynb)...", None,
+                              self.import_ipynb))
+        f.addAction(self._act("E&xport as Jupyter/Colab (.ipynb)...", None,
+                              self.export_ipynb))
+        f.addSeparator()
         f.addAction(self._act("E&xit", "Ctrl+Q", self.close))
 
         c = m.addMenu("&Cell")
@@ -337,6 +342,39 @@ class MainWindow(QMainWindow):
             name += ".kbook"
         self.path = name
         self.save_file()
+
+    IPYNB_FILTER = "Jupyter / Colab notebook (*.ipynb);;All files (*)"
+
+    def import_ipynb(self):
+        name, _ = QFileDialog.getOpenFileName(
+            self, "Import Jupyter/Colab notebook", "", self.IPYNB_FILTER)
+        if not name or not self._confirm_discard():
+            return
+        try:
+            self.notebook.load_ipynb(Path(name).read_text(encoding="utf-8"))
+        except Exception as exc:
+            QMessageBox.critical(self, APP_NAME,
+                                 f"Could not import notebook:\n{exc}")
+            return
+        self.path = None            # imported content -> save as a new .kbook
+        self.dirty = True
+        self.explorer.show_file(name)
+        self._update_title()
+
+    def export_ipynb(self):
+        name, _ = QFileDialog.getSaveFileName(
+            self, "Export as Jupyter/Colab notebook", "", self.IPYNB_FILTER)
+        if not name:
+            return
+        if not name.lower().endswith(".ipynb"):
+            name += ".ipynb"
+        try:
+            Path(name).write_text(self.notebook.to_ipynb(), encoding="utf-8")
+        except Exception as exc:
+            QMessageBox.critical(self, APP_NAME,
+                                 f"Could not export notebook:\n{exc}")
+            return
+        self.explorer.show_file(name)
 
     def closeEvent(self, event):
         if self._confirm_discard():

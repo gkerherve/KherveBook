@@ -54,6 +54,8 @@ into a new module and import.
   - `examples.py`    — Examples menu registry (name, category, builder),
                        like KherveSheet's.
   - `importers.py`   — .ksheet (HDF5) and .kdocz/.kdoc.json importers.
+  - `ipynb.py`       — Jupyter/Colab .ipynb import & export (lossless
+                       round-trip via cell metadata).
   - `notebook.py`    — `NotebookWidget`: scrollable cell column, shared
                        kernel, cell clipboard/convert, context menu,
                        JSON (de)serialisation.
@@ -84,7 +86,9 @@ drag-resize grips; a sheet's `height` sizes its grid). A sheet cell's `source` i
 "active": "<sheet name>"}` (the legacy single-grid `{"rows","cols",
 "data"}` still loads). When a cell gains new persisted properties,
 bump `FORMAT_VERSION` in `notebook.py` and keep `load_json` backward
-compatible. Importing/exporting `.ipynb` is on the roadmap.
+compatible. Jupyter/Colab `.ipynb` import/export is in `ipynb.py`
+(File menu); latex/sheet cells carry their type+source in cell
+metadata for a lossless round-trip.
 
 ## UI conventions
 
@@ -104,12 +108,13 @@ but copy and adapt, never import across project boundaries.
 
 ## Roadmap
 
-- Port KherveSheet's `python_engine.py` execution model (timeouts,
-  richer output types).
-- `.ipynb` import/export.
-- Syntax highlighting in code cells; undo/redo across cell operations.
+- Undo/redo across cell add/remove/move/type-change (shared QUndoStack).
 - Inline `$...$` math inside Markdown cells.
 - Per-document Git history (port `git_backend.py` from KherveSheet).
+- AI tool-calling (let the assistant run/edit cells directly).
+
+Done: timeout-guarded kernel, code syntax highlighting, `.ipynb`
+import/export, full LaTeX via tectonic, themes, sheet cells.
 
 ## Undo / redo policy
 

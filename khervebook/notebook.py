@@ -316,6 +316,12 @@ class NotebookWidget(QScrollArea):
                     lambda _=False, i=k: cell.set_view_index(i))
             view_menu.addSeparator()
             view_menu.addAction("Add Sheet", cell.add_sheet)
+            sel = " from Selection" if cell.has_selection() else ""
+            plot_menu = menu.addMenu(f"Create Plot{sel}")
+            for label, k in (("Line", "line"), ("Bar", "bar"),
+                             ("Scatter", "scatter")):
+                plot_menu.addAction(
+                    label, lambda kind=k: cell.plot_selection(kind))
         menu.addSeparator()
         menu.addAction("Cut Cell", self.cut_current)
         menu.addAction("Copy Cell", self.copy_current)

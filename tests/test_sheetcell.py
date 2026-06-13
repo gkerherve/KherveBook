@@ -222,3 +222,79 @@ def test_sheet_in_notebook_round_trip(qapp):
     nb2.load_json(nb.to_json())
     assert nb2.cells[-1].CELL_TYPE == "sheet"
     assert nb2.cells[-1]._raw(0, 0) == "5"
+
+
+# -- plot from selection (right-click) ---------------------------------
+
+def _sheet_in_nb(qapp, data, rows=5, cols=3):
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    nb.add_cell("sheet", json.dumps({"rows": rows, "cols": cols,
+                                     "data": data}))
+    sheet = nb.cells[-1]
+    sheet.execute(nb.kernel)
+    return nb, sheet
+
+
+def test_plot_selection_creates_static_plot(qapp):
+    nb, sheet = _sheet_in_nb(qapp, {"A1": "1", "A2": "2", "A3": "3",
+                                    "B1": "2", "B2": "4", "B3": "6"})
+    sheet.plot_selection("line")                 # no selection -> whole grid
+    assert sheet._n_static == 1
+    assert "Chart 1" in sheet.view_titles()
+    assert not sheet._plot_labels[0].pixmap().isNull()
+    # The created chart persists through a .kbook round-trip.
+    from khervebook.notebook import NotebookWidget
+    nb2 = NotebookWidget()
+    nb2.load_json(nb.to_json())
+    assert "Chart 1" in nb2.cells[-1].view_titles()
+
+
+def test_plot_selection_uses_selected_range(qapp):
+    from PyQt5.QtWidgets import QTableWidgetSelectionRange
+    nb, sheet = _sheet_in_nb(qapp, {"A1": "x", "B1": "y",
+                                    "A2": "1", "B2": "10",
+                                    "A3": "2", "B3": "20"})
+    sheet.table.setRangeSelected(
+        QTableWidgetSelectionRange(0, 0, 2, 1), True)
+    assert sheet.has_selection()
+    sheet.plot_selection("bar")
+    assert sheet._n_static == 1
+    assert "Chart 1" in sheet.view_titles()
+
+
+def test_formula_and_created_plots_coexist(qapp):
+    nb, sheet = _sheet_in_nb(qapp, {
+        "A1": "1", "A2": "2", "A3": "3",
+        "C1": "=plt.plot([1, 2, 3]) and plt.gcf()"})
+    assert "Plot 1" in sheet.view_titles()       # formula plot
+    sheet.plot_selection("line")                 # add a static chart
+    titles = sheet.view_titles()
+    assert "Chart 1" in titles and "Plot 1" in titles
+    # Re-running keeps the static chart and refreshes the formula plot.
+    sheet.execute(nb.kernel)
+    titles = sheet.view_titles()
+    assert "Chart 1" in titles and "Plot 1" in titles
+
+
+# -- ks() writes back into a sheet (Python -> sheet) -------------------
+
+def test_ks_writes_value_into_sheet(qapp):
+    nb, sheet = _sheet_in_nb(qapp, {"A1": "radius"})
+    res = nb.kernel.run('ks("A2", 99)')
+    assert res.ok
+    assert sheet.table.item(1, 0).text() == "99"       # live grid updated
+    assert nb.kernel.namespace["sheet1"][1][0] == 99    # snapshot updated
+    # A written value reads straight back.
+    assert nb.kernel.run('ks("A2")').result_repr == "99"
+
+
+def test_ks_writes_string_and_reports_bad_ref(qapp):
+    nb, sheet = _sheet_in_nb(qapp, {"A1": "1"})
+    nb.kernel.run('ks("B1", "hello")')
+    assert sheet.table.item(0, 1).text() == "hello"
+    # Writing before any sheet has published errors cleanly.
+    from khervebook.kernel import Kernel
+    k = Kernel()
+    res = k.run('ks("A1", 5)')
+    assert not res.ok and "run the sheet cell first" in res.error

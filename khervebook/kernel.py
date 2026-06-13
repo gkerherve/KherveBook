@@ -33,12 +33,19 @@ def _ks_col(letters: str) -> int:
     return c - 1
 
 
-def make_ks(namespace):
-    """Build ks(ref): read a published sheet grid like KherveSheet.
+_UNSET = object()
 
-    A bare ref ("A1", "A1:B5") reads sheet1 (the first sheet cell); a
-    "Sheet2!A1" ref reads that numbered sheet. A single cell returns its
-    value; a range returns a NumPy array (or list of lists)."""
+
+def make_ks(kernel):
+    """Build ks(ref[, value]): the two-way Python <-> sheet bridge.
+
+    Read: ``ks("A1")`` / ``ks("A1:B5")`` reads sheet1 (the first sheet
+    cell); a ``"Sheet2!A1"`` ref reads that numbered sheet. A single
+    cell returns its value; a range returns a NumPy array (or list of
+    lists). Write: ``ks("A1", value)`` pushes a value back into the live
+    grid (single cell only), so a code cell can fill a sheet."""
+    namespace = kernel.namespace
+
     def _grid(name):
         grid = namespace.get(name)
         if grid is None:
@@ -52,13 +59,19 @@ def make_ks(namespace):
             return 0 if v is None else v
         return 0
 
-    def ks(ref):
+    def ks(ref, value=_UNSET):
         ref = str(ref).strip()
         name = "sheet1"
         if "!" in ref:
             sheet, _, ref = ref.partition("!")
             sheet = sheet.strip().strip("'\"").lower().replace(" ", "")
             name = sheet if sheet.startswith("sheet") else "sheet1"
+        if value is not _UNSET:
+            writer = getattr(kernel, "sheet_writers", {}).get(name)
+            if writer is None:
+                raise NameError(
+                    f"{name} cannot be written yet — run the sheet cell first")
+            return writer(ref, value)
         grid = _grid(name)
         m = _KS_RANGE.match(ref)
         if m:
@@ -117,6 +130,9 @@ class Kernel:
         self.namespace = {"__name__": "__main__", "__builtins__": __builtins__}
         self.exec_count = 0
         self._seeded = False
+        #: name -> writer(ref, value); registered by each live sheet cell so
+        #: ``ks("A1", value)`` can push values back into the grid.
+        self.sheet_writers = {}
 
     def _seed_namespace(self):
         """Pre-import the usual scientific stack on the first run.
@@ -155,8 +171,8 @@ class Kernel:
             except Exception:
                 pass
         # KherveSheet-style grid accessor for imported =PY cells: ks("A1")
-        # reads from a sheet cell's published grid (sheet1, sheet2, ...).
-        g["ks"] = make_ks(g)
+        # reads (and ks("A1", v) writes) a sheet cell's grid (sheet1, ...).
+        g["ks"] = make_ks(self)
         g["xl"] = g["ks"]
 
     def run(self, source: str) -> ExecResult:

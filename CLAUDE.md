@@ -68,12 +68,16 @@ into a new module and import.
                        plots, one view at a time via a left drop-down);
                        `=` formulas in Python with A1 refs/ranges over
                        the kernel namespace, recomputed live as you type.
+                       Right-click → Create Plot charts the selected
+                       range as a persisted static plot view.
   - `svgcell.py`     — `SvgCell`: renders an SVG drawing (KhervePaint
                        saves .svg) via QSvgRenderer.
   - `kernel.py`      — in-process Python kernel: shared namespace
                        (np/plt/pd/scipy preloaded), timeout guard,
                        stdout/stderr capture, trailing-expression echo,
-                       figure/image capture.
+                       figure/image capture. `ks("A1")` reads a sheet
+                       grid; `ks("A1", value)` writes back into the live
+                       sheet (two-way Python <-> sheet bridge).
   - `welcome.py`     — pre-run example notebook shown on startup.
 - `tests/` — pytest suite (offscreen Qt; run `python -m pytest tests/`).
 - `requirements.txt`, `LICENSE` (GPL-3.0).

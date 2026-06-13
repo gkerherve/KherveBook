@@ -126,6 +126,7 @@ class SheetCell(CellWidget):
         self._plot_titles = []      # parallel plot-view titles
         self._static_plots = []     # (title, png bytes) imported/persisted
         self._n_static = 0          # how many leading plot views are static
+        self._formula_pngs = []     # last run's formula-produced plot pngs
         self._views = []            # [("sheet", i) | ("plot", j), ...]
         self._values = []           # last computed values, per table
         self.table = None           # active grid (None on a plot view)
@@ -270,6 +271,7 @@ class SheetCell(CellWidget):
             lab.deleteLater()
         self._tables, self._names = [], []
         self._plot_labels, self._plot_titles = [], []
+        self._formula_pngs = []
 
         for i, model in enumerate(models):
             name = str(model.get("name") or f"Sheet{i + 1}")
@@ -421,15 +423,41 @@ class SheetCell(CellWidget):
         return eval(py, namespace)   # noqa: S307
 
     def _publish(self, kernel):
-        """Expose each sheet to code cells as sheet1, sheet2, ... globally."""
+        """Expose each sheet to code cells as sheet1, sheet2, ... globally,
+        and register a writer so ks("A1", v) can push values back."""
         base = self._global_sheet_base()
+        if not hasattr(kernel, "sheet_writers"):
+            kernel.sheet_writers = {}
         for i, table in enumerate(self._tables):
             values = self._values[i] if i < len(self._values) else {}
             grid = [[values.get((r, c))
                      for c in range(table.columnCount())]
                     for r in range(table.rowCount())]
-            kernel.namespace[f"sheet{base + i + 1}"] = grid
+            name = f"sheet{base + i + 1}"
+            kernel.namespace[name] = grid
+            kernel.sheet_writers[name] = self._make_writer(table, grid)
         self.gutter.setText("sheet")
+
+    def _make_writer(self, table, grid):
+        """Return ks(ref, value): write a literal into this live grid."""
+        def write(ref, value):
+            m = _REF.fullmatch(str(ref).strip().upper())
+            if not m:
+                raise ValueError(f"bad cell reference: {ref!r}")
+            r, c = int(m.group(2)) - 1, letter_col(m.group(1))
+            if not (0 <= r < table.rowCount() and 0 <= c < table.columnCount()):
+                raise IndexError(f"cell {ref} is outside the sheet")
+            raw = value if isinstance(value, str) else format_value(value)
+            table.blockSignals(True)
+            self._set_item_of(table, r, c, raw, raw)
+            table.blockSignals(False)
+            if 0 <= r < len(grid) and 0 <= c < len(grid[r]):
+                grid[r][c] = value if isinstance(value, str) \
+                    else parse_value(raw)
+            self.content_changed.emit()
+            self._recalc_timer.start()
+            return value
+        return write
 
     def _global_sheet_base(self) -> int:
         w = self.parent()
@@ -458,21 +486,134 @@ class SheetCell(CellWidget):
 
     def _rebuild_plots(self, pngs):
         """Refresh formula plot views, keeping static plots and selection."""
+        self._formula_pngs = list(pngs)
         prev = (self._views[self.view_combo.currentIndex()]
                 if self._views and self.view_combo.currentIndex() >= 0
                 else ("sheet", 0))
-        # Drop only the formula plots (the static ones lead the list).
-        for lab in self._plot_labels[self._n_static:]:
+        if prev[0] == "plot" and prev[1] >= self._n_static + len(pngs):
+            prev = ("sheet", self._active_sheet())
+        self._rebuild_all_plot_labels(pngs, select=prev)
+
+    def _rebuild_all_plot_labels(self, formula_pngs, select):
+        """Rebuild every plot label (static then formula) in stack order."""
+        for lab in self._plot_labels:
             self.stack.removeWidget(lab)
             lab.deleteLater()
-        self._plot_labels = self._plot_labels[:self._n_static]
-        self._plot_titles = self._plot_titles[:self._n_static]
-        for k, png in enumerate(pngs):
+        self._plot_labels, self._plot_titles = [], []
+        for title, png in self._static_plots:
             self._plot_labels.append(self._make_plot_label(png))
-            self._plot_titles.append(f"Plot {self._n_static + k + 1}")
-        if prev[0] == "plot" and prev[1] >= len(self._plot_labels):
-            prev = ("sheet", self._active_sheet())
-        self._rebuild_views(select=prev)
+            self._plot_titles.append(title)
+        self._n_static = len(self._static_plots)
+        for k, png in enumerate(formula_pngs):
+            self._plot_labels.append(self._make_plot_label(png))
+            self._plot_titles.append(f"Plot {k + 1}")   # stable across charts
+        self._rebuild_views(select=select)
+
+    # -- plot from a selection (right-click) ------------------------------
+    def _selection_cols_rows(self):
+        """Selected (cols, rows) on the active grid, or None."""
+        if self.table is None:
+            return None
+        ranges = self.table.selectedRanges()
+        if not ranges:
+            return None
+        cols = sorted({c for rg in ranges
+                       for c in range(rg.leftColumn(), rg.rightColumn() + 1)})
+        rows = sorted({r for rg in ranges
+                       for r in range(rg.topRow(), rg.bottomRow() + 1)})
+        return (cols, rows) if cols and rows else None
+
+    def has_selection(self) -> bool:
+        return self._selection_cols_rows() is not None
+
+    def plot_selection(self, kind="line"):
+        """Chart the selected cells (or the whole grid) as a static plot.
+
+        The first selected column is the x axis when it is fully numeric
+        and more than one column is selected; otherwise rows number the x
+        axis. A non-numeric top row becomes the series labels."""
+        nb = self._notebook()
+        if nb is None or self.table is None:
+            return
+        kernel = nb.kernel
+        kernel._seed_namespace()
+        plt = kernel.namespace.get("plt")
+        if plt is None:
+            return
+        if not self._values:
+            self.execute(kernel)
+        idx = self._active_sheet()
+        values = self._values[idx] if idx < len(self._values) else {}
+        table = self.table
+        sel = self._selection_cols_rows()
+        if sel is None:
+            cols = list(range(table.columnCount()))
+            rows = list(range(table.rowCount()))
+        else:
+            cols, rows = sel
+
+        def num(r, c):
+            v = values.get((r, c))
+            if isinstance(v, bool):
+                return None
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return None
+
+        top = rows[0]
+        has_header = len(rows) > 1 and any(
+            num(top, c) is None and self._raw_of(table, top, c) for c in cols)
+        data_rows = rows[1:] if has_header else rows
+
+        def label(c):
+            if has_header:
+                t = self._raw_of(table, top, c)
+                if t:
+                    return t
+            return col_letter(c)
+
+        first = cols[0]
+        use_x = len(cols) > 1 and all(
+            num(r, first) is not None for r in data_rows)
+        if use_x:
+            xs_all = [num(r, first) for r in data_rows]
+            ycols, xlabel = cols[1:], label(first)
+        else:
+            xs_all = [r + 1 for r in data_rows]
+            ycols, xlabel = cols, "row"
+
+        fig = plt.figure(figsize=(5, 3.2))
+        ax = fig.add_subplot(111)
+        plotted = 0
+        for c in ycols:
+            pairs = [(x, num(r, c)) for x, r in zip(xs_all, data_rows)
+                     if num(r, c) is not None]
+            if not pairs:
+                continue
+            xs, ys = zip(*pairs)
+            if kind == "bar":
+                ax.bar([str(x) for x in xs], ys, label=label(c))
+            elif kind == "scatter":
+                ax.scatter(xs, ys, label=label(c))
+            else:
+                ax.plot(xs, ys, marker="o", label=label(c))
+            plotted += 1
+        if not plotted:
+            plt.close(fig)
+            return
+        ax.set_xlabel(xlabel)
+        if plotted > 1:
+            ax.legend()
+        title = f"Chart {self._n_static + 1}"
+        ax.set_title(title)
+        fig.tight_layout()
+        png = Kernel._fig_png(fig)
+        plt.close(fig)
+        self._static_plots.append((title, png))
+        self._rebuild_all_plot_labels(
+            self._formula_pngs, select=("plot", len(self._static_plots) - 1))
+        self.content_changed.emit()
 
     def _rebuild_views(self, select=("sheet", 0)):
         self._views = ([("sheet", i) for i in range(len(self._tables))]

@@ -184,10 +184,17 @@ class CellWidget(QFrame):
         gcol.addStretch(1)
         outer.addLayout(gcol)
 
-        # Content: a one-line summary (collapsed) over the real body.
+        # Content: optional title, a one-line summary (collapsed), body.
         self._collapsed = False
+        self._title = ""
         content = QVBoxLayout()
         content.setSpacing(0)
+        self.title_label = QLabel("")
+        self.title_label.setObjectName("cell_title")
+        self.title_label.setStyleSheet("font-weight: bold; font-size: 13px;")
+        self.title_label.setWordWrap(True)
+        self.title_label.hide()
+        content.addWidget(self.title_label)
         self.summary = QLabel("")
         self.summary.setFont(MONO)
         self.summary.setStyleSheet("color: #8a939c; font-style: italic;")
@@ -223,11 +230,13 @@ class CellWidget(QFrame):
         return self._collapsed
 
     def set_collapsed(self, on: bool):
-        """Minimise the cell to a one-line summary (and back)."""
+        """Minimise the cell to its title (or a one-line summary)."""
         self._collapsed = bool(on)
         self._body.setVisible(not self._collapsed)
-        self.summary.setVisible(self._collapsed)
-        if self._collapsed:
+        # When collapsed, a title is the label; otherwise show a preview.
+        show_summary = self._collapsed and not self._title
+        self.summary.setVisible(show_summary)
+        if show_summary:
             lines = self.source().strip().splitlines() or [""]
             first = lines[0][:90]
             more = f"   … {len(lines)} lines" if len(lines) > 1 else ""
@@ -235,6 +244,19 @@ class CellWidget(QFrame):
         self.collapse_btn.setIcon(icon(
             "mdi.chevron-right" if self._collapsed
             else "mdi.chevron-down"))
+
+    # -- title -------------------------------------------------------------
+    @property
+    def title(self) -> str:
+        return self._title
+
+    def set_title(self, text: str):
+        """A title shown bold at the top of the cell (empty = none)."""
+        self._title = (text or "").strip()
+        self.title_label.setText(self._title)
+        self.title_label.setVisible(bool(self._title))
+        if self._collapsed:                 # refresh summary visibility
+            self.set_collapsed(True)
 
     # -- file drops (from the explorer or the OS) ------------------------
     def dragEnterEvent(self, event):
@@ -271,6 +293,8 @@ class CellWidget(QFrame):
 
     def to_dict(self) -> dict:
         d = {"type": self.CELL_TYPE, "source": self.source()}
+        if self._title:
+            d["title"] = self._title
         if self._collapsed:
             d["collapsed"] = True
         return d

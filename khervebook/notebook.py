@@ -15,14 +15,15 @@ import json
 from pathlib import Path
 
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
-from PyQt5.QtWidgets import QMenu, QScrollArea, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import (QInputDialog, QMenu, QScrollArea, QVBoxLayout,
+                             QWidget)
 
 from .cells import CodeCell, make_cell
 from .kernel import Kernel
 from . import sheetcell                  # noqa: F401  (registers "sheet")
 
-# v2: cells gained an optional "collapsed" property.
-FORMAT_VERSION = 2
+# v3: cells gained optional "title" and "column" properties (v2: collapsed).
+FORMAT_VERSION = 3
 
 #: extension -> cell type for files dropped onto the notebook.
 DROP_TYPES = {
@@ -212,6 +213,8 @@ class NotebookWidget(QScrollArea):
                            lambda: self.start_loop(cell))
         menu.addAction("Expand Cell" if cell.collapsed else "Collapse Cell",
                        lambda: cell.set_collapsed(not cell.collapsed))
+        menu.addAction("Edit Title…" if cell.title else "Set Title…",
+                       lambda: self._set_cell_title(cell))
         menu.addSeparator()
         menu.addAction("Cut Cell", self.cut_current)
         menu.addAction("Copy Cell", self.copy_current)
@@ -228,6 +231,14 @@ class NotebookWidget(QScrollArea):
         menu.addSeparator()
         menu.addAction("Delete Cell", self.remove_current)
         menu.exec_(global_pos)
+
+    def _set_cell_title(self, cell):
+        text, ok = QInputDialog.getText(
+            self, "Cell title", "Title (leave empty to remove):",
+            text=cell.title)
+        if ok:
+            cell.set_title(text)
+            self.modified.emit()
 
     def _run_and_advance(self, cell):
         cell.execute(self.kernel)
@@ -343,5 +354,7 @@ class NotebookWidget(QScrollArea):
         for item in doc.get("cells", []) or [{"type": "code", "source": ""}]:
             cell = self.add_cell(item.get("type", "code"),
                                  item.get("source", ""))
+            if item.get("title"):
+                cell.set_title(item["title"])
             if item.get("collapsed"):
                 cell.set_collapsed(True)

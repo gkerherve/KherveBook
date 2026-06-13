@@ -66,6 +66,26 @@ def test_loop_stops_when_cell_removed(qapp):
     assert not nb.looping
 
 
+def test_cell_title_and_round_trip(qapp):
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    cell = nb.cells[0]
+    cell.set_source("x = 1")
+    cell.set_title("Setup")
+    assert cell.title_label.isVisibleTo(cell)
+    assert cell.title_label.text() == "Setup"
+    # Collapsed cell with a title shows the title, not the source preview.
+    cell.set_collapsed(True)
+    assert not cell.summary.isVisibleTo(cell)
+    assert cell.title_label.isVisibleTo(cell)
+    nb2 = NotebookWidget()
+    nb2.load_json(nb.to_json())
+    assert nb2.cells[0].title == "Setup"
+    # Clearing the title removes the label.
+    nb2.cells[0].set_title("")
+    assert not nb2.cells[0].title_label.isVisibleTo(nb2.cells[0])
+
+
 def test_collapse_cell_and_round_trip(qapp):
     from khervebook.notebook import NotebookWidget
     nb = NotebookWidget()

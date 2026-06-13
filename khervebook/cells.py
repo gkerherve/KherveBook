@@ -649,6 +649,11 @@ class MarkdownCell(CellWidget):
         self.view.setAcceptDrops(False)      # file drops go to the cell
         self.view.setOpenExternalLinks(True)
         self.view.setFrameShape(QFrame.NoFrame)
+        # Render markdown at a comfortable reading size (the app default
+        # is small next to LaTeX).
+        md_font = QFont()
+        md_font.setPointSizeF(11.5)
+        self.view.setFont(md_font)
         self.view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.view.hide()
         self.view.mouseDoubleClickEvent = self._edit_again

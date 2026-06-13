@@ -158,6 +158,17 @@ class MainWindow(QMainWindow):
         pos.addAction(self._act("&Right", None,
                                 lambda: self._dock_explorer(Qt.RightDockWidgetArea)))
         pos.addAction(self._act("&Floating", None, self._float_explorer))
+        v.addSeparator()
+        self.page_mode_act = QAction("&Page Mode (continuous)", self,
+                                     checkable=True)
+        self.page_mode_act.setShortcut("Ctrl+Shift+P")
+        page_on = QSettings("Kherve", "KherveBook").value(
+            "view/page_mode", False, type=bool)
+        self.page_mode_act.setChecked(page_on)
+        self.page_mode_act.toggled.connect(self._toggle_page_mode)
+        v.addAction(self.page_mode_act)
+        if page_on:
+            self.notebook.set_page_mode(True)
         theme_menu = v.addMenu("&Theme")
         group = QActionGroup(self)
         group.setExclusive(True)
@@ -243,6 +254,10 @@ class MainWindow(QMainWindow):
         self.addToolBarBreak()
         self.cell_toolbar = CellToolBar(nb, self)
         self.addToolBar(self.cell_toolbar)
+
+    def _toggle_page_mode(self, on):
+        self.notebook.set_page_mode(on)
+        QSettings("Kherve", "KherveBook").setValue("view/page_mode", on)
 
     def _dock_explorer(self, area):
         self.explorer.setFloating(False)

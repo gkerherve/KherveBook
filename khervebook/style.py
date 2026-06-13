@@ -140,6 +140,18 @@ QFrame#cell QPlainTextEdit {{
 QFrame#cell QPlainTextEdit:focus {{ border-color: {t['select']}; }}
 QFrame#cell QLabel#gutter {{ color: {t['gutter']}; }}
 
+/* Page (continuous) mode: borderless cells on one flowing page */
+QScrollArea#notebook_scroll[pageMode="true"] {{ background: {t['card']}; }}
+QFrame#cell[pageMode="true"] {{
+    border: none;
+    border-radius: 0;
+    background: {t['card']};
+}}
+QFrame#cell[pageMode="true"][current="true"] {{
+    border: none;
+    border-left: 3px solid {t['select']};
+}}
+
 QStatusBar {{ background: {t['chrome']};
               border-top: 1px solid {t['border']}; }}
 

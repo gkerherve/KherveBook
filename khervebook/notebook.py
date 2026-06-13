@@ -62,6 +62,7 @@ class NotebookWidget(QScrollArea):
         self.cells = []
         self._rows = []                     # row container widgets
         self._suspend_layout = False
+        self._page_mode = False             # continuous borderless page
         self.current = None
         self._clipboard = None              # dict from a cut/copied cell
         self._loop_cell = None              # cell being run continuously
@@ -84,9 +85,31 @@ class NotebookWidget(QScrollArea):
         if index is None:
             index = len(self.cells)
         self.cells.insert(index, cell)
+        self._apply_page_mode(cell)
         self._relayout()
         self.modified.emit()
         return cell
+
+    # -- page (continuous) mode -------------------------------------------
+    @property
+    def page_mode(self) -> bool:
+        return self._page_mode
+
+    def set_page_mode(self, on: bool):
+        """Continuous page: cells lose their borders and the gaps close,
+        so the notebook reads as one long page regardless of cell type."""
+        self._page_mode = bool(on)
+        self._layout.setSpacing(0 if self._page_mode else 6)
+        self.setProperty("pageMode", self._page_mode)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        for cell in self.cells:
+            self._apply_page_mode(cell)
+
+    def _apply_page_mode(self, cell):
+        cell.setProperty("pageMode", self._page_mode)
+        cell.style().unpolish(cell)
+        cell.style().polish(cell)
 
     def _relayout(self):
         """Rebuild the layout, grouping consecutive 'column' cells into

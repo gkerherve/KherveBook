@@ -66,6 +66,22 @@ def test_loop_stops_when_cell_removed(qapp):
     assert not nb.looping
 
 
+def test_page_mode_toggles_cells(qapp):
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    nb.add_cell_below("markdown", "hi")
+    nb.set_page_mode(True)
+    assert nb.page_mode
+    assert nb._layout.spacing() == 0
+    assert all(c.property("pageMode") for c in nb.cells)
+    # New cells inherit page mode.
+    new = nb.add_cell_below("code", "x")
+    assert new.property("pageMode")
+    nb.set_page_mode(False)
+    assert nb._layout.spacing() == 6
+    assert not any(c.property("pageMode") for c in nb.cells)
+
+
 def test_ctrl_slash_comment_per_cell_type(qapp):
     from PyQt5.QtGui import QTextCursor
     from khervebook.cells import CodeCell, LatexCell, MarkdownCell

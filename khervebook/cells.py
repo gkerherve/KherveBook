@@ -98,7 +98,7 @@ class _ResizeGrip(QWidget):
 
     def mousePressEvent(self, event):
         self._press_y = event.globalY()
-        self._start_h = self._cell._body_scroll.height()
+        self._start_h = self._cell._resize_region_height()
 
     def mouseMoveEvent(self, event):
         if self._press_y is not None:
@@ -350,6 +350,10 @@ class CellWidget(QFrame):
             self.set_collapsed(True)
 
     # -- manual height -----------------------------------------------------
+    def _resize_region_height(self) -> int:
+        """Current px height of the region the resize grip controls."""
+        return self._body_scroll.height()
+
     def set_content_height(self, height):
         """Cap the cell body to *height* px (content scrolls), or None
         to auto-fit to the content."""

@@ -124,6 +124,36 @@ def test_formula_plot_becomes_view(qapp):
     assert sheet._raw(0, 0).startswith("=plt.plot")
 
 
+def test_grid_resize_and_round_trip(qapp):
+    """The resize grip resizes the grid; the height round-trips."""
+    import json as _json
+    from khervebook.notebook import NotebookWidget
+    from khervebook.sheetcell import COL_W, ROW_H
+    nb = NotebookWidget()
+    nb.add_cell("sheet", _json.dumps(
+        {"sheets": [{"name": "S", "rows": 30, "cols": 2, "data": {}}],
+         "active": "S"}))
+    sheet = nb.cells[-1]
+    sheet.execute(nb.kernel)
+    # Compact defaults.
+    assert sheet.table.columnWidth(0) == COL_W
+    assert sheet.table.rowHeight(0) == ROW_H
+    # Resizing sets the grid height directly.
+    sheet.set_content_height(120)
+    assert sheet.table.height() == 120
+    assert sheet.content_height() == 120
+    # Round-trips through .kbook.
+    nb2 = NotebookWidget()
+    nb2.load_json(nb.to_json())
+    s2 = nb2.cells[-1]
+    s2.execute(nb2.kernel)
+    assert s2.content_height() == 120
+    assert s2.table.height() == 120
+    # Double-click reset -> auto-fit.
+    s2.set_content_height(None)
+    assert s2.content_height() is None
+
+
 def test_formula_error_shown(qapp):
     from khervebook.kernel import Kernel
     sheet = make_sheet(qapp, {"A1": "=1/0"})

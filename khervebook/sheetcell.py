@@ -36,7 +36,9 @@ _RANGE = re.compile(r"\b([A-Z]{1,2})(\d{1,3})\s*:\s*([A-Z]{1,2})(\d{1,3})\b")
 
 DEFAULT_ROWS, DEFAULT_COLS = 6, 4
 MAX_PASSES = 8      # formula chains resolve iteratively
-TABLE_MAX_H = 420   # a tall grid scrolls inside itself past this
+TABLE_MAX_H = 300   # a tall grid scrolls inside itself past this
+ROW_H = 24          # compact row height
+COL_W = 84          # compact column width
 
 
 def col_letter(c: int) -> str:
@@ -117,6 +119,7 @@ class SheetCell(CellWidget):
         self._views = []            # [("sheet", i) | ("plot", j), ...]
         self._values = []           # last computed values, per table
         self.table = None           # active grid (None on a plot view)
+        self._manual_h = None       # user-set grid height (resize grip)
 
         # Header: the view selector drop-down, on the left.
         header = QHBoxLayout()
@@ -163,6 +166,10 @@ class SheetCell(CellWidget):
         table = QTableWidget(DEFAULT_ROWS, DEFAULT_COLS)
         table.setItemDelegate(_RawDelegate(table))
         table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        table.verticalHeader().setDefaultSectionSize(ROW_H)
+        table.verticalHeader().setMinimumSectionSize(ROW_H)
+        table.horizontalHeader().setDefaultSectionSize(COL_W)
+        table.verticalHeader().setFixedWidth(28)
         table.itemChanged.connect(self._on_item_changed)
         table.currentCellChanged.connect(self._sync_formula_bar)
         table.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -288,6 +295,10 @@ class SheetCell(CellWidget):
         table.setRowCount(rows)
         table.setColumnCount(cols)
         table.setHorizontalHeaderLabels([col_letter(c) for c in range(cols)])
+        for c in range(cols):
+            table.setColumnWidth(c, COL_W)
+        for r in range(rows):
+            table.setRowHeight(r, ROW_H)
         for ref, raw in (model.get("data") or {}).items():
             m = _REF.fullmatch(ref)
             if not m:
@@ -544,8 +555,27 @@ class SheetCell(CellWidget):
         return h
 
     def _fit_table(self, table):
-        """Size a grid to its rows, but cap tall grids (they scroll)."""
-        table.setFixedHeight(min(self._table_height(table), TABLE_MAX_H))
+        """Size a grid: a manual height wins, else fit rows (capped)."""
+        if self._manual_h is not None:
+            table.setFixedHeight(self._manual_h)
+        else:
+            table.setFixedHeight(min(self._table_height(table), TABLE_MAX_H))
+
+    # The resize grip resizes the GRID (which scrolls), not the whole
+    # cell — so the View selector and formula bar stay put.
+    def _resize_region_height(self) -> int:
+        return self.table.height() if self.table is not None \
+            else self.stack.height()
+
+    def set_content_height(self, height):
+        self._manual_h = None if height is None else max(ROW_H * 2,
+                                                         int(height))
+        if self.table is not None:
+            self._fit_table(self.table)
+            self.stack.updateGeometry()
+
+    def content_height(self):
+        return self._manual_h
 
     def eventFilter(self, obj, event):
         try:

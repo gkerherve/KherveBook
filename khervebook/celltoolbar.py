@@ -44,6 +44,23 @@ OPERATORS = [
     ("∞", r"\infty"),
 ]
 
+#: Multi-line LaTeX snippets ("|" marks where the cursor lands).
+LATEX_SKELETON = ("\\documentclass[12pt]{article}\n"
+                  "\\usepackage{amsmath, amssymb}\n"
+                  "\\begin{document}\n|\n\\end{document}")
+LATEX_TITLE = ("\\title{\\textbf{|}}\n\\author{}\n\\date{}\n\\maketitle")
+LATEX_ITEMIZE = ("\\begin{itemize}\n  \\item |\n  \\item \n\\end{itemize}")
+LATEX_ENUMERATE = ("\\begin{enumerate}\n  \\item |\n  \\item "
+                   "\n\\end{enumerate}")
+LATEX_EQUATION = "\\begin{equation}\n|\n\\end{equation}"
+LATEX_EQUATION_STAR = "\\begin{equation*}\n|\n\\end{equation*}"
+LATEX_ALIGN = "\\begin{align}\n| &= \\\\\n  &= \n\\end{align}"
+LATEX_TABLE = ("\\begin{tabular}{l l}\n\\hline\n| & \\\\\n\\hline\n"
+               " & \\\\\n\\hline\n\\end{tabular}")
+LATEX_FIGURE = ("\\begin{figure}[h]\n\\centering\n"
+                "\\includegraphics[width=0.6\\textwidth]{|}\n"
+                "\\caption{}\n\\end{figure}")
+
 #: Ready-to-insert Python snippets for code cells.
 PY_SNIPPETS = {
     "Imports (numpy, matplotlib)":
@@ -299,9 +316,45 @@ class CellToolBar(QToolBar):
 
     # -- LaTeX mode -----------------------------------------------------------
     def _build_latex(self):
+        # Math building blocks.
         for label, tip, snippet in LATEX_SNIPPETS:
             self._add(label, tip,
                       lambda _=False, s=snippet: self._insert(s))
+        self.addSeparator()
+        # Document structure: title and (un)numbered sections.
+        self._add_menu("Section", "Title and sections", [
+            ("Document skeleton", lambda: self._insert(LATEX_SKELETON)),
+            ("Title block + \\maketitle", lambda: self._insert(LATEX_TITLE)),
+            ("Section", lambda: self._insert("\\section{|}")),
+            ("Section* (unnumbered)", lambda: self._insert("\\section*{|}")),
+            ("Subsection", lambda: self._insert("\\subsection{|}")),
+            ("Subsection* (unnumbered)",
+             lambda: self._insert("\\subsection*{|}")),
+            ("Subsubsection", lambda: self._insert("\\subsubsection{|}")),
+        ], icon_name="mdi.format-header-pound")
+        # Text formatting (wraps the selection).
+        self._add_menu("Format", "Text formatting", [
+            ("Bold", lambda: self._wrap("\\textbf{", "}")),
+            ("Italic", lambda: self._wrap("\\textit{", "}")),
+            ("Underline", lambda: self._wrap("\\underline{", "}")),
+            ("Strikethrough", lambda: self._wrap("\\sout{", "}")),
+            ("Monospace", lambda: self._wrap("\\texttt{", "}")),
+            ("Small caps", lambda: self._wrap("\\textsc{", "}")),
+            ("Emphasis", lambda: self._wrap("\\emph{", "}")),
+        ], icon_name="mdi.format-bold")
+        # Lists, equations and other environments.
+        self._add_menu("List / Env", "Lists, equations, tables", [
+            ("Bullet list (itemize)", lambda: self._insert(LATEX_ITEMIZE)),
+            ("Numbered list (enumerate)",
+             lambda: self._insert(LATEX_ENUMERATE)),
+            ("List item", lambda: self._insert("\\item |")),
+            ("Equation (numbered)", lambda: self._insert(LATEX_EQUATION)),
+            ("Equation* (unnumbered)",
+             lambda: self._insert(LATEX_EQUATION_STAR)),
+            ("Aligned equations", lambda: self._insert(LATEX_ALIGN)),
+            ("Table", lambda: self._insert(LATEX_TABLE)),
+            ("Figure", lambda: self._insert(LATEX_FIGURE)),
+        ], icon_name="mdi.format-list-numbered")
         self.addSeparator()
         self._add_menu("αβγ", "Greek letters",
                        [(f"{name}  (\\{name})",
@@ -314,5 +367,5 @@ class CellToolBar(QToolBar):
         self.addSeparator()
         self._add("Comment", "Comment out — % (Ctrl+/)",
                   self._editor_comment, "mdi.comment-text-outline")
-        self._add("Render", "Render the equation (Shift+Enter)",
+        self._add("Render", "Render / compile (Shift+Enter)",
                   self._notebook.run_current, "mdi.eye-outline")

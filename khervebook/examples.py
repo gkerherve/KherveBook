@@ -267,6 +267,56 @@ def _life():
     ]
 
 
+# -- LaTeX ------------------------------------------------------------------
+
+LATEX_DOC = r"""\documentclass[12pt]{article}
+\usepackage{amsmath, amssymb}
+\usepackage[normalem]{ulem}
+\title{\textbf{A LaTeX document in KherveBook}}
+\author{Compiled with the real LaTeX engine}
+\date{}
+\begin{document}
+\maketitle
+
+\section*{Unnumbered sections}
+A latex cell compiles a full LaTeX document and shows the typeset
+pages. Use \texttt{\textbackslash section*} for sections with no
+number, like this one, or \texttt{\textbackslash section} when you
+want them numbered. Text can be \textbf{bold}, \textit{italic},
+\underline{underlined}, \sout{struck through} or \texttt{monospaced},
+with H\textsubscript{2}O subscripts and E = mc\textsuperscript{2}.
+
+\section*{Equations}
+Inline math such as $E = mc^2$, and displayed equations, numbered:
+\begin{equation}
+\int_{-\infty}^{\infty} e^{-x^2}\,dx = \sqrt{\pi}
+\end{equation}
+or aligned over several lines:
+\begin{align*}
+(a+b)^2 &= a^2 + 2ab + b^2 \\
+\nabla \cdot \mathbf{E} &= \frac{\rho}{\varepsilon_0}
+\end{align*}
+
+\section*{Numbered items}
+\begin{enumerate}
+  \item Sections, numbered or not.
+  \item Itemised and enumerated lists.
+  \item Tables, figures, theorems --- anything LaTeX can typeset.
+\end{enumerate}
+\end{document}"""
+
+
+def _latex_document():
+    return [
+        _md("# LaTeX document\nA **latex cell** compiles a whole LaTeX "
+            "document with the tectonic engine and shows the typeset "
+            "result. Double-click the rendered page to edit the source; "
+            "the LaTeX toolbar (Section / Format / List·Env) inserts the "
+            "building blocks. Run (Shift+Enter) to re-compile."),
+        _tex(LATEX_DOC),
+    ]
+
+
 # -- Physics ----------------------------------------------------------------
 
 def _maxwell():
@@ -1068,6 +1118,7 @@ def _globe():
 
 EXAMPLES = [
     # (name, category, builder)
+    ("LaTeX Document",           "LaTeX",             _latex_document),
     ("Symbolic Calculus",        "Math",              _sympy),
     ("Matrix Operations",        "Math",              _matrices),
     ("Newton Root Finding",      "Math",              _newton),

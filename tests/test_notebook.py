@@ -263,10 +263,13 @@ import pytest  # noqa: E402
 
 
 @pytest.mark.parametrize("builder", _example_params())
-def test_examples_run_clean(qapp, builder):
+def test_examples_run_clean(qapp, builder, monkeypatch):
     """Every Examples-menu notebook loads and runs without errors."""
+    from khervebook import latexcompile
     from khervebook.examples import load_example
     from khervebook.notebook import NotebookWidget
+    # Render latex via the text fallback, not a background tectonic compile.
+    monkeypatch.setattr(latexcompile, "available", lambda: False)
     nb = NotebookWidget()
     load_example(nb, builder)
     nb.stop_loop()

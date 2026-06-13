@@ -128,13 +128,18 @@ def _pymupdf():
 
 def _no_page_numbers(tex: str) -> str:
     """Suppress the page number for the preview, so cropping to content
-    isn't anchored to the footer (notebook cells don't need page nums)."""
-    lines = tex.split("\n")
-    for i, line in enumerate(lines):
-        if "\\begin{document}" in _strip_comment(line):
-            lines.insert(i + 1, "\\thispagestyle{empty}\\pagestyle{empty}")
-            return "\n".join(lines)
-    return tex
+    isn't anchored to the footer (notebook cells don't need page nums).
+    Re-applied after \\maketitle, which resets the title page to plain."""
+    out, inserted = [], False
+    for line in tex.split("\n"):
+        out.append(line)
+        code = _strip_comment(line)
+        if "\\begin{document}" in code:
+            out.append("\\thispagestyle{empty}\\pagestyle{empty}")
+            inserted = True
+        elif "\\maketitle" in code:
+            out.append("\\thispagestyle{empty}")
+    return "\n".join(out) if inserted else tex
 
 
 def _content_clip(page, fitz):

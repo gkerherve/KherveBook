@@ -200,6 +200,8 @@ class MainWindow(QMainWindow):
                 lambda _=False, b=builder: self._load_example(b)))
 
         h = m.addMenu("&Help")
+        h.addAction(self._act("&User Guide", "F1", self._user_guide))
+        h.addSeparator()
         h.addAction(self._act("&About", None, self._about))
 
     #: (label, type-key) pairs for the Jupyter-style cell-type selector.
@@ -463,10 +465,52 @@ class MainWindow(QMainWindow):
         star = "*" if self.dirty else ""
         self.setWindowTitle(f"{star}{name} — {APP_NAME} v{__version__}")
 
+    def _user_guide(self):
+        from .userguide import show_user_guide
+        show_user_guide(self)
+
     def _about(self):
-        QMessageBox.about(
-            self, f"About {APP_NAME}",
-            f"<b>{APP_NAME}</b> v{__version__}<br>"
-            "Jupyter-inspired computational notebook: Python, Markdown "
-            "and LaTeX cells in one document.<br><br>"
-            "Copyright © 2026 Gwilherm Kerherve — GPL-3.0")
+        import sys
+
+        import matplotlib
+        import numpy
+        from PyQt5.QtCore import PYQT_VERSION_STR, QT_VERSION_STR
+
+        def _ver(mod):
+            try:
+                return __import__(mod).__version__
+            except Exception:
+                return "—"
+
+        box = QMessageBox(self)
+        box.setWindowTitle(f"About {APP_NAME}")
+        box.setIconPixmap(app_icon().pixmap(64, 64))
+        box.setTextFormat(Qt.RichText)
+        box.setText(
+            f"<h2 style='margin-bottom:0'>"
+            f"<span style='color:#3776ab'>Kherve</span>"
+            f"<span style='color:#e07b39'>Book</span></h2>"
+            f"<p style='color:gray;margin-top:2px'>version {__version__}</p>"
+            f"<p>A Jupyter-inspired computational notebook — runnable "
+            f"Python, Markdown, LaTeX, live spreadsheets, drawings and "
+            f"imported images/PDFs in one native desktop document.</p>"
+            f"<hr>"
+            f"<p><b>Created by Gwilherm Kerherve</b><br>"
+            f"Imperial College London<br>"
+            f"<a href='https://github.com/gkerherve'>github.com/gkerherve</a>"
+            f"</p>"
+            f"<p>Part of the <b>Kherve</b> family of native scientific "
+            f"apps — KherveFitting (XPS curve fitting), KherveSheet "
+            f"(spreadsheets), KherveTeX (LaTeX), KherveDOC (documents), "
+            f"KhervePaint (drawing), KhervePDF and KherveBook.</p>"
+            f"<hr>"
+            f"<p style='color:gray'><b>Built with</b> "
+            f"Python {sys.version.split()[0]}, Qt {QT_VERSION_STR}, "
+            f"PyQt5 {PYQT_VERSION_STR}, matplotlib {matplotlib.__version__}, "
+            f"NumPy {numpy.__version__}, SciPy {_ver('scipy')}, "
+            f"pandas {_ver('pandas')}, SymPy {_ver('sympy')}, "
+            f"openpyxl {_ver('openpyxl')}, PyMuPDF {_ver('fitz')}.</p>"
+            f"<p>Copyright &copy; 2026 Gwilherm Kerherve — licensed under "
+            f"the <a href='https://www.gnu.org/licenses/gpl-3.0.html'>"
+            f"GNU GPL v3.0</a>.</p>")
+        box.exec_()

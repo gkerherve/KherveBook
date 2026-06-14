@@ -129,6 +129,25 @@ def test_dock_greeting_title_and_font(qapp):
     assert GREETING[:24] in dock.view.toPlainText()
 
 
+def test_settings_model_combo_lists_models(qapp):
+    from khervebook.ai_chat import ApiKeyDialog
+    dlg = ApiKeyDialog(provider="anthropic")
+    items = [dlg.model.itemText(i) for i in range(dlg.model.count())]
+    assert "claude-opus-4-8" in items and "claude-sonnet-4-6" in items
+    assert dlg.model.count() >= 5                       # a real list, not 1-2
+    # switching provider repopulates the dropdown
+    dlg.provider.setCurrentIndex(list(PROVIDERS).index("openai"))
+    openai_items = [dlg.model.itemText(i) for i in range(dlg.model.count())]
+    assert "gpt-4o" in openai_items
+    assert "claude-opus-4-8" not in openai_items
+
+
+def test_every_provider_lists_models_or_is_local():
+    for name, meta in PROVIDERS.items():
+        # all but the bare "local" server ship a starter model list
+        assert meta["models"] or name == "local"
+
+
 def test_settings_dialog_matches_khervesheet(qapp):
     from khervebook.ai_chat import ApiKeyDialog
     dlg = ApiKeyDialog(provider="anthropic")

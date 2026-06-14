@@ -231,11 +231,18 @@ def test_system_prompt_marks_svg_unreadable(qapp):
     assert "<rect/>" not in prompt                      # svg body not exposed
 
 
-def test_insert_cells_into_notebook(qapp):
+def _dock(nb):
+    """A dock with Auto off, for tests that apply manually."""
     from khervebook.ai_chat import AIChatDock
+    dock = AIChatDock(nb)
+    dock.auto_btn.setChecked(False)
+    return dock
+
+
+def test_insert_cells_into_notebook(qapp):
     from khervebook.notebook import NotebookWidget
     nb = NotebookWidget()
-    dock = AIChatDock(nb)
+    dock = _dock(nb)
     dock._on_done("```python\ny = 2\n```\n```markdown\nhello\n```")
     assert dock.insert_btn.isVisibleTo(dock)
     n = len(nb.cells)
@@ -245,12 +252,41 @@ def test_insert_cells_into_notebook(qapp):
     assert nb.cells[-2].source() == "y = 2"
 
 
+def test_apply_runs_the_code(qapp):
+    """Applying does the task: the code cell is executed, not just added."""
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    dock = _dock(nb)
+    dock._on_done("```python\nspam = 6 * 7\n```")
+    dock._insert_cells()
+    assert nb.kernel.namespace.get("spam") == 42        # it actually ran
+
+
+def test_auto_apply_runs_on_reply(qapp):
+    """With Auto on, the assistant's cells apply and run without a click."""
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    dock = _dock(nb)
+    dock.auto_btn.setChecked(True)
+    try:
+        dock._on_done("```python\nauto_ran = 99\n```")
+        assert nb.kernel.namespace.get("auto_ran") == 99
+        assert not dock.insert_btn.isVisible()          # nothing left to apply
+    finally:
+        dock.auto_btn.setChecked(False)
+
+
+def test_extract_cells_preserves_indentation(qapp):
+    src = "def f():\n    if True:\n        return 1\n    return 0"
+    out = extract_cells(f"```python\n{src}\n```")
+    assert out[0]["source"] == src                       # faithful, not mangled
+
+
 def test_ai_replaces_targeted_cell_undoably(qapp):
-    from khervebook.ai_chat import AIChatDock
     from khervebook.notebook import NotebookWidget
     nb = NotebookWidget()
     nb.cells[0].set_source("old = 1")
-    dock = AIChatDock(nb)
+    dock = _dock(nb)
     dock._on_done("```python cell=0\nnew = 2\n```")
     n = len(nb.cells)
     dock._insert_cells()
@@ -261,12 +297,11 @@ def test_ai_replaces_targeted_cell_undoably(qapp):
 
 
 def test_ai_never_overwrites_svg_cell(qapp):
-    from khervebook.ai_chat import AIChatDock
     from khervebook.notebook import NotebookWidget
     nb = NotebookWidget()
     nb.add_cell("svg", "<svg/>")
     svg_index = len(nb.cells) - 1
-    dock = AIChatDock(nb)
+    dock = _dock(nb)
     # the model wrongly targets the drawing cell -> appended instead
     dock._on_done(f"```python cell={svg_index}\nz = 3\n```")
     dock._insert_cells()

@@ -122,8 +122,12 @@ WRITING: reply with each cell you want as ONE fenced block.
 type changed.
 - You may read and write code, markdown, latex and sheet cells. \
 Never emit an svg cell.
-Make every block self-contained and runnable; keep prose outside the \
-fences brief.
+
+Each applied cell is RUN immediately, so the task you are asked to do \
+actually happens — do not just describe it. Every code block must be \
+complete and syntactically valid Python with correct, consistent \
+indentation (4 spaces, no half-indented lines), no truncation and no \
+placeholders. Keep prose outside the fences brief.
 
 Current notebook ({len(notebook.cells)} cells):
 {_notebook_listing(notebook)}"""
@@ -471,6 +475,18 @@ class AIChatDock(QDockWidget):
             btn.setAutoRaise(True)
             btn.clicked.connect(slot)
             header.addWidget(btn)
+        self.auto_btn = QToolButton()
+        self.auto_btn.setText("Auto")
+        self.auto_btn.setCheckable(True)
+        self.auto_btn.setAutoRaise(True)
+        self.auto_btn.setToolTip(
+            "Auto: apply and run the assistant's cells as soon as it "
+            "replies, instead of waiting for the Apply button")
+        self.auto_btn.setChecked(
+            _settings_store().value("ai/auto_apply", False, type=bool))
+        self.auto_btn.toggled.connect(
+            lambda on: _settings_store().setValue("ai/auto_apply", on))
+        header.addWidget(self.auto_btn)
         for icon_name, tip, slot in (
                 ("mdi.help-circle-outline", "Example prompts", self._help),
                 ("mdi.cog", "AI Chat settings", self._settings),
@@ -488,8 +504,8 @@ class AIChatDock(QDockWidget):
         self.view.setFrameShape(self.view.NoFrame)
         column.addWidget(self.view, 1)
 
-        self.insert_btn = QPushButton("Apply to notebook")
-        self.insert_btn.setIcon(icon("mdi.tray-arrow-down"))
+        self.insert_btn = QPushButton("Apply && run")
+        self.insert_btn.setIcon(icon("mdi.play-circle-outline"))
         self.insert_btn.hide()
         self.insert_btn.clicked.connect(self._insert_cells)
         column.addWidget(self.insert_btn)
@@ -612,9 +628,10 @@ class AIChatDock(QDockWidget):
                 bits.append(f"add {adds}")
             if edits:
                 bits.append(f"replace {edits}")
-            self.insert_btn.setText(
-                f"Apply to notebook ({', '.join(bits)})")
+            self.insert_btn.setText(f"Apply && run ({', '.join(bits)})")
         self.status.setText("")
+        if n and self.auto_btn.isChecked():     # do it without a click
+            self._insert_cells()
 
     def _on_failed(self, message: str):
         self.status.setText(f"⚠ {message}")
@@ -639,6 +656,7 @@ class AIChatDock(QDockWidget):
             else:
                 appends.append(item)
 
+        ran = []                            # cells to run after the macro
         nb.undo_stack.beginMacro("AI edit")
         for item in replaces:               # indices stay stable here
             cell = nb.cells[item["target"]]
@@ -648,14 +666,16 @@ class AIChatDock(QDockWidget):
                 cell = nb.current
             nb.undo_stack.push(SetSourceCmd(nb, cell, item["source"],
                                             "AI edit"))
-            if item["type"] in ("markdown", "latex", "sheet"):
-                cell.execute(nb.kernel)
+            ran.append(cell)
         for item in appends:
-            cell = nb.add_cell_below(item["type"], item["source"],
-                                     label="AI edit")
-            if item["type"] in ("markdown", "latex", "sheet"):
-                cell.execute(nb.kernel)
+            ran.append(nb.add_cell_below(item["type"], item["source"],
+                                         label="AI edit"))
         nb.undo_stack.endMacro()
+
+        # Carry out the task: run every applied cell (code runs, text/sheet
+        # render) so what the assistant proposed actually happens.
+        for cell in ran:
+            cell.execute(nb.kernel)
 
         parts = []
         if appends:
@@ -663,8 +683,8 @@ class AIChatDock(QDockWidget):
         if replaces:
             parts.append(f"replaced {len(replaces)}")
         self.status.setText(
-            f"AI edit: {', '.join(parts) or 'nothing'} — review and run "
-            "the code cells. Ctrl+Z undoes it.")
+            f"AI edit: {', '.join(parts) or 'nothing'} — applied and ran. "
+            "Ctrl+Z undoes the edit.")
         self._pending_cells = []
         self.insert_btn.hide()
 

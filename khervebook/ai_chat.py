@@ -15,22 +15,40 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
+import base64
 import re
 
-from PyQt5.QtCore import QSettings, QSize, Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QTextDocument
+from PyQt5.QtCore import (QBuffer, QByteArray, QSettings, QSize, Qt, QThread,
+                          pyqtSignal)
+from PyQt5.QtGui import QImage, QPixmap, QTextDocument
 from PyQt5.QtWidgets import (QComboBox, QDialog, QDialogButtonBox,
-                             QDockWidget, QFormLayout, QGroupBox, QHBoxLayout,
-                             QLabel, QLineEdit, QMessageBox, QPlainTextEdit,
-                             QPushButton, QSizePolicy, QTextBrowser,
-                             QToolButton, QVBoxLayout, QWidget)
+                             QDockWidget, QFormLayout, QFrame, QGroupBox,
+                             QHBoxLayout, QLabel, QLineEdit, QMessageBox,
+                             QPlainTextEdit, QPushButton, QSizePolicy,
+                             QTextBrowser, QToolButton, QVBoxLayout, QWidget)
 
 from . import ai_providers as prov
 from .icons import icon
 
+#: Downscale pasted images past this dimension (keeps API payloads small).
+_MAX_IMG_DIM = 1568
+
 
 def _settings_store():
     return QSettings("Kherve", "KherveBook")
+
+
+def _qimage_to_b64_png(img: QImage) -> str:
+    """Encode a QImage as base64 PNG, downscaling very large images."""
+    if max(img.width(), img.height()) > _MAX_IMG_DIM:
+        img = img.scaled(_MAX_IMG_DIM, _MAX_IMG_DIM,
+                         Qt.KeepAspectRatio, Qt.SmoothTransformation)
+    ba = QByteArray()
+    buf = QBuffer(ba)
+    buf.open(QBuffer.WriteOnly)
+    img.save(buf, "PNG")
+    buf.close()
+    return base64.b64encode(bytes(ba)).decode("ascii")
 
 #: One fenced block: an info string (language + optional "cell=N"
 #: target) then the body up to the closing fence.
@@ -357,6 +375,7 @@ class _ChatInput(QPlainTextEdit):
     normally. History persists across sessions via QSettings."""
 
     send = pyqtSignal()
+    image_pasted = pyqtSignal(object)       # a QImage from the clipboard
 
     _MAX_HISTORY = 100
     _KEY = "ai/input_history"
@@ -432,13 +451,28 @@ class _ChatInput(QPlainTextEdit):
             return
         super().keyPressEvent(event)
 
+    # -- image paste (Ctrl+V a screenshot) --------------------------------
+    def canInsertFromMimeData(self, source):
+        return source.hasImage() or super().canInsertFromMimeData(source)
+
+    def insertFromMimeData(self, source):
+        if source.hasImage():
+            img = source.imageData()
+            if not isinstance(img, QImage):
+                img = QImage(img)
+            if img is not None and not img.isNull():
+                self.image_pasted.emit(img)
+                return
+        super().insertFromMimeData(source)
+
 
 GREETING = (
     "Hello! I can help you build your notebook. Ask me to write or edit "
     "Python, Markdown, LaTeX or sheet cells, analyse your data, or make "
     "plots. I read every cell and can add new ones or rewrite existing "
     "ones (code, markdown, latex, sheet — never drawings); apply with one "
-    "click and Ctrl+Z to undo. Set your provider (Anthropic, OpenAI, "
+    "click and Ctrl+Z to undo. You can also paste a screenshot or image "
+    "(Ctrl+V) for me to look at. Set your provider (Anthropic, OpenAI, "
     "Mistral, Ollama, or Local AI) and API key via the gear icon.")
 
 #: Example prompts shown by the ? button.
@@ -487,6 +521,7 @@ class AIChatDock(QDockWidget):
         self._notebook = notebook
         self._history = []          # neutral [{"role", "content"}]
         self._pending_cells = []
+        self._pending_images = []   # [{"media_type", "data", "chip"}]
         self._worker = None
         self._font_pt = float(_settings_store().value("ai/chat_font_pt", 10.0))
 
@@ -548,11 +583,22 @@ class AIChatDock(QDockWidget):
         self.status.setWordWrap(True)
         column.addWidget(self.status)
 
+        # Pasted-image attachment strip (hidden until an image is pasted).
+        self._attach_bar = QWidget()
+        self._attach_layout = QHBoxLayout(self._attach_bar)
+        self._attach_layout.setContentsMargins(2, 2, 2, 2)
+        self._attach_layout.setSpacing(4)
+        self._attach_layout.addStretch()
+        self._attach_bar.hide()
+        column.addWidget(self._attach_bar)
+
         row = QHBoxLayout()
         self.input = _ChatInput()
-        self.input.setPlaceholderText("Ask Claude to edit the notebook…")
+        self.input.setPlaceholderText(
+            "Ask Claude…  (paste a screenshot with Ctrl+V to attach it)")
         self.input.setFixedHeight(72)
         self.input.send.connect(self._send)
+        self.input.image_pasted.connect(self._on_image_pasted)
         row.addWidget(self.input, 1)
         self.send_btn = QToolButton()
         self.send_btn.setIcon(icon("mdi.send", "#27ae60"))
@@ -620,9 +666,54 @@ class AIChatDock(QDockWidget):
     def _append(self, role: str, text: str):
         self._bubble(role, text)
 
+    # -- pasted-image attachments -----------------------------------------
+    def _on_image_pasted(self, qimage):
+        """Attach a pasted screenshot as a removable thumbnail chip."""
+        try:
+            data = _qimage_to_b64_png(qimage)
+        except Exception:
+            return
+        chip = QFrame()
+        chip.setStyleSheet("QFrame { background:#e6e9ec; border-radius:4px; }")
+        chip_row = QHBoxLayout(chip)
+        chip_row.setContentsMargins(4, 2, 2, 2)
+        chip_row.setSpacing(2)
+        thumb = QLabel()
+        pix = QPixmap()
+        pix.loadFromData(base64.b64decode(data))
+        thumb.setPixmap(pix.scaledToHeight(28, Qt.SmoothTransformation))
+        chip_row.addWidget(thumb)
+        entry = {"media_type": "image/png", "data": data, "chip": chip}
+        remove = QToolButton()
+        remove.setText("✕")
+        remove.setToolTip("Remove image")
+        remove.setAutoRaise(True)
+        remove.clicked.connect(lambda: self._remove_attachment(entry))
+        chip_row.addWidget(remove)
+        self._attach_layout.insertWidget(self._attach_layout.count() - 1, chip)
+        self._pending_images.append(entry)
+        self._attach_bar.show()
+
+    def _remove_attachment(self, entry):
+        if entry in self._pending_images:
+            self._pending_images.remove(entry)
+        entry["chip"].setParent(None)
+        entry["chip"].deleteLater()
+        if not self._pending_images:
+            self._attach_bar.hide()
+
+    def _clear_attachments(self):
+        for entry in list(self._pending_images):
+            entry["chip"].setParent(None)
+            entry["chip"].deleteLater()
+        self._pending_images.clear()
+        self._attach_bar.hide()
+
     def _send(self):
         text = self.input.toPlainText().strip()
-        if not text or self._worker is not None:
+        images = [{"media_type": im["media_type"], "data": im["data"]}
+                  for im in self._pending_images]
+        if (not text and not images) or self._worker is not None:
             return
         name = prov.saved_provider()
         cfg = prov.load_config(name)
@@ -631,10 +722,17 @@ class AIChatDock(QDockWidget):
             cfg = prov.load_config(name)
             if not cfg["key"]:
                 return
-        self.input.add_history(text)        # Up/Down can recall it later
+        if text:
+            self.input.add_history(text)    # Up/Down can recall it later
         self.input.clear()
-        self._append("user", text)
-        self._history.append({"role": "user", "content": text})
+        self._clear_attachments()
+        note = (f"  *[{len(images)} image"
+                f"{'s' if len(images) > 1 else ''} attached]*" if images else "")
+        self._append("user", (text + note) or "*[image]*")
+        msg = {"role": "user", "content": text}
+        if images:
+            msg["images"] = images
+        self._history.append(msg)
         self.status.setText(f"Thinking… ({cfg['model']})")
         self.send_btn.setEnabled(False)
         system = build_system_prompt(self._notebook)

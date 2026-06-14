@@ -13,7 +13,10 @@ the Free Software Foundation, either version 3 of the License, or
 from khervebook import ai_providers as prov
 from khervebook.ai_chat import build_system_prompt, extract_cells
 from khervebook.ai_providers import (PROVIDERS, build_request,
-                                     parse_response)
+                                     format_messages, parse_response)
+
+_IMG_MSG = [{"role": "user", "content": "what is this?",
+             "images": [{"media_type": "image/png", "data": "QUJD"}]}]
 
 
 def test_extract_cells_kinds():
@@ -75,6 +78,39 @@ def test_build_request_ollama():
     assert url.endswith("/api/chat")
     assert payload["stream"] is False
     assert "Authorization" not in headers
+
+
+def test_format_messages_text_only_unchanged():
+    msgs = format_messages("anthropic", [{"role": "user", "content": "hi"}])
+    assert msgs == [{"role": "user", "content": "hi"}]
+
+
+def test_format_messages_anthropic_image_block():
+    msgs = format_messages("anthropic", _IMG_MSG)
+    blocks = msgs[0]["content"]
+    assert blocks[0] == {"type": "text", "text": "what is this?"}
+    assert blocks[1]["type"] == "image"
+    assert blocks[1]["source"] == {"type": "base64",
+                                   "media_type": "image/png", "data": "QUJD"}
+
+
+def test_format_messages_openai_image_url():
+    blocks = format_messages("openai", _IMG_MSG)[0]["content"]
+    assert blocks[1]["type"] == "image_url"
+    assert blocks[1]["image_url"]["url"] == "data:image/png;base64,QUJD"
+
+
+def test_format_messages_ollama_images_field():
+    msg = format_messages("ollama", _IMG_MSG)[0]
+    assert msg["content"] == "what is this?"
+    assert msg["images"] == ["QUJD"]
+
+
+def test_build_request_carries_image(qapp):
+    cfg = {"api": "anthropic", "key": "K", "model": "m",
+           "host": "https://api.anthropic.com"}
+    _, _, payload = build_request(cfg, "SYS", _IMG_MSG)
+    assert payload["messages"][0]["content"][1]["type"] == "image"
 
 
 def test_parse_responses():
@@ -311,6 +347,64 @@ def test_extract_cells_preserves_indentation(qapp):
     src = "def f():\n    if True:\n        return 1\n    return 0"
     out = extract_cells(f"```python\n{src}\n```")
     assert out[0]["source"] == src                       # faithful, not mangled
+
+
+def test_paste_image_attaches_and_sends(qapp, monkeypatch):
+    from PyQt5.QtGui import QColor, QImage
+
+    import khervebook.ai_chat as aichat
+    from khervebook.ai_chat import AIChatDock
+    from khervebook.notebook import NotebookWidget
+
+    class _Sig:
+        def connect(self, *a, **k):
+            pass
+
+    class _DummyWorker:                       # don't hit the network
+        def __init__(self, *a, **k):
+            self.done = self.failed = self.finished = _Sig()
+
+        def start(self):
+            pass
+
+        def deleteLater(self):
+            pass
+
+    monkeypatch.setattr(aichat, "AIWorker", _DummyWorker)
+    monkeypatch.setattr(aichat.prov, "saved_provider", lambda: "anthropic")
+    monkeypatch.setattr(aichat.prov, "load_config", lambda name: {
+        "provider": "anthropic", "api": "anthropic", "key": "K",
+        "model": "m", "host": "https://api.anthropic.com"})
+
+    dock = AIChatDock(NotebookWidget())
+    img = QImage(20, 20, QImage.Format_RGB32)
+    img.fill(QColor("red"))
+    dock._on_image_pasted(img)
+    assert len(dock._pending_images) == 1
+    assert dock._attach_bar.isVisibleTo(dock)            # thumbnail strip shows
+
+    dock.input.setPlainText("what is in this plot?")
+    dock._send()
+    assert dock._pending_images == []                    # consumed on send
+    assert not dock._attach_bar.isVisibleTo(dock)
+    msg = dock._history[-1]
+    assert msg["role"] == "user" and msg["content"] == "what is in this plot?"
+    assert msg["images"][0]["media_type"] == "image/png"
+    assert msg["images"][0]["data"]                      # base64 PNG present
+
+
+def test_remove_attachment(qapp):
+    from PyQt5.QtGui import QColor, QImage
+
+    from khervebook.ai_chat import AIChatDock
+    from khervebook.notebook import NotebookWidget
+    dock = AIChatDock(NotebookWidget())
+    img = QImage(8, 8, QImage.Format_RGB32)
+    img.fill(QColor("blue"))
+    dock._on_image_pasted(img)
+    dock._remove_attachment(dock._pending_images[0])
+    assert dock._pending_images == []
+    assert not dock._attach_bar.isVisibleTo(dock)
 
 
 def test_ai_replaces_targeted_cell_undoably(qapp):

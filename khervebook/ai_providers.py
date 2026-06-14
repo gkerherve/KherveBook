@@ -161,13 +161,47 @@ def saved_provider() -> str:
 
 # -- request building (pure; unit-testable) ------------------------------
 
+def format_messages(api: str, history: list) -> list:
+    """Convert neutral history to a provider's message shape.
+
+    A user message may carry an ``"images"`` list of
+    ``{"media_type", "data"}`` (base64) — pasted screenshots — which is
+    expanded to that provider's multimodal block format."""
+    out = []
+    for msg in history:
+        images = msg.get("images") or []
+        text = msg.get("content", "")
+        if not images:
+            out.append({"role": msg["role"], "content": text})
+            continue
+        if api == "anthropic":
+            blocks = [{"type": "text", "text": text}] if text else []
+            for im in images:
+                blocks.append({"type": "image", "source": {
+                    "type": "base64", "media_type": im["media_type"],
+                    "data": im["data"]}})
+            out.append({"role": msg["role"], "content": blocks})
+        elif api == "ollama":
+            out.append({"role": msg["role"], "content": text,
+                        "images": [im["data"] for im in images]})
+        else:                               # openai-compatible vision
+            blocks = [{"type": "text", "text": text}] if text else []
+            for im in images:
+                blocks.append({"type": "image_url", "image_url": {
+                    "url": f"data:{im['media_type']};base64,{im['data']}"}})
+            out.append({"role": msg["role"], "content": blocks})
+    return out
+
+
 def build_request(cfg: dict, system: str, history: list):
     """Return (url, headers, payload_dict) for one chat call.
 
-    *history* is a list of {"role": "user"|"assistant", "content": str}.
+    *history* is a list of {"role", "content"} (a user message may also
+    carry "images").
     """
     api = cfg["api"]
     host = cfg["host"].rstrip("/")
+    messages = format_messages(api, history)
     if api == "anthropic":
         url = f"{host}/v1/messages"
         headers = {
@@ -179,7 +213,7 @@ def build_request(cfg: dict, system: str, history: list):
             "model": cfg["model"],
             "max_tokens": _MAX_TOKENS,
             "system": system,
-            "messages": history,
+            "messages": messages,
         }
     elif api == "ollama":
         url = f"{host}/api/chat"
@@ -187,7 +221,7 @@ def build_request(cfg: dict, system: str, history: list):
         payload = {
             "model": cfg["model"],
             "stream": False,
-            "messages": [{"role": "system", "content": system}] + history,
+            "messages": [{"role": "system", "content": system}] + messages,
         }
     else:                                   # openai-compatible
         url = f"{host}/chat/completions"
@@ -197,7 +231,7 @@ def build_request(cfg: dict, system: str, history: list):
         payload = {
             "model": cfg["model"],
             "max_tokens": _MAX_TOKENS,
-            "messages": [{"role": "system", "content": system}] + history,
+            "messages": [{"role": "system", "content": system}] + messages,
         }
     return url, headers, payload
 

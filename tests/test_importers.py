@@ -117,6 +117,56 @@ def test_ksheet_py_cell_becomes_code(tmp_path):
     assert doc["sheets"][0]["data"]["B1"] == "3"
 
 
+def test_ksheet_py_cell_reads_its_own_sheet(tmp_path):
+    """A =PY cell on the 2nd sheet must read that sheet, not sheet1."""
+    from khervebook.importers import ksheet_to_cells
+    path = tmp_path / "multi.ksheet"
+    make_ksheet(path, [
+        ("Notes", 4, 3, {(0, 0): "intro"}),
+        ("Data", 5, 3, {(0, 0): "x", (1, 0): "5", (2, 0): "6",
+                        (0, 2): "=PY\nimport numpy as np\n"
+                                "np.sum(ks('A2:A3'))"}),
+    ])
+    code = next(c["source"] for c in ksheet_to_cells(str(path))
+                if c["type"] == "code")
+    assert "ks('Sheet2!A2:A3')" in code      # rewritten to the Data sheet
+    assert "ks('A2:A3')" not in code
+
+
+def test_ksheet_single_sheet_py_not_rewritten(tmp_path):
+    from khervebook.importers import ksheet_to_cells
+    path = tmp_path / "single.ksheet"
+    make_ksheet(path, [
+        ("Data", 5, 3, {(0, 0): "x", (1, 0): "5", (2, 0): "6",
+                        (0, 2): "=PY\nks('A2:A3')"}),
+    ])
+    code = next(c["source"] for c in ksheet_to_cells(str(path))
+                if c["type"] == "code")
+    assert "ks('A2:A3')" in code             # one sheet -> sheet1, left bare
+    assert "Sheet1!" not in code
+
+
+def test_ksheet_py_reads_real_data_after_import(qapp, tmp_path):
+    """End to end: the rewritten =PY cell sees the numbers, not zeros."""
+    from khervebook.importers import ksheet_to_cells
+    from khervebook.notebook import NotebookWidget
+    path = tmp_path / "xps.ksheet"
+    make_ksheet(path, [
+        ("Notes", 4, 3, {(0, 0): "intro"}),
+        ("Data", 5, 2, {(0, 0): "BE", (1, 0): "530.1", (2, 0): "530.2",
+                        (1, 1): "=PY\nlist(ks('A2:A3'))"}),
+    ])
+    nb = NotebookWidget()
+    for item in ksheet_to_cells(str(path)):
+        cell = nb.add_cell_below(item["type"], item["source"])
+        if item["type"] == "sheet":
+            cell.execute(nb.kernel)
+    code = [c for c in nb.cells
+            if c.CELL_TYPE == "code" and "ks(" in c.source()][0]
+    code.execute(nb.kernel)
+    assert "530.1" in code.output.text() and "0.0, 0.0" not in code.output.text()
+
+
 def test_ksheet_multi_sheet_single_cell(tmp_path):
     from khervebook.importers import ksheet_to_cells
     path = tmp_path / "book.ksheet"

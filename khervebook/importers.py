@@ -15,10 +15,35 @@ the Free Software Foundation, either version 3 of the License, or
 import base64
 import io
 import json
+import re
 import zipfile
 from pathlib import Path
 
 from .sheetcell import DEFAULT_COLS, DEFAULT_ROWS, col_letter
+
+#: ks("A1") / xl(...) / cell(...) / ks_set(...) with a literal cell ref.
+_KS_CALL = re.compile(r"\b(ks|xl|cell|ks_set)\(\s*(['\"])([^'\"]*)\2")
+
+
+def _rewrite_py_sheet_refs(code: str, own_index: int, name_to_index: dict):
+    """Make an imported =PY cell read its OWN sheet.
+
+    KherveSheet's ``ks("A1")`` reads the sheet the cell lives on;
+    KherveBook's reads sheet1. Rewrite each literal reference to the
+    positional ``Sheet<N>!`` form so a multi-sheet workbook feeds each
+    program the right grid instead of always the first sheet."""
+    def repl(m):
+        fn, quote, ref = m.group(1), m.group(2), m.group(3).strip()
+        if "!" in ref:
+            nm, _, rest = ref.partition("!")
+            idx = name_to_index.get(nm.strip().strip("'\""))
+            if idx is None:
+                return m.group(0)                 # unknown sheet — leave as is
+            target = f"Sheet{idx + 1}!{rest}"
+        else:
+            target = f"Sheet{own_index + 1}!{ref}"
+        return f"{fn}({quote}{target}{quote}"
+    return _KS_CALL.sub(repl, code)
 
 
 def _text(value) -> str:
@@ -106,6 +131,7 @@ def ksheet_to_cells(path: str) -> list:
     import h5py     # optional dependency; ImportError -> not recognised
 
     sheets, plots, py_cells = [], [], []
+    name_to_index = {}
     with h5py.File(path, "r") as f:
         if _text(f.attrs.get("format", "")) != "ksheet":
             raise ValueError("not a .ksheet file")
@@ -116,6 +142,7 @@ def ksheet_to_cells(path: str) -> list:
             cols = int(sg.attrs.get("cols", 0))
             flat = sg["cells"][:]
             name = _text(sg.attrs.get("name", f"Sheet {si + 1}"))
+            name_to_index[name] = si
             data, max_r, max_c = {}, -1, -1
             for idx, value in enumerate(flat[:rows * cols]):
                 value = _text(value)
@@ -151,6 +178,9 @@ def ksheet_to_cells(path: str) -> list:
         {"sheets": sheets, "active": sheets[0]["name"], "plots": plots})}]
     multi = count > 1
     for name, ref, code in py_cells:
+        if multi:               # make bare ks("A1") read this cell's sheet
+            code = _rewrite_py_sheet_refs(code, name_to_index.get(name, 0),
+                                          name_to_index)
         loc = f"{name}!{ref}" if multi else ref
         cells.append({"type": "code",
                       "source": f"# KherveSheet =PY cell {loc}\n{code}"})

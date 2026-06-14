@@ -289,6 +289,15 @@ def test_ks_writes_value_into_sheet(qapp):
     assert nb.kernel.run('ks("A2")').result_repr == "99"
 
 
+def test_ks_set_writes_a_column(qapp):
+    nb, sheet = _sheet_in_nb(qapp, {"A1": "x"})
+    res = nb.kernel.run('ks_set("A2:A4", [10, 20, 30])')
+    assert res.ok
+    assert sheet.table.item(1, 0).text() == "10"
+    assert sheet.table.item(2, 0).text() == "20"
+    assert sheet.table.item(3, 0).text() == "30"
+
+
 def test_ks_writes_string_and_reports_bad_ref(qapp):
     nb, sheet = _sheet_in_nb(qapp, {"A1": "1"})
     nb.kernel.run('ks("B1", "hello")')

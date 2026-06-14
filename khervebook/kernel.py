@@ -33,6 +33,15 @@ def _ks_col(letters: str) -> int:
     return c - 1
 
 
+def _ks_letters(c: int) -> str:
+    out = ""
+    c += 1
+    while c:
+        c, rem = divmod(c - 1, 26)
+        out = chr(65 + rem) + out
+    return out
+
+
 _UNSET = object()
 
 
@@ -81,21 +90,64 @@ def make_ks(kernel):
             c1, c2 = sorted((c1, c2))
             rows = [[_at(grid, r, c) for c in range(c1, c2 + 1)]
                     for r in range(r1, r2 + 1)]
+            # A single row or column collapses to a 1-D vector (numeric ->
+            # NumPy array, else the raw list) — matching KherveSheet.
+            flat = None
+            if len(rows) == 1:
+                flat = rows[0]
+            elif all(len(x) == 1 for x in rows):
+                flat = [x[0] for x in rows]
             try:
                 import numpy as np
-                if len(rows) == 1:
-                    return np.array(rows[0], dtype=float)
-                if all(len(x) == 1 for x in rows):
-                    return np.array([x[0] for x in rows], dtype=float)
-                return np.array(rows, dtype=float)
+                if flat is not None:
+                    try:
+                        return np.array(flat, dtype=float)
+                    except (TypeError, ValueError):
+                        return flat
+                try:
+                    return np.array(rows, dtype=float)
+                except (TypeError, ValueError):
+                    return rows
             except Exception:
-                return rows
+                return flat if flat is not None else rows
         m = _KS_REF.match(ref)
         if m:
             return _at(grid, int(m.group(2)) - 1, _ks_col(m.group(1)))
         raise ValueError(f"bad cell reference: {ref!r}")
 
-    return ks
+    def ks_set(ref, value):
+        """Write a value back into a sheet — a scalar to one cell, a 1-D
+        sequence down a column / across a row, or a scalar filling a range
+        (the KherveSheet ks_set contract)."""
+        ref = str(ref).strip()
+        name = "sheet1"
+        if "!" in ref:
+            sheet, _, ref = ref.partition("!")
+            sheet = sheet.strip().strip("'\"").lower().replace(" ", "")
+            name = sheet if sheet.startswith("sheet") else "sheet1"
+        writer = getattr(kernel, "sheet_writers", {}).get(name)
+        if writer is None:
+            raise NameError(
+                f"{name} cannot be written yet — run the sheet cell first")
+        rng = _KS_RANGE.match(ref)
+        if not rng:
+            return writer(ref, value)
+        r1, c1 = int(rng.group(2)) - 1, _ks_col(rng.group(1))
+        r2, c2 = int(rng.group(4)) - 1, _ks_col(rng.group(3))
+        r1, r2 = sorted((r1, r2))
+        c1, c2 = sorted((c1, c2))
+        seq = None
+        if hasattr(value, "__iter__") and not isinstance(value, (str, bytes)):
+            seq = list(value)
+        targets = [(r, c) for r in range(r1, r2 + 1)
+                   for c in range(c1, c2 + 1)]
+        for i, (r, c) in enumerate(targets):
+            v = seq[i] if seq is not None and i < len(seq) else (
+                value if seq is None else 0)
+            writer(f"{_ks_letters(c)}{r + 1}", v)
+        return value
+
+    return ks, ks_set
 
 
 @dataclass
@@ -170,10 +222,14 @@ class Kernel:
                 g[mod] = __import__(mod)
             except Exception:
                 pass
-        # KherveSheet-style grid accessor for imported =PY cells: ks("A1")
-        # reads (and ks("A1", v) writes) a sheet cell's grid (sheet1, ...).
-        g["ks"] = make_ks(self)
-        g["xl"] = g["ks"]
+        # KherveSheet-style grid accessors for imported =PY cells: ks("A1")
+        # reads (and ks("A1", v) / ks_set write) a sheet cell's grid
+        # (sheet1, sheet2, ...). xl and cell are aliases of ks.
+        ks_fn, ks_set_fn = make_ks(self)
+        g["ks"] = ks_fn
+        g["xl"] = ks_fn
+        g["cell"] = ks_fn
+        g["ks_set"] = ks_set_fn
 
     def run(self, source: str) -> ExecResult:
         """Execute *source*; return captured output and figures."""

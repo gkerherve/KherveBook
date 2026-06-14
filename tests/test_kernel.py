@@ -100,6 +100,18 @@ def test_ks_missing_sheet_errors(kernel):
     assert not res.ok and "not available" in res.error
 
 
+def test_cell_and_xl_are_aliases_of_ks(kernel):
+    kernel.namespace["sheet1"] = [["a", 7], ["b", 8]]
+    assert kernel.run('cell("B1")').result_repr == "7"
+    assert kernel.run('xl("B2")').result_repr == "8"
+
+
+def test_ks_range_returns_list_when_not_numeric(kernel):
+    kernel.namespace["sheet1"] = [["Mo"], ["Tu"], ["We"]]
+    # a non-numeric column comes back as a flat list, not a 2-D array
+    assert kernel.run('ks("A1:A3")').result_repr == "['Mo', 'Tu', 'We']"
+
+
 def test_reset_clears_namespace(kernel):
     kernel.run("a = 1")
     kernel.reset()

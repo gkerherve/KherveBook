@@ -42,6 +42,37 @@ def _ks_letters(c: int) -> str:
     return out
 
 
+def _np_compat(np):
+    """Bridge names NumPy 2.0 renamed or removed, in both directions, so
+    older scientific code — e.g. imported XPS analysis using np.trapz,
+    np.NaN or np.float_ — keeps running on a modern NumPy (and vice
+    versa)."""
+    import warnings
+    with warnings.catch_warnings():       # probing legacy names may warn
+        warnings.simplefilter("ignore")
+        for new, old in (("trapezoid", "trapz"), ("isin", "in1d"),
+                         ("vstack", "row_stack"), ("prod", "product"),
+                         ("cumprod", "cumproduct"), ("all", "alltrue"),
+                         ("any", "sometrue"), ("round", "round_")):
+            if hasattr(np, new) and not hasattr(np, old):
+                setattr(np, old, getattr(np, new))
+            elif hasattr(np, old) and not hasattr(np, new):
+                setattr(np, new, getattr(np, old))
+        for alias, target in (("NaN", "nan"), ("NAN", "nan"), ("Inf", "inf"),
+                              ("Infinity", "inf"), ("PINF", "inf"),
+                              ("float_", "float64"),
+                              ("complex_", "complex128"),
+                              ("unicode_", "str_"), ("bool8", "bool_"),
+                              ("object0", "object_")):
+            if not hasattr(np, alias) and hasattr(np, target):
+                setattr(np, alias, getattr(np, target))
+        if not hasattr(np, "NINF"):
+            try:
+                np.NINF = -np.inf
+            except Exception:
+                pass
+
+
 _UNSET = object()
 
 
@@ -200,9 +231,7 @@ class Kernel:
         g["math"] = math
         try:
             import numpy as np
-            # NumPy 2.0 renamed trapz -> trapezoid; shim for 1.x bundles
-            if not hasattr(np, "trapezoid"):
-                np.trapezoid = np.trapz      # type: ignore[attr-defined]
+            _np_compat(np)        # bridge NumPy 1.x <-> 2.0 renamed names
             g["np"] = np
             g["numpy"] = np
         except Exception:

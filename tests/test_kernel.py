@@ -100,6 +100,33 @@ def test_ks_missing_sheet_errors(kernel):
     assert not res.ok and "not available" in res.error
 
 
+def test_kernel_provides_np_trapz(kernel):
+    # np.trapz was removed in NumPy 2.0; the kernel restores it as an alias
+    res = kernel.run("import numpy as np\nfloat(np.trapz([0, 1, 4], [0, 1, 2]))")
+    assert res.ok and res.result_repr == "3.0"
+
+
+def test_np_compat_bridges_both_directions():
+    from khervebook.kernel import _np_compat
+
+    class Fake:
+        pass
+
+    # NumPy 2.0-like: new names present, old ones removed.
+    f = Fake()
+    f.trapezoid, f.isin, f.vstack = "T", "I", "V"
+    f.nan, f.inf, f.float64 = float("nan"), float("inf"), float
+    _np_compat(f)
+    assert f.trapz == "T" and f.in1d == "I" and f.row_stack == "V"
+    assert f.NaN != f.NaN and f.Inf == f.inf and f.float_ is float
+
+    # NumPy 1.x-like: old name present, new one missing.
+    g = Fake()
+    g.trapz = "TRAPZ"
+    _np_compat(g)
+    assert g.trapezoid == "TRAPZ"
+
+
 def test_cell_and_xl_are_aliases_of_ks(kernel):
     kernel.namespace["sheet1"] = [["a", 7], ["b", 8]]
     assert kernel.run('cell("B1")').result_repr == "7"

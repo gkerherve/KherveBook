@@ -1181,6 +1181,12 @@ EXAMPLES = [
     ("Earth Globe (live)",       "Live Data",         _globe),
 ]
 
+# Spreadsheet examples ported from KherveSheet (markdown + live sheet
+# cell, some with a chart). Kept in their own module for file size.
+from .sheet_examples import SHEET_EXAMPLES   # noqa: E402
+
+EXAMPLES += SHEET_EXAMPLES
+
 _LIVE_RE = re.compile(r"runs continuously(?:\s*\((\d+)\s*ms\))?")
 
 

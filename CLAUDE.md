@@ -53,6 +53,11 @@ into a new module and import.
                        fenced-block replies inserted as cells.
   - `examples.py`    — Examples menu registry (name, category, builder),
                        like KherveSheet's.
+  - `sheet_examples.py` — ~50 spreadsheet examples ported from
+                       KherveSheet, each restyled as markdown + a live
+                       sheet cell (+ a chart where numeric); Excel
+                       formulas translated to Python by `_xl2py`.
+                       Merged into `examples.py`'s `EXAMPLES`.
   - `importers.py`   — .ksheet (HDF5), .kdocz/.kdoc.json, .ktex and
                        image/PDF importers. PNG/JPG and each PDF page
                        become a self-contained SVG cell (bytes embedded

@@ -166,9 +166,10 @@ def test_dock_greeting_title_and_font(qapp):
     assert "AI Assistant" in dock.title.text()
     assert "·" in dock.title.text()                    # provider · model
     assert GREETING[:24] in dock.view.toPlainText()    # greeting shown
-    before = dock._font_pt
+    dock._font_pt = 10.0                               # deterministic start
     dock._change_font(+2)
-    assert dock._font_pt == before + 2                 # zoom changes size
+    assert dock._font_pt == 12.0                       # zoom changes size
+    dock._change_font(-2)                              # leave the store at 10
     dock._history = [{"role": "user", "content": "hi"}]
     dock._render_all()
     dock._clear()                                      # clears + re-greets

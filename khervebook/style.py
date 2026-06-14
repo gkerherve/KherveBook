@@ -77,10 +77,14 @@ QMenuBar {{ background: {t['chrome']};
             border-bottom: 1px solid {t['border']}; }}
 QMenuBar::item {{ padding: 5px 10px; background: transparent; }}
 QMenuBar::item:selected {{ background: {t['hover']}; border-radius: 4px; }}
-QMenu {{ background: {t['card']}; border: 1px solid {t['border']};
-         padding: 4px; }}
-QMenu::item {{ padding: 5px 24px 5px 12px; border-radius: 4px; }}
-QMenu::item:selected {{ background: {t['hover']}; }}
+QMenu {{ background: {t['card']}; color: {t['text']};
+         border: 1px solid {t['border']}; padding: 4px; }}
+QMenu::item {{ padding: 5px 24px 5px 12px; border-radius: 4px;
+               background: transparent; color: {t['text']}; }}
+QMenu::item:selected {{ background: {t['hover']}; color: {t['text']}; }}
+QMenu::item:disabled {{ color: {t['border']}; }}
+QMenu::separator {{ height: 1px; background: {t['border']};
+                    margin: 4px 8px; }}
 
 QToolBar {{
     background: {t['chrome']};

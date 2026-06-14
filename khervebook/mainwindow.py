@@ -103,6 +103,7 @@ class MainWindow(QMainWindow):
         m = self.menuBar()
         f = m.addMenu("&File")
         f.addAction(self._act("&New", "Ctrl+N", self.new_file))
+        f.addAction(self._act("New &Window", "Ctrl+Shift+N", self.new_window))
         f.addAction(self._act("&Open...", "Ctrl+O", self.open_file))
         f.addAction(self._act("&Save", "Ctrl+S", self.save_file))
         f.addAction(self._act("Save &As...", "Ctrl+Shift+S", self.save_as))
@@ -411,6 +412,28 @@ class MainWindow(QMainWindow):
         self.path = None
         self.dirty = False
         self._update_title()
+
+    @staticmethod
+    def _new_instance_command():
+        """(args, cwd) that launch another, independent app instance —
+        a separate process so its kernel can't block this window's."""
+        import os
+        import sys
+        if getattr(sys, "frozen", False):       # packaged app: re-run the exe
+            return [sys.executable], None
+        import khervebook
+        root = os.path.dirname(os.path.dirname(
+            os.path.abspath(khervebook.__file__)))
+        return [sys.executable, "-m", "khervebook"], root
+
+    def new_window(self):
+        import subprocess
+        args, cwd = self._new_instance_command()
+        try:
+            subprocess.Popen(args, cwd=cwd)
+        except Exception as exc:
+            QMessageBox.warning(self, APP_NAME,
+                                f"Could not open a new window:\n{exc}")
 
     def open_file(self):
         recent = self._recent_files()

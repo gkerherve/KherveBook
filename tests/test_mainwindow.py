@@ -36,6 +36,16 @@ def test_cell_type_conversion(window):
     assert nb.current.source() == "# hello"
 
 
+def test_new_instance_command(window):
+    import os
+    import sys
+    args, cwd = window._new_instance_command()
+    assert args[0] == sys.executable
+    if not getattr(sys, "frozen", False):
+        assert args[1:] == ["-m", "khervebook"]      # launches the package
+        assert os.path.isfile(os.path.join(cwd, "khervebook", "__main__.py"))
+
+
 def test_recent_files_menu(window, tmp_path):
     from pathlib import Path
     window._clear_recent()

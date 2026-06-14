@@ -15,6 +15,27 @@ import json
 
 from .examples import BALLS_SOURCE
 
+#: A small document-style LaTeX cell for the welcome: one unnumbered
+#: section and two paragraphs. Compiles with tectonic when available,
+#: otherwise the lightweight text renderer shows the same structure.
+LATEX_WELCOME_DOC = r"""\documentclass[12pt]{article}
+\usepackage{amsmath}
+\begin{document}
+\section*{Prose, not only equations}
+A \textbf{latex cell} is not limited to a single equation: it can hold a
+whole document with headings and paragraphs, typeset by the real
+\texttt{tectonic} engine, or shown with a lightweight text renderer when
+tectonic is not installed. This heading and the two paragraphs below are
+one LaTeX cell; \textit{double-click} the rendered page to edit the source.
+
+Unnumbered headings use \texttt{\textbackslash section*}, while plain
+\texttt{\textbackslash section} numbers them. Prose wraps automatically and
+mixes \textbf{bold}, \textit{italic} and inline mathematics such as
+$E = mc^2$ in the line. Press \textbf{Shift+Enter} to re-compile, and open
+the \textbf{Examples} menu under \textbf{LaTeX} for numbered equations,
+lists and tables.
+\end{document}"""
+
 WELCOME_CELLS = [
     {"type": "markdown", "source": (
         '# Welcome to <span style="font-size:28px;color:#3776ab">Kherve'
@@ -60,11 +81,15 @@ WELCOME_CELLS = [
         r"\nabla \times \vec{E} = -\frac{\partial \vec{B}}{\partial t}",
         "column": True},
     {"type": "markdown", "source": (
-        "And a whole **LaTeX document** — sections, numbered equations, "
-        "tables, figures — compiles with the real `tectonic` engine and "
-        "shows the typeset pages. See **Examples → LaTeX → LaTeX "
-        "Document**. You can also drop a `.tex` or KherveTeX `.ktex` "
-        "file straight onto the notebook.")},
+        "And a latex cell isn't limited to one equation — it can typeset a "
+        "**whole document**. Here is one with an unnumbered section and two "
+        "paragraphs; it compiles with the real `tectonic` engine, or falls "
+        "back to a lightweight text renderer when tectonic isn't installed:")},
+    {"type": "latex", "source": LATEX_WELCOME_DOC},
+    {"type": "markdown", "source": (
+        "For a fuller example — numbered equations, lists and tables — see "
+        "**Examples → LaTeX → LaTeX Document**. You can also drop a `.tex` "
+        "or KherveTeX `.ktex` file straight onto the notebook.")},
     {"type": "markdown", "source": (
         "**Sheet cells** embed a KherveSheet-style spreadsheet with a "
         "formula bar. `=` formulas are Python with A1 refs and `A1:B5` "

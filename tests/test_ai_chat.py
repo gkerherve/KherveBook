@@ -222,6 +222,37 @@ def test_system_prompt_includes_full_cell_content(qapp):
     assert "never" in prompt.lower() and "svg" in prompt.lower()
 
 
+def test_system_prompt_describes_sheet_grids(qapp):
+    import json
+
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    nb.add_cell("sheet", json.dumps({
+        "rows": 3, "cols": 2,
+        "data": {"A1": "BE", "B1": "Intensity",
+                 "A2": "530.1", "B2": "1000"}}))
+    prompt = build_system_prompt(nb)
+    assert "sheet1 — name" in prompt                     # the variable name
+    assert "'BE'" in prompt and "'Intensity'" in prompt  # its columns
+    assert "rows = sheet1[1:]" in prompt                 # the idiom is taught
+    assert "Do NOT loop ks()" in prompt
+
+
+def test_sheet_grid_numbering_across_cells(qapp):
+    import json
+
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    nb.add_cell("sheet", json.dumps({"sheets": [
+        {"name": "A", "rows": 2, "cols": 1, "data": {}},
+        {"name": "B", "rows": 2, "cols": 1, "data": {}}], "active": "A"}))
+    nb.add_cell("sheet", json.dumps({"rows": 2, "cols": 1, "data": {}}))
+    prompt = build_system_prompt(nb)
+    assert "sheet1 — name 'A'" in prompt                 # 1st cell, 1st sheet
+    assert "sheet2 — name 'B'" in prompt                 # 1st cell, 2nd sheet
+    assert "sheet3 — name" in prompt                     # 2nd cell continues
+
+
 def test_system_prompt_marks_svg_unreadable(qapp):
     from khervebook.notebook import NotebookWidget
     nb = NotebookWidget()

@@ -70,11 +70,37 @@ def extract_cells(text: str) -> list:
     return cells
 
 
+def _sheet_cell_summary(cell, start_n: int):
+    """Describe a sheet cell by the published grid variables a code cell
+    sees — sheetN, the sheet's name, size and column headers — so the
+    model reads data the idiomatic way instead of guessing cell refs."""
+    names = getattr(cell, "_names", []) or []
+    tables = getattr(cell, "_tables", []) or []
+    raw_of = getattr(cell, "_raw_of", None)
+    lines = ["this sheet cell publishes these grids to code cells "
+             "(each a list of rows; row 0 is the header):"]
+    n = start_n
+    for name, table in zip(names, tables):
+        rows, cols = table.rowCount(), table.columnCount()
+        header = []
+        if raw_of is not None:
+            header = [raw_of(table, 0, c) for c in range(min(cols, 16))]
+            header = [h for h in header if h]
+        cols_txt = f", columns {header}" if header else ""
+        lines.append(f"  sheet{n} — name {name!r}, {rows} rows x {cols} "
+                     f"cols{cols_txt}")
+        n += 1
+    return "\n".join(lines), len(tables)
+
+
 def _notebook_listing(notebook) -> str:
-    blocks, total = [], 0
+    blocks, total, sheet_n = [], 0, 1
     for i, cell in enumerate(notebook.cells):
         if cell.CELL_TYPE == "svg":
             body = "(an SVG drawing — you cannot read or edit this cell)"
+        elif cell.CELL_TYPE == "sheet":
+            body, n_sheets = _sheet_cell_summary(cell, sheet_n)
+            sheet_n += n_sheets
         else:
             body = cell.source()
             if len(body) > _MAX_CELL_CHARS:
@@ -107,9 +133,17 @@ numbers/strings echo, a matplotlib Figure embeds as a plot — end \
 plotting cells with `fig`.
 - A code cell whose first line contains "runs continuously" can be \
 looped for animations; keep per-frame state in globals().
-- Sheet cells publish their computed grid to code cells as sheet1, \
-sheet2, ... (lists of rows). ks("A1") reads a sheet from Python and \
-ks("A1", value) writes back.
+- Sheet cells publish each sheet to code cells as a variable sheet1, \
+sheet2, ... — a list of rows, each row a list of cell values, header in \
+row 0. THIS is the normal way to read a sheet's data. To load columns \
+A and B: `rows = sheet1[1:]` (skip the header), then \
+`a = [float(r[0]) for r in rows]; b = [float(r[1]) for r in rows]`, or \
+build a DataFrame with `pd.DataFrame(sheet1[1:], columns=sheet1[0])`. \
+The notebook listing below names the variable (sheet1, sheet2, …), the \
+sheet name and the columns of every sheet — use it to pick the right \
+variable (e.g. a sheet shown as "sheet5 — name 'Sheet5'" is read as \
+`sheet5`). Do NOT loop ks() cell by cell; ks("A1") / ks("A1", v) is \
+only for reading or writing a SINGLE cell.
 
 READING: the full current notebook is included below — read it to \
 understand and reason about the user's existing code in any cell.

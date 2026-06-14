@@ -7,4 +7,5 @@ pandas>=2.0
 lmfit>=1.2
 sympy>=1.12
 h5py>=3.8
+openpyxl>=3.1   # read dropped .xlsx / .xlsm workbooks into a sheet cell
 pymupdf>=1.23   # render compiled LaTeX (with the tectonic engine) to images

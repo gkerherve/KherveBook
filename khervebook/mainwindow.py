@@ -109,6 +109,8 @@ class MainWindow(QMainWindow):
         f.addSeparator()
         f.addAction(self._act("Insert &Image / PDF...", None,
                               self.insert_image_or_pdf))
+        f.addAction(self._act("Import &Spreadsheet (.xlsx)...", None,
+                              self.import_spreadsheet))
         f.addAction(self._act("&Import Jupyter/Colab (.ipynb)...", None,
                               self.import_ipynb))
         f.addAction(self._act("E&xport as Jupyter/Colab (.ipynb)...", None,
@@ -418,6 +420,18 @@ class MainWindow(QMainWindow):
         if not self.notebook.open_file_in_cell(name):
             QMessageBox.critical(self, APP_NAME,
                                  f"Could not insert:\n{Path(name).name}")
+
+    SHEET_FILTER = ("Spreadsheets (*.xlsx *.xlsm *.csv *.tsv);;"
+                    "All files (*)")
+
+    def import_spreadsheet(self):
+        name, _ = QFileDialog.getOpenFileName(
+            self, "Import spreadsheet", "", self.SHEET_FILTER)
+        if not name:
+            return
+        if not self.notebook.open_file_in_cell(name):
+            QMessageBox.critical(self, APP_NAME,
+                                 f"Could not import:\n{Path(name).name}")
 
     def closeEvent(self, event):
         if self._confirm_discard():

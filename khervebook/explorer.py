@@ -34,7 +34,8 @@ class FileExplorer(QDockWidget):
     #: Files surfaced in the tree; everything else is greyed out.
     FILTERS = ["*.kbook", "*.ksheet", "*.kdocz", "*.kdoc.json",
                "*.ktex", "*.ktexz", "*.ktex.json", "*.ipynb", "*.svg",
-               "*.py", "*.csv", "*.txt", "*.md"]
+               "*.py", "*.csv", "*.txt", "*.md", "*.xlsx", "*.xlsm",
+               "*.tex", "*.png", "*.jpg", "*.jpeg", "*.pdf"]
 
     def __init__(self, parent=None):
         super().__init__("Files", parent)

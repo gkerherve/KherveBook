@@ -288,3 +288,80 @@ def test_drop_pdf_makes_svg_cells(qapp, tmp_path):
     svg_cells = [c for c in nb.cells if c.CELL_TYPE == "svg"]
     assert len(svg_cells) == 2
     assert svg_cells[-1].view.isVisibleTo(nb)           # rendered on drop
+
+
+# -- Excel .xlsx ------------------------------------------------------
+
+def make_xlsx(path):
+    openpyxl = pytest.importorskip("openpyxl")
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Data"
+    ws["A1"], ws["B1"] = "x", "y"
+    ws["A2"], ws["B2"] = 1, 10
+    ws["A3"], ws["B3"] = 2, 20
+    ws["A4"], ws["B4"] = "Total", "=SUM(B2:B3)"
+    ws2 = wb.create_sheet("Notes")
+    ws2["A1"] = "hello"
+    wb.save(str(path))
+
+
+def test_xlsx_to_cells_multi_sheet(qapp, tmp_path):
+    from khervebook.importers import xlsx_to_cells
+    path = tmp_path / "book.xlsx"
+    make_xlsx(path)
+    cells = xlsx_to_cells(str(path))
+    assert len(cells) == 1 and cells[0]["type"] == "sheet"
+    doc = json.loads(cells[0]["source"])
+    assert [s["name"] for s in doc["sheets"]] == ["Data", "Notes"]
+    data = doc["sheets"][0]["data"]
+    assert data["A1"] == "x" and data["B2"] == "10"
+    # No Excel-cached value -> the SUM formula is translated to Python.
+    assert data["B4"] == "=sum(B2:B3)"
+    assert doc["sheets"][1]["data"]["A1"] == "hello"
+
+
+def test_xlsx_formula_recomputes_in_sheet(qapp, tmp_path):
+    from khervebook.kernel import Kernel
+    from khervebook.importers import xlsx_to_cells
+    from khervebook.sheetcell import SheetCell
+    path = tmp_path / "sums.xlsx"
+    make_xlsx(path)
+    cells = xlsx_to_cells(str(path))
+    sheet = SheetCell(cells[0]["source"])
+    sheet.execute(Kernel())
+    assert sheet.table.item(3, 1).text() == "30"        # B4 = sum(B2:B3)
+
+
+def test_drop_xlsx_makes_computed_sheet_cell(qapp, tmp_path):
+    pytest.importorskip("openpyxl")
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    path = tmp_path / "drop.xlsx"
+    make_xlsx(path)
+    assert nb.open_file_in_cell(str(path))
+    assert nb.current.CELL_TYPE == "sheet"
+    assert nb.current._raw(0, 0) == "x"
+    # executed on import, so the formula already shows its value
+    assert nb.current.table.item(3, 1).text() == "30"
+    # survives a .kbook round-trip
+    nb2 = NotebookWidget()
+    nb2.load_json(nb.to_json())
+    assert nb2.cells[-1].CELL_TYPE == "sheet"
+
+
+def test_xlsx_data_value_starting_with_equals(qapp, tmp_path):
+    """A text cell that literally starts with '=' must not error."""
+    openpyxl = pytest.importorskip("openpyxl")
+    from khervebook.kernel import Kernel
+    from khervebook.importers import xlsx_to_cells
+    from khervebook.sheetcell import SheetCell
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws["A1"] = "=not a formula"          # stored as text in Excel
+    ws["A1"].data_type = "s"
+    path = tmp_path / "eq.xlsx"
+    wb.save(str(path))
+    sheet = SheetCell(xlsx_to_cells(str(path))[0]["source"])
+    sheet.execute(Kernel())
+    assert "#ERR" not in sheet.table.item(0, 0).text()

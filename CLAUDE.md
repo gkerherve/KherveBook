@@ -58,10 +58,13 @@ into a new module and import.
                        sheet cell (+ a chart where numeric); Excel
                        formulas translated to Python by `_xl2py`.
                        Merged into `examples.py`'s `EXAMPLES`.
-  - `importers.py`   — .ksheet (HDF5), .kdocz/.kdoc.json, .ktex and
-                       image/PDF importers. PNG/JPG and each PDF page
-                       become a self-contained SVG cell (bytes embedded
-                       base64), so they fit-to-width and travel in .kbook.
+  - `importers.py`   — .ksheet (HDF5), .kdocz/.kdoc.json, .ktex,
+                       .xlsx/.xlsm and image/PDF importers. Excel
+                       workbooks (openpyxl) become one multi-sheet sheet
+                       cell — values as-is, formulas as their cached
+                       value or a Python translation. PNG/JPG and each
+                       PDF page become a self-contained SVG cell (bytes
+                       embedded base64), fit-to-width and travel in .kbook.
   - `ipynb.py`       — Jupyter/Colab .ipynb import & export (lossless
                        round-trip via cell metadata).
   - `notebook.py`    — `NotebookWidget`: scrollable cell column, shared

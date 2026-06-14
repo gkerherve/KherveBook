@@ -32,6 +32,7 @@ DROP_TYPES = {
     ".md": "markdown", ".markdown": "markdown",
     ".tex": "latex",
     ".csv": "sheet", ".tsv": "sheet", ".txt": "sheet", ".dat": "sheet",
+    ".xlsx": "xlsx", ".xlsm": "xlsx",     # Excel workbook -> sheet cell
     ".svg": "svg",                        # KhervePaint / any SVG drawing
     ".png": "image", ".jpg": "image", ".jpeg": "image",
     ".gif": "image", ".bmp": "image",
@@ -397,7 +398,8 @@ class NotebookWidget(QScrollArea):
         if kind == "kbook":
             self.open_kbook_requested.emit(str(p))
             return True
-        if kind in ("ksheet", "kdoc", "ktex", "ipynb", "image", "pdf"):
+        if kind in ("ksheet", "kdoc", "ktex", "ipynb", "image", "pdf",
+                    "xlsx"):
             try:
                 if kind == "ipynb":
                     from . import ipynb
@@ -408,7 +410,8 @@ class NotebookWidget(QScrollArea):
                                 "kdoc": importers.kdoc_to_cells,
                                 "ktex": importers.ktex_to_cells,
                                 "image": importers.image_to_cells,
-                                "pdf": importers.pdf_to_cells}[kind]
+                                "pdf": importers.pdf_to_cells,
+                                "xlsx": importers.xlsx_to_cells}[kind]
                     items = importer(str(p))
             except Exception:
                 return False
@@ -418,7 +421,7 @@ class NotebookWidget(QScrollArea):
                 self._set_current(cell)
             for item in items:
                 new = self.add_cell_below(item["type"], item["source"])
-                if item["type"] in ("markdown", "latex", "svg"):
+                if item["type"] in ("markdown", "latex", "svg", "sheet"):
                     new.execute(self.kernel)
             self.modified.emit()
             return True

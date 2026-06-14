@@ -204,6 +204,87 @@ def pdf_to_cells(path: str, dpi: int = 150) -> list:
     return cells
 
 
+# -- Excel .xlsx / .xlsm -> a multi-sheet sheet cell --------------------
+
+_XLSX_MAX_ROWS = 2000          # cap a runaway workbook to a usable grid
+_XLSX_MAX_COLS = 100
+
+
+def _xlsx_fmt(value) -> str:
+    """Format one openpyxl cell value as sheet-cell raw text."""
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    s = value.isoformat() if hasattr(value, "isoformat") else str(value)
+    if s.startswith("="):          # data that would read as a formula
+        return "=" + repr(s)       # a formula yielding that literal text
+    return s
+
+
+def _xlsx_raw(value, cell_f, xl2py) -> str:
+    """A cell's raw text: cached value preferred, else translated formula."""
+    is_formula = (cell_f is not None
+                  and getattr(cell_f, "data_type", "") == "f"
+                  and isinstance(cell_f.value, str)
+                  and cell_f.value.startswith("="))
+    if value is not None:
+        return _xlsx_fmt(value)
+    if is_formula:
+        return xl2py(cell_f.value)
+    return ""
+
+
+def xlsx_to_cells(path: str) -> list:
+    """An Excel workbook as ONE multi-sheet sheet cell.
+
+    Each worksheet becomes a sheet (trimmed to its used range). Cell
+    values import as-is; a formula imports as its last-saved value, or,
+    when Excel never cached one, its formula translated to KherveBook's
+    Python syntax (so simple `=SUM(...)` still recompute live)."""
+    import openpyxl       # optional dependency; ImportError -> unrecognised
+    from .sheet_examples import _xl2py
+
+    wb_v = openpyxl.load_workbook(path, data_only=True, read_only=True)
+    try:
+        wb_f = openpyxl.load_workbook(path, data_only=False, read_only=True)
+    except Exception:
+        wb_f = None
+    active = wb_v.active.title if wb_v.active is not None else ""
+
+    sheets = []
+    for name in wb_v.sheetnames:
+        ws_v = wb_v[name]
+        ws_f = (wb_f[name] if wb_f is not None and name in wb_f.sheetnames
+                else None)
+        rows_f = ws_f.iter_rows() if ws_f is not None else iter(())
+        data, max_r, max_c = {}, -1, -1
+        for r, row_v in enumerate(ws_v.iter_rows()):
+            if r >= _XLSX_MAX_ROWS:
+                break
+            row_f = next(rows_f, ())
+            for c, cell_v in enumerate(row_v):
+                if c >= _XLSX_MAX_COLS:
+                    break
+                cell_f = row_f[c] if c < len(row_f) else None
+                raw = _xlsx_raw(cell_v.value, cell_f, _xl2py)
+                if raw == "":
+                    continue
+                data[f"{col_letter(c)}{r + 1}"] = raw
+                max_r, max_c = max(max_r, r), max(max_c, c)
+        sheets.append({"name": name or f"Sheet{len(sheets) + 1}",
+                       "rows": max(max_r + 1, DEFAULT_ROWS),
+                       "cols": max(max_c + 1, DEFAULT_COLS),
+                       "data": data})
+    wb_v.close()
+    if wb_f is not None:
+        wb_f.close()
+    if not sheets:
+        return []
+    if active not in [s["name"] for s in sheets]:
+        active = sheets[0]["name"]
+    return [{"type": "sheet", "source": json.dumps(
+        {"sheets": sheets, "active": active})}]
+
+
 # -- KherveTeX (.ktex / .ktexz) -> a LaTeX cell -------------------------
 
 def is_ktex(path: str) -> bool:

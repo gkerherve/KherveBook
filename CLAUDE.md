@@ -87,6 +87,10 @@ into a new module and import.
                        grid; `ks("A1", value)` writes back into the live
                        sheet (two-way Python <-> sheet bridge).
   - `welcome.py`     — pre-run example notebook shown on startup.
+  - `undo_commands.py` — QUndoCommand classes for cell structure
+                       (add/remove/move/convert); they keep the live
+                       widget so an undone delete restores its output.
+  - `userguide.py`   — the Help > User Guide window (scrollable HTML).
 - `tests/` — pytest suite (offscreen Qt; run `python -m pytest tests/`).
 - `requirements.txt`, `LICENSE` (GPL-3.0).
 
@@ -125,20 +129,28 @@ but copy and adapt, never import across project boundaries.
 
 ## Roadmap
 
-- Undo/redo across cell add/remove/move/type-change (shared QUndoStack).
+- Make cell title/column/collapse/resize undoable too (extend the stack).
 - Inline `$...$` math inside Markdown cells.
 - Per-document Git history (port `git_backend.py` from KherveSheet).
 - AI tool-calling (let the assistant run/edit cells directly).
 
 Done: timeout-guarded kernel, code syntax highlighting, `.ipynb`
-import/export, full LaTeX via tectonic, themes, sheet cells.
+import/export, full LaTeX via tectonic, themes, sheet cells, undo/redo
+for cell structure, xlsx/image/PDF import, User Guide.
 
 ## Undo / redo policy
 
 **Every user-visible change should become undoable** as the app
-matures: cell edits already get QPlainTextEdit's local undo, but cell
-add/remove/move/type-change must move onto a shared QUndoStack
-(mirroring KherveSheet's `undo_commands.py`).
+matures. Cell text edits get QPlainTextEdit's local undo; cell
+add/remove/move/type-change/cut/paste are on the notebook's shared
+`QUndoStack` via `undo_commands.py`. `Ctrl+Z`/`Ctrl+Shift+Z` undo text
+in the focused editor first, then fall back to cell structure. The
+commands keep the live widget (not a serialised copy), so an undone
+delete or convert brings the cell back with its output. Internal
+mutators `_attach_cell`/`_detach_cell`/`_swap_cell` do the mechanics;
+`add_cell` stays the non-undoable primitive for load/examples. New
+undoable actions should add a command, not mutate `self.cells`
+directly.
 
 ## Persistence policy
 

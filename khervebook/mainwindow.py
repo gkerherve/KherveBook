@@ -118,15 +118,23 @@ class MainWindow(QMainWindow):
         f.addSeparator()
         f.addAction(self._act("E&xit", "Ctrl+Q", self.close))
 
+        e = m.addMenu("&Edit")
+        self.undo_act = self._act("&Undo", "Ctrl+Z", self._smart_undo,
+                                  "mdi.undo")
+        self.redo_act = self._act("&Redo", "Ctrl+Shift+Z", self._smart_redo,
+                                  "mdi.redo")
+        e.addAction(self.undo_act)
+        e.addAction(self.redo_act)
+
         c = m.addMenu("&Cell")
         c.addAction(self._act("Add &Code Cell", "Ctrl+Shift+C",
-                              lambda: self.notebook.add_cell("code")))
+                              lambda: self.notebook.add_cell_below("code")))
         c.addAction(self._act("Add &Markdown Cell", "Ctrl+Shift+M",
-                              lambda: self.notebook.add_cell("markdown")))
+                              lambda: self.notebook.add_cell_below("markdown")))
         c.addAction(self._act("Add &LaTeX Cell", "Ctrl+Shift+L",
-                              lambda: self.notebook.add_cell("latex")))
+                              lambda: self.notebook.add_cell_below("latex")))
         c.addAction(self._act("Add &Sheet Cell", "Ctrl+Shift+T",
-                              lambda: self.notebook.add_cell("sheet")))
+                              lambda: self.notebook.add_cell_below("sheet")))
         c.addAction(self._act("Add S&VG Cell", None,
                               self._add_svg_cell))
         c.addSeparator()
@@ -219,6 +227,11 @@ class MainWindow(QMainWindow):
         tb.addAction(self._act("Save", None, self.save_file,
                                "mdi.content-save",
                                "Save the notebook (Ctrl+S)"))
+        tb.addSeparator()
+        tb.addAction(self._act("Undo", None, self._smart_undo,
+                               "mdi.undo", "Undo (Ctrl+Z)"))
+        tb.addAction(self._act("Redo", None, self._smart_redo,
+                               "mdi.redo", "Redo (Ctrl+Shift+Z)"))
         tb.addSeparator()
         tb.addAction(self._act("Add cell", None,
                                lambda: nb.add_cell_below("code"),
@@ -464,6 +477,23 @@ class MainWindow(QMainWindow):
         name = Path(self.path).name if self.path else "Untitled"
         star = "*" if self.dirty else ""
         self.setWindowTitle(f"{star}{name} — {APP_NAME} v{__version__}")
+
+    def _smart_undo(self):
+        """Undo text in the focused editor first, else a cell-structure step."""
+        from PyQt5.QtWidgets import QPlainTextEdit
+        fw = QApplication.focusWidget()
+        if isinstance(fw, QPlainTextEdit) and fw.document().isUndoAvailable():
+            fw.undo()
+        else:
+            self.notebook.undo()
+
+    def _smart_redo(self):
+        from PyQt5.QtWidgets import QPlainTextEdit
+        fw = QApplication.focusWidget()
+        if isinstance(fw, QPlainTextEdit) and fw.document().isRedoAvailable():
+            fw.redo()
+        else:
+            self.notebook.redo()
 
     def _user_guide(self):
         from .userguide import show_user_guide

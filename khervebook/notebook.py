@@ -16,10 +16,12 @@ from pathlib import Path
 
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (QHBoxLayout, QInputDialog, QMenu, QScrollArea,
-                             QSizePolicy, QVBoxLayout, QWidget)
+                             QSizePolicy, QUndoStack, QVBoxLayout, QWidget)
 
 from .cells import CodeCell, make_cell
 from .kernel import Kernel
+from .undo_commands import (AddCellCmd, ConvertCellCmd, MoveCellCmd,
+                            RemoveCellCmd)
 from . import sheetcell                  # noqa: F401  (registers "sheet")
 from . import svgcell                    # noqa: F401  (registers "svg")
 
@@ -73,10 +75,15 @@ class NotebookWidget(QScrollArea):
         self._loop_cell = None              # cell being run continuously
         self._loop_timer = QTimer(self)
         self._loop_timer.timeout.connect(self._loop_tick)
+        #: structural undo (add/remove/move/convert); text edits use the
+        #: editor's own undo. Cleared whenever a document is loaded.
+        self.undo_stack = QUndoStack(self)
+        self.undo_stack.setUndoLimit(100)
         self.add_cell("code")
 
     # -- cell management ------------------------------------------------
-    def add_cell(self, cell_type: str, source: str = "", index: int = None):
+    def _make_cell(self, cell_type: str, source: str = ""):
+        """Create a wired-up cell widget without placing it in the layout."""
         cell = make_cell(cell_type, source)
         cell.run_requested.connect(self._run_and_advance)
         cell.run_clicked.connect(self.run_cell)
@@ -87,13 +94,64 @@ class NotebookWidget(QScrollArea):
         cell.editor.textChanged.connect(self.modified.emit)
         cell.content_changed.connect(self.modified.emit)
         cell.resized.connect(self._on_cell_resized)
-        if index is None:
-            index = len(self.cells)
+        return cell
+
+    def _attach_cell(self, cell, index: int):
+        """Place a (new or restored) live cell into the document at index.
+        _relayout re-parents it into a row, which makes it visible again."""
         self.cells.insert(index, cell)
         self._apply_page_mode(cell)
         self._relayout()
         self.modified.emit()
+
+    def _orphan(self, cell):
+        """Pull a cell out of the document but keep the widget alive so an
+        undo can restore it (with its output). setParent(None) detaches it
+        from the row _relayout is about to delete without destroying it."""
+        if cell is self.current:
+            self.current = None
+        if cell in self.cells:
+            self.cells.remove(cell)
+        cell.setParent(None)
+
+    def _detach_cell(self, cell):
+        self._orphan(cell)
+        self._relayout()
+        self.modified.emit()
+
+    def _swap_cell(self, out, into, index: int):
+        """Replace *out* with *into* at *index* (cell-type conversion)."""
+        self._orphan(out)
+        self.cells.insert(index, into)
+        self._apply_page_mode(into)
+        self._relayout()
+        self._select(into, focus=True)
+        self.modified.emit()
+
+    def _select(self, cell, focus: bool = False):
+        self._set_current(cell)
+        if focus and cell is not None:
+            cell.editor.setFocus()
+
+    def add_cell(self, cell_type: str, source: str = "", index: int = None):
+        """Create and place a cell directly (not undoable; used on load,
+        examples, run-and-advance and the initial cell)."""
+        cell = self._make_cell(cell_type, source)
+        if index is None:
+            index = len(self.cells)
+        self._attach_cell(cell, index)
         return cell
+
+    # -- undo / redo (structural) -----------------------------------------
+    def undo(self):
+        self.stop_loop()
+        if self.undo_stack.canUndo():
+            self.undo_stack.undo()
+
+    def redo(self):
+        self.stop_loop()
+        if self.undo_stack.canRedo():
+            self.undo_stack.redo()
 
     # -- page (continuous) mode -------------------------------------------
     @property
@@ -175,24 +233,15 @@ class NotebookWidget(QScrollArea):
     def remove_current(self):
         if self.current is None or len(self.cells) <= 1:
             return
-        idx = self.cells.index(self.current)
-        self.cells.pop(idx)
-        self.current = None
-        self._relayout()                    # deletes the removed cell's row
-        self._set_current(self.cells[min(idx, len(self.cells) - 1)])
-        self.current.editor.setFocus()
-        self.modified.emit()
+        self.undo_stack.push(RemoveCellCmd(self, self.current))
 
     def move_current(self, delta: int):
         if self.current is None:
             return
         idx = self.cells.index(self.current)
-        new = idx + delta
-        if not 0 <= new < len(self.cells):
+        if not 0 <= idx + delta < len(self.cells):
             return
-        self.cells.insert(new, self.cells.pop(idx))
-        self._relayout()
-        self.modified.emit()
+        self.undo_stack.push(MoveCellCmd(self, self.current, delta))
 
     def _set_current(self, cell):
         if cell is self.current:
@@ -205,14 +254,13 @@ class NotebookWidget(QScrollArea):
                 w.style().polish(w)
         self.current_changed.emit(cell)
 
-    def add_cell_below(self, cell_type: str, source: str = ""):
-        """Insert a cell after the current one (Jupyter's '+') and focus it."""
+    def add_cell_below(self, cell_type: str, source: str = "",
+                       label: str = "Add cell"):
+        """Insert a cell after the current one (Jupyter's '+'), undoably."""
         idx = (self.cells.index(self.current) + 1
                if self.current in self.cells else len(self.cells))
-        cell = self.add_cell(cell_type, source, idx)
-        # Select explicitly — focus events alone can lag or be absent.
-        self._set_current(cell)
-        cell.editor.setFocus()
+        cell = self._make_cell(cell_type, source)
+        self.undo_stack.push(AddCellCmd(self, cell, idx, label))
         return cell
 
     # -- cell clipboard / conversion --------------------------------------
@@ -225,33 +273,33 @@ class NotebookWidget(QScrollArea):
             return
         self.copy_current()
         if len(self.cells) == 1:
-            # Cutting the only cell leaves a fresh empty code cell.
-            self.add_cell("code")
-        self.remove_current()
+            # Cutting the only cell leaves a fresh empty code cell —
+            # add-then-remove as one undo step.
+            self.undo_stack.beginMacro("Cut cell")
+            self.add_cell_below("code", label="Cut cell")
+            self.undo_stack.push(RemoveCellCmd(self, self.cells[0], "Cut cell"))
+            self.undo_stack.endMacro()
+        else:
+            self.undo_stack.push(RemoveCellCmd(self, self.current, "Cut cell"))
 
     def paste_cell(self):
         if not self._clipboard:
             return
         self.add_cell_below(self._clipboard.get("type", "code"),
-                            self._clipboard.get("source", ""))
+                            self._clipboard.get("source", ""),
+                            label="Paste cell")
 
     def convert_current(self, cell_type: str):
-        """Change the current cell's type, keeping its source."""
+        """Change the current cell's type, keeping its source (undoable)."""
         cell = self.current
         if cell is None or cell.CELL_TYPE == cell_type:
             return
-        idx = self.cells.index(cell)
-        source = cell.source()
-        col, title = cell.beside_previous, cell.title
-        self.cells.pop(idx)
-        cell.deleteLater()
-        new = self.add_cell(cell_type, source, idx)
-        new.set_beside_previous(col)        # keep its place in the row
-        new.set_title(title)
-        self._relayout()
-        self.current = None
-        self._set_current(new)
-        new.editor.setFocus()
+        new = self._make_cell(cell_type, cell.source())
+        new.set_beside_previous(cell.beside_previous)   # keep its place/heading
+        new.set_title(cell.title)
+        if cell.collapsed:
+            new.set_collapsed(True)
+        self.undo_stack.push(ConvertCellCmd(self, cell, new))
 
     # -- execution -------------------------------------------------------
     def run_current(self):
@@ -419,10 +467,13 @@ class NotebookWidget(QScrollArea):
                 return False
             if cell is not None:
                 self._set_current(cell)
+            self.undo_stack.beginMacro(f"Import {p.name}")
             for item in items:
-                new = self.add_cell_below(item["type"], item["source"])
+                new = self.add_cell_below(item["type"], item["source"],
+                                          label=f"Import {p.name}")
                 if item["type"] in ("markdown", "latex", "svg", "sheet"):
                     new.execute(self.kernel)
+            self.undo_stack.endMacro()
             self.modified.emit()
             return True
         try:
@@ -483,6 +534,7 @@ class NotebookWidget(QScrollArea):
 
     def _apply_cells(self, items):
         self.stop_loop()
+        self.undo_stack.clear()             # can't undo across a load
         self._suspend_layout = True         # one relayout at the end
         for cell in self.cells:
             cell.deleteLater()

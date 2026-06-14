@@ -15,6 +15,50 @@ import json
 
 from .examples import BALLS_SOURCE
 
+#: A multi-panel matplotlib showcase for the welcome's code cell:
+#: line+fill, coloured scatter, a filled contour and a 3D surface —
+#: one figure, four plot kinds, using only preloaded numpy/matplotlib.
+SHOWCASE_PLOT = r'''# A richer matplotlib figure: four panels, one in 3D
+rng = np.random.default_rng(1)
+fig = plt.figure(figsize=(9, 6.5))
+fig.suptitle("One figure, four kinds of plot", fontsize=14, weight="bold")
+
+# A damped oscillation with its decay envelope
+t = np.linspace(0, 12, 500)
+env = np.exp(-0.25 * t)
+ax1 = fig.add_subplot(2, 2, 1)
+ax1.plot(t, env * np.cos(2 * np.pi * 0.7 * t), color="#3776ab")
+ax1.fill_between(t, env, -env, color="#3776ab", alpha=0.15)
+ax1.set_title("Damped oscillation")
+ax1.set_xlabel("t")
+
+# A scatter coloured by distance from the origin, with a colour bar
+x, y = rng.normal(size=(2, 400))
+ax2 = fig.add_subplot(2, 2, 2)
+sc = ax2.scatter(x, y, c=np.hypot(x, y), cmap="plasma", s=20, alpha=0.8)
+fig.colorbar(sc, ax=ax2, label="radius")
+ax2.set_title("Coloured scatter")
+
+# A filled contour of a 2D field
+g = np.linspace(-3, 3, 200)
+X, Y = np.meshgrid(g, g)
+Z = np.cos(X) * np.sin(Y) * np.exp(-(X**2 + Y**2) / 9)
+ax3 = fig.add_subplot(2, 2, 3)
+cf = ax3.contourf(X, Y, Z, levels=20, cmap="RdBu_r")
+fig.colorbar(cf, ax=ax3)
+ax3.set_title("2D field")
+
+# The same field as a 3D surface (coarser grid)
+gc = np.linspace(-3, 3, 60)
+Xc, Yc = np.meshgrid(gc, gc)
+Zc = np.cos(Xc) * np.sin(Yc) * np.exp(-(Xc**2 + Yc**2) / 9)
+ax4 = fig.add_subplot(2, 2, 4, projection="3d")
+ax4.plot_surface(Xc, Yc, Zc, cmap="viridis", linewidth=0, antialiased=True)
+ax4.set_title("Same field in 3D")
+
+fig.tight_layout()
+fig'''
+
 #: A small document-style LaTeX cell for the welcome: one unnumbered
 #: section and two paragraphs. Compiles with tectonic when available,
 #: otherwise the lightweight text renderer shows the same structure.
@@ -53,17 +97,7 @@ WELCOME_CELLS = [
         "- **Sheet cells** embed a spreadsheet, two-way linked to Python\n\n"
         "Press **Shift+Enter** to run a cell and move to the next. "
         "Double-click a rendered text cell to edit it again.")},
-    {"type": "code", "source": (
-        "x = np.linspace(0, 5, 100)\n"
-        "y = x ** 2\n"
-        "\n"
-        "fig = plt.figure()\n"
-        "axes = fig.add_axes([0.1, 0.1, 0.8, 0.8])\n"
-        "axes.plot(x, y, 'r')\n"
-        "axes.set_xlabel('x')\n"
-        "axes.set_ylabel('y')\n"
-        "axes.set_title('title')\n"
-        "fig")},
+    {"type": "code", "source": SHOWCASE_PLOT},
     {"type": "markdown", "source": (
         "## LaTeX, typeset properly\n\n"
         "**LaTeX cells** render equations instantly with matplotlib "

@@ -227,6 +227,12 @@ class MainWindow(QMainWindow):
         tb.setIconSize(QSize(32, 32))
         self.addToolBar(tb)
 
+        tb.addAction(self._act("New", None, self.new_file,
+                               "mdi.book-plus-outline",
+                               "New notebook (Ctrl+N)"))
+        tb.addAction(self._act("Open", None, self.open_file,
+                               "mdi.folder-open-outline",
+                               "Open a notebook (Ctrl+O)"))
         tb.addAction(self._act("Save", None, self.save_file,
                                "mdi.content-save",
                                "Save the notebook (Ctrl+S)"))

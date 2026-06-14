@@ -106,6 +106,9 @@ class MainWindow(QMainWindow):
         f.addAction(self._act("&Open...", "Ctrl+O", self.open_file))
         f.addAction(self._act("&Save", "Ctrl+S", self.save_file))
         f.addAction(self._act("Save &As...", "Ctrl+Shift+S", self.save_as))
+        self.recent_menu = f.addMenu("Open &Recent")
+        self.recent_menu.aboutToShow.connect(self._rebuild_recent_menu)
+        self._rebuild_recent_menu()
         f.addSeparator()
         f.addAction(self._act("Insert &Image / PDF...", None,
                               self.insert_image_or_pdf))
@@ -344,6 +347,56 @@ class MainWindow(QMainWindow):
         action.triggered.connect(slot)
         return action
 
+    # -- recent files -------------------------------------------------------
+    _MAX_RECENT = 12
+
+    def _recent_files(self) -> list:
+        val = QSettings("Kherve", "KherveBook").value("recent_files", [])
+        if isinstance(val, str):            # a one-item list comes back as str
+            val = [val]
+        return [str(x) for x in (val or [])]
+
+    def _add_recent(self, path):
+        if not path:
+            return
+        path = str(Path(path))
+        files = [f for f in self._recent_files() if f != path]
+        files.insert(0, path)
+        del files[self._MAX_RECENT:]
+        QSettings("Kherve", "KherveBook").setValue("recent_files", files)
+
+    def _short_path(self, path) -> str:
+        p = Path(path)
+        parent = str(p.parent)
+        home = str(Path.home())
+        if parent.startswith(home):
+            parent = "~" + parent[len(home):]
+        parent = parent.replace("\\", "/")
+        if len(parent) > 40:
+            parent = parent[:18] + "…" + parent[-20:]
+        return f"{p.name}    {parent}"
+
+    def _rebuild_recent_menu(self):
+        self.recent_menu.clear()
+        files = self._recent_files()
+        if not files:
+            none = self.recent_menu.addAction("(no recent files)")
+            none.setEnabled(False)
+            return
+        for i, path in enumerate(files):
+            accel = f"&{i + 1}" if i < 9 else f"{i + 1}"
+            shown = self._short_path(path).replace("&", "&&")
+            act = self.recent_menu.addAction(f"{accel}  {shown}")
+            act.setToolTip(path)
+            act.setEnabled(Path(path).exists())
+            act.triggered.connect(lambda _=False, p=path: self._open_path(p))
+        self.recent_menu.addSeparator()
+        self.recent_menu.addAction("&Clear Recent Files", self._clear_recent)
+
+    def _clear_recent(self):
+        QSettings("Kherve", "KherveBook").setValue("recent_files", [])
+        self._rebuild_recent_menu()
+
     # -- file I/O -----------------------------------------------------------
     def new_file(self):
         if not self._confirm_discard():
@@ -354,8 +407,10 @@ class MainWindow(QMainWindow):
         self._update_title()
 
     def open_file(self):
+        recent = self._recent_files()
+        start = str(Path(recent[0]).parent) if recent else ""
         name, _ = QFileDialog.getOpenFileName(self, "Open notebook",
-                                              "", FILE_FILTER)
+                                              start, FILE_FILTER)
         if name:
             self._open_path(name)
 
@@ -369,6 +424,7 @@ class MainWindow(QMainWindow):
             return
         self.path = name
         self.dirty = False
+        self._add_recent(name)
         self.explorer.show_file(name)
         self._update_title()
 
@@ -378,12 +434,15 @@ class MainWindow(QMainWindow):
             return
         Path(self.path).write_text(self.notebook.to_json(), encoding="utf-8")
         self.dirty = False
+        self._add_recent(self.path)
         self.explorer.show_file(self.path)
         self._update_title()
 
     def save_as(self):
+        recent = self._recent_files()
+        start = str(Path(recent[0]).parent) if recent else ""
         name, _ = QFileDialog.getSaveFileName(self, "Save notebook",
-                                              "", FILE_FILTER)
+                                              start, FILE_FILTER)
         if not name:
             return
         if not name.lower().endswith(".kbook"):

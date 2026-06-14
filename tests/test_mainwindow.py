@@ -36,6 +36,32 @@ def test_cell_type_conversion(window):
     assert nb.current.source() == "# hello"
 
 
+def test_recent_files_menu(window, tmp_path):
+    from pathlib import Path
+    window._clear_recent()
+    assert window._recent_files() == []
+    # saving records the file
+    p = tmp_path / "demo.kbook"
+    window.path = str(p)
+    window.save_file()
+    assert str(Path(p)) in window._recent_files()
+    # the submenu lists it
+    window._rebuild_recent_menu()
+    assert any("demo.kbook" in a.text() for a in window.recent_menu.actions())
+    # opening another notebook moves it to the front
+    p2 = tmp_path / "two.kbook"
+    p2.write_text(window.notebook.to_json(), encoding="utf-8")
+    window._open_path(str(p2))
+    assert window._recent_files()[0] == str(Path(p2))
+    assert str(Path(p)) in window._recent_files()       # earlier one kept
+    # reopening does not duplicate
+    window._open_path(str(p2))
+    assert window._recent_files().count(str(Path(p2))) == 1
+    # clear empties the list
+    window._clear_recent()
+    assert window._recent_files() == []
+
+
 def test_cut_copy_paste_cell(window):
     nb = window.notebook
     cell = nb.add_cell_below("markdown", "copy me")

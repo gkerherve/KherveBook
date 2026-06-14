@@ -20,9 +20,10 @@ import re
 from PyQt5.QtCore import QThread, Qt, pyqtSignal
 from PyQt5.QtGui import QTextDocument
 from PyQt5.QtWidgets import (QComboBox, QDialog, QDialogButtonBox,
-                             QDockWidget, QFormLayout, QHBoxLayout, QLabel,
-                             QLineEdit, QPlainTextEdit, QPushButton,
-                             QTextBrowser, QToolButton, QVBoxLayout, QWidget)
+                             QDockWidget, QFormLayout, QGroupBox, QHBoxLayout,
+                             QLabel, QLineEdit, QMessageBox, QPlainTextEdit,
+                             QPushButton, QTextBrowser, QToolButton,
+                             QVBoxLayout, QWidget)
 
 from . import ai_providers as prov
 from .icons import icon
@@ -148,24 +149,95 @@ class AIWorker(QThread):
 
 
 class ApiKeyDialog(QDialog):
-    """Provider / API key / host / model settings (gear button)."""
+    """AI Chat Settings — provider, model (with live refresh), API key and
+    (for local servers) host, plus how-to-get-a-key help. Mirrors the
+    KherveSheet dialog."""
+
+    _HELP = {
+        "anthropic": (
+            "To get an API key:\n"
+            "1. Go to console.anthropic.com\n"
+            "2. Sign up or log in\n"
+            "3. Navigate to API Keys in the left sidebar\n"
+            '4. Click "Create Key" and copy the key (starts with sk-ant-)\n'
+            "5. Add credit to your account under Billing"),
+        "openai": (
+            "To get an API key:\n"
+            "1. Go to platform.openai.com\n"
+            "2. Sign up or log in\n"
+            "3. Navigate to API Keys in the left sidebar\n"
+            '4. Click "Create new secret key" and copy it (starts with sk-)\n'
+            "5. Add credit under Billing > Payment methods"),
+        "mistral": (
+            "To get an API key:\n"
+            "1. Go to console.mistral.ai\n"
+            "2. Sign up or log in\n"
+            "3. Navigate to API Keys\n"
+            '4. Click "Create new key" and copy it\n'
+            "5. Add credit under Billing"),
+        "ollama": (
+            "Ollama runs locally — no API key needed.\n"
+            "1. Download and install from ollama.com\n"
+            '2. Run "ollama pull <model>" to download a model\n'
+            "   (e.g. ollama pull llama3.2, ollama pull qwen2.5-coder)\n"
+            "3. The server starts automatically on localhost:11434\n"
+            "4. Use the Refresh button (⟳) to see available models"),
+        "local": (
+            "Connect to any OpenAI-compatible local server.\n"
+            "Works with LM Studio, llama.cpp, LocalAI, Ollama\n"
+            "(OpenAI mode), text-generation-webui, and others.\n\n"
+            "1. Start your local server\n"
+            "2. Enter the server URL below (e.g. http://localhost:1234/v1)\n"
+            "3. Click Refresh (⟳) to see available models\n"
+            "4. No API key is needed for most local servers"),
+    }
 
     def __init__(self, parent=None, provider=None):
         super().__init__(parent)
-        self.setWindowTitle("AI settings")
+        self.setWindowTitle("AI Chat Settings")
+        self.setMinimumWidth(440)
         form = QFormLayout(self)
+
         self.provider = QComboBox()
         for name, meta in prov.PROVIDERS.items():
-            self.provider.addItem(meta["label"], name)
+            label = meta["label"]
+            if not prov.is_available(name):
+                label += "  — not installed"
+            self.provider.addItem(label, name)
         form.addRow("Provider:", self.provider)
-        self.key = QLineEdit()
-        self.key.setEchoMode(QLineEdit.Password)
-        form.addRow("API key:", self.key)
-        self.host = QLineEdit()
-        form.addRow("Host:", self.host)
+
         self.model = QComboBox()
         self.model.setEditable(True)
-        form.addRow("Model:", self.model)
+        model_row = QHBoxLayout()
+        model_row.addWidget(self.model, 1)
+        self.refresh_btn = QToolButton()
+        self.refresh_btn.setText("⟳")
+        self.refresh_btn.setToolTip("Refresh model list from the server")
+        self.refresh_btn.clicked.connect(self._refresh_models)
+        model_row.addWidget(self.refresh_btn)
+        form.addRow("Model:", model_row)
+
+        self.key = QLineEdit()
+        self.key.setEchoMode(QLineEdit.Password)
+        self.key_label = QLabel("API Key:")
+        form.addRow(self.key_label, self.key)
+
+        self.host = QLineEdit()
+        self.host_label = QLabel("Ollama Host:")
+        form.addRow(self.host_label, self.host)
+
+        self.help_group = QGroupBox("How to get an API key")
+        help_layout = QVBoxLayout(self.help_group)
+        self.help_label = QLabel()
+        self.help_label.setWordWrap(True)
+        font = self.help_label.font()
+        font.setPointSize(max(font.pointSize() - 1, 7))
+        self.help_label.setFont(font)
+        self.help_label.setStyleSheet(
+            "color:#555; background:transparent; padding:2px;")
+        help_layout.addWidget(self.help_label)
+        form.addRow(self.help_group)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Ok
                                    | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
@@ -178,23 +250,60 @@ class ApiKeyDialog(QDialog):
             max(0, list(prov.PROVIDERS).index(start)))
         self._load_provider()
 
+    def _name(self) -> str:
+        return self.provider.currentData()
+
     def _load_provider(self):
-        name = self.provider.currentData()
+        name = self._name()
         meta = prov.PROVIDERS[name]
         cfg = prov.load_config(name)
-        self.key.setText(cfg["key"])
-        self.key.setEnabled(meta["needs_key"])
-        self.host.setText(cfg["host"])
-        self.host.setEnabled(meta["needs_host"])
+        self.model.blockSignals(True)
         self.model.clear()
         self.model.addItems(meta["models"])
         self.model.setCurrentText(cfg["model"])
+        self.model.blockSignals(False)
+
+        self.key_label.setVisible(meta["needs_key"])
+        self.key.setVisible(meta["needs_key"])
+        self.key.setText(cfg["key"])
+        self.key.setPlaceholderText(
+            {"anthropic": "sk-ant-...", "openai": "sk-..."}.get(name, ""))
+
+        self.host_label.setVisible(meta["needs_host"])
+        self.host.setVisible(meta["needs_host"])
+        if meta["needs_host"]:
+            self.host.setText(cfg["host"])
+            self.host.setPlaceholderText(meta["host"])
+            self.host_label.setText(
+                "Server URL:" if name == "local" else "Ollama Host:")
+
+        self.refresh_btn.setVisible(meta.get("refreshable", False))
+        self.help_label.setText(self._HELP.get(name, ""))
+        self.help_group.setTitle(
+            "How to set up" if name in ("ollama", "local")
+            else "How to get an API key")
+
+    def _refresh_models(self):
+        name = self._name()
+        try:
+            models = prov.fetch_models(name, self.key.text().strip(),
+                                       self.host.text().strip())
+        except Exception as exc:
+            QMessageBox.warning(self, "Refresh failed", str(exc))
+            return
+        current = self.model.currentText()
+        self.model.blockSignals(True)
+        self.model.clear()
+        self.model.addItems(models)
+        if current in models:
+            self.model.setCurrentText(current)
+        self.model.blockSignals(False)
 
     def accept(self):
-        prov.save_config(self.provider.currentData(),
-                         self.key.text().strip(),
-                         self.model.currentText().strip(),
-                         self.host.text().strip())
+        name = self._name()
+        prov.save_config(
+            name, self.key.text().strip(), self.model.currentText().strip(),
+            self.host.text().strip() or prov.PROVIDERS[name]["host"])
         super().accept()
 
 

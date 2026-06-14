@@ -10,6 +10,7 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
+from khervebook import ai_providers as prov
 from khervebook.ai_chat import build_system_prompt, extract_cells
 from khervebook.ai_providers import (PROVIDERS, build_request,
                                      parse_response)
@@ -83,6 +84,47 @@ def test_parse_responses():
     assert parse_response("openai", {"choices": [
         {"message": {"content": "hi"}}]}) == "hi"
     assert parse_response("ollama", {"message": {"content": "yo"}}) == "yo"
+
+
+def test_providers_refreshable_and_available():
+    assert all(meta.get("refreshable") for meta in PROVIDERS.values())
+    assert all(prov.is_available(name) for name in PROVIDERS)
+    assert not prov.is_available("nope")
+
+
+def test_fetch_models_anthropic(monkeypatch):
+    monkeypatch.setattr(prov, "_get_json", lambda url, headers: {
+        "data": [{"id": "claude-z"}, {"id": "claude-a"}]})
+    assert prov.fetch_models("anthropic", "K") == ["claude-a", "claude-z"]
+
+
+def test_fetch_models_ollama(monkeypatch):
+    monkeypatch.setattr(prov, "_get_json", lambda url, headers: {
+        "models": [{"name": "qwen2.5-coder"}, {"name": "llama3.2"}]})
+    assert prov.fetch_models("ollama", host="http://h") == [
+        "llama3.2", "qwen2.5-coder"]
+
+
+def test_fetch_models_openai_filters_chat_models(monkeypatch):
+    monkeypatch.setattr(prov, "_get_json", lambda url, headers: {
+        "data": [{"id": "gpt-4o"}, {"id": "text-embedding-3"},
+                 {"id": "o1-mini"}]})
+    assert prov.fetch_models("openai", "K") == ["gpt-4o", "o1-mini"]
+
+
+def test_settings_dialog_matches_khervesheet(qapp):
+    from khervebook.ai_chat import ApiKeyDialog
+    dlg = ApiKeyDialog(provider="anthropic")
+    assert dlg.windowTitle() == "AI Chat Settings"
+    assert dlg.refresh_btn.isVisibleTo(dlg)              # ⟳ refresh present
+    assert dlg.key.isVisibleTo(dlg)
+    assert not dlg.host.isVisibleTo(dlg)                 # Anthropic: no host
+    assert "console.anthropic.com" in dlg.help_label.text()
+    assert dlg.help_group.title() == "How to get an API key"
+    # Ollama: key hidden, host shown, help retitled.
+    dlg.provider.setCurrentIndex(list(PROVIDERS).index("ollama"))
+    assert dlg.host.isVisibleTo(dlg) and not dlg.key.isVisibleTo(dlg)
+    assert dlg.help_group.title() == "How to set up"
 
 
 def test_system_prompt_includes_full_cell_content(qapp):

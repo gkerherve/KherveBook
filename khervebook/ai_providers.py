@@ -67,7 +67,60 @@ PROVIDERS = {
     },
 }
 
+#: All providers can list their models over HTTP (see fetch_models).
+for _meta in PROVIDERS.values():
+    _meta.setdefault("refreshable", True)
+
 _SETTINGS = ("Kherve", "KherveBook")
+
+
+def is_available(provider: str) -> bool:
+    """Every provider speaks plain HTTP, so none needs an SDK installed."""
+    return provider in PROVIDERS
+
+
+# -- live model listing (the settings dialog's refresh button) -----------
+
+def _get_json(url: str, headers: dict) -> dict:
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            detail = exc.read().decode("utf-8", "replace")[:200]
+        except Exception:
+            pass
+        raise RuntimeError(f"HTTP {exc.code}: {detail or exc.reason}")
+
+
+def fetch_models(provider: str, api_key: str = "", host: str = "") -> list:
+    """Query a provider for its available model ids over HTTP (no SDK).
+
+    Falls back to the built-in list if the server returns nothing."""
+    meta = PROVIDERS.get(provider)
+    if meta is None:
+        return []
+    base = (host or meta["host"]).rstrip("/")
+    if provider == "anthropic":
+        data = _get_json(f"{base}/v1/models?limit=1000",
+                         {"x-api-key": api_key,
+                          "anthropic-version": "2023-06-01"})
+        ids = [m.get("id") for m in data.get("data", []) if m.get("id")]
+        return sorted(ids) or meta["models"]
+    if provider == "ollama":
+        data = _get_json(f"{base}/api/tags", {})
+        ids = [m.get("name") for m in data.get("models", []) if m.get("name")]
+        return sorted(set(ids)) or meta["models"]
+    # OpenAI-compatible: openai, mistral, local.
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    data = _get_json(f"{base}/models", headers)
+    ids = [m.get("id") for m in data.get("data", []) if m.get("id")]
+    if provider == "openai":
+        ids = [i for i in ids
+               if i.startswith(("gpt-", "o1-", "o3-", "o4-", "chatgpt-"))]
+    return sorted(ids) or meta["models"]
 
 
 # -- settings -----------------------------------------------------------

@@ -312,14 +312,85 @@ class ApiKeyDialog(QDialog):
 
 
 class _ChatInput(QPlainTextEdit):
-    """Enter sends; Shift+Enter inserts a newline."""
+    """Enter sends; Shift+Enter inserts a newline.
+
+    Up/Down recall previously sent messages, shell-style — only when the
+    cursor is on the first/last line, so multi-line drafts still edit
+    normally. History persists across sessions via QSettings."""
 
     send = pyqtSignal()
 
+    _MAX_HISTORY = 100
+    _KEY = "ai/input_history"
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        stored = _settings_store().value(self._KEY, []) or []
+        self._history = [str(x) for x in stored]
+        self._hist_index = None        # None = editing a fresh draft
+        self._draft = ""               # unsent text stashed on first recall
+
+    def add_history(self, text: str):
+        """Record a sent message and reset navigation."""
+        text = text.rstrip()
+        if text and (not self._history or self._history[-1] != text):
+            self._history.append(text)
+            self._history = self._history[-self._MAX_HISTORY:]
+            _settings_store().setValue(self._KEY, self._history)
+        self._hist_index = None
+        self._draft = ""
+
+    def clear_history(self):
+        self._history = []
+        self._hist_index = None
+        self._draft = ""
+        _settings_store().setValue(self._KEY, [])
+
+    def _on_first_line(self) -> bool:
+        return self.textCursor().blockNumber() == 0
+
+    def _on_last_line(self) -> bool:
+        return (self.textCursor().blockNumber()
+                == self.document().blockCount() - 1)
+
+    def _move_cursor_end(self):
+        cur = self.textCursor()
+        cur.movePosition(cur.End)
+        self.setTextCursor(cur)
+
+    def _history_prev(self):
+        if not self._history:
+            return
+        if self._hist_index is None:        # entering history — save the draft
+            self._draft = self.toPlainText()
+            self._hist_index = len(self._history)
+        if self._hist_index > 0:
+            self._hist_index -= 1
+            self.setPlainText(self._history[self._hist_index])
+            self._move_cursor_end()
+
+    def _history_next(self):
+        if self._hist_index is None:
+            return
+        self._hist_index += 1
+        if self._hist_index >= len(self._history):   # past newest -> draft
+            self._hist_index = None
+            self.setPlainText(self._draft)
+        else:
+            self.setPlainText(self._history[self._hist_index])
+        self._move_cursor_end()
+
     def keyPressEvent(self, event):
-        if (event.key() in (Qt.Key_Return, Qt.Key_Enter)
+        key = event.key()
+        if (key in (Qt.Key_Return, Qt.Key_Enter)
                 and not event.modifiers() & Qt.ShiftModifier):
             self.send.emit()
+            return
+        if key == Qt.Key_Up and self._on_first_line():
+            self._history_prev()
+            return
+        if key == Qt.Key_Down and self._on_last_line():
+            self._history_next()
             return
         super().keyPressEvent(event)
 
@@ -510,6 +581,7 @@ class AIChatDock(QDockWidget):
             cfg = prov.load_config(name)
             if not cfg["key"]:
                 return
+        self.input.add_history(text)        # Up/Down can recall it later
         self.input.clear()
         self._append("user", text)
         self._history.append({"role": "user", "content": text})

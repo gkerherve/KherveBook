@@ -112,6 +112,53 @@ def test_fetch_models_openai_filters_chat_models(monkeypatch):
     assert prov.fetch_models("openai", "K") == ["gpt-4o", "o1-mini"]
 
 
+def test_chat_input_history_up_down(qapp):
+    from khervebook.ai_chat import _ChatInput
+    inp = _ChatInput()
+    inp.clear_history()                       # ignore any persisted history
+    inp.add_history("first message")
+    inp.add_history("second message")
+    inp.setPlainText("a draft")
+    inp._history_prev()                        # Up -> newest
+    assert inp.toPlainText() == "second message"
+    inp._history_prev()                        # Up -> older
+    assert inp.toPlainText() == "first message"
+    inp._history_prev()                        # at oldest, stays put
+    assert inp.toPlainText() == "first message"
+    inp._history_next()                        # Down -> newer
+    assert inp.toPlainText() == "second message"
+    inp._history_next()                        # Down past newest -> the draft
+    assert inp.toPlainText() == "a draft"
+
+
+def test_chat_input_up_arrow_at_first_line_recalls(qapp):
+    from PyQt5.QtCore import QEvent, Qt
+    from PyQt5.QtGui import QKeyEvent
+
+    from khervebook.ai_chat import _ChatInput
+    inp = _ChatInput()
+    inp.clear_history()
+    inp.add_history("hello world")
+    inp.setPlainText("")                       # empty -> on the first line
+    inp.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Up, Qt.NoModifier))
+    assert inp.toPlainText() == "hello world"
+    # Enter still sends.
+    fired = []
+    inp.send.connect(lambda: fired.append(1))
+    inp.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Return, Qt.NoModifier))
+    assert fired == [1]
+
+
+def test_chat_input_history_persists(qapp):
+    from khervebook.ai_chat import _ChatInput
+    inp = _ChatInput()
+    inp.clear_history()
+    inp.add_history("remembered")
+    inp2 = _ChatInput()                        # a fresh input loads from settings
+    assert "remembered" in inp2._history
+    inp2.clear_history()                       # tidy up the shared store
+
+
 def test_dock_greeting_title_and_font(qapp):
     from khervebook.ai_chat import GREETING, AIChatDock
     from khervebook.notebook import NotebookWidget

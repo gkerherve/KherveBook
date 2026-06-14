@@ -27,11 +27,21 @@ def test_extract_cells_kinds():
     assert [c["type"] for c in cells] == ["markdown", "code", "latex",
                                           "sheet"]
     assert cells[1]["source"] == "x = 1\nx"
+    assert all(c["target"] is None for c in cells)     # all are new cells
 
 
-def test_extract_cells_ignores_unknown_languages():
+def test_extract_cells_ignores_unknown_and_svg():
     assert extract_cells("```bash\nls\n```") == []
     assert extract_cells("no fences at all") == []
+    # the assistant must never write a drawing; svg fences are dropped
+    assert extract_cells("```svg\n<svg/>\n```") == []
+
+
+def test_extract_cells_targets_existing_cell():
+    cells = extract_cells("```python cell=3\ny = 9\n```")
+    assert cells == [{"type": "code", "source": "y = 9", "target": 3}]
+    # tolerant of phrasing
+    assert extract_cells("```markdown 0\nhi\n```")[0]["target"] == 0
 
 
 def test_build_request_anthropic():
@@ -75,14 +85,24 @@ def test_parse_responses():
     assert parse_response("ollama", {"message": {"content": "yo"}}) == "yo"
 
 
-def test_system_prompt_mentions_notebook(qapp):
+def test_system_prompt_includes_full_cell_content(qapp):
     from khervebook.notebook import NotebookWidget
     nb = NotebookWidget()
-    nb.cells[0].set_source("x = 42")
+    nb.cells[0].set_source("x = 42\nprint(x * 2)")     # full body, not a snippet
     prompt = build_system_prompt(nb)
     assert "KherveBook" in prompt
-    assert "x = 42" in prompt
+    assert "x = 42" in prompt and "print(x * 2)" in prompt
     assert "```python" in prompt
+    assert "never" in prompt.lower() and "svg" in prompt.lower()
+
+
+def test_system_prompt_marks_svg_unreadable(qapp):
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    nb.add_cell("svg", "<svg><rect/></svg>")
+    prompt = build_system_prompt(nb)
+    assert "cannot read or edit" in prompt
+    assert "<rect/>" not in prompt                      # svg body not exposed
 
 
 def test_insert_cells_into_notebook(qapp):
@@ -97,3 +117,34 @@ def test_insert_cells_into_notebook(qapp):
     assert len(nb.cells) == n + 2
     assert nb.cells[-1].CELL_TYPE == "markdown"
     assert nb.cells[-2].source() == "y = 2"
+
+
+def test_ai_replaces_targeted_cell_undoably(qapp):
+    from khervebook.ai_chat import AIChatDock
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    nb.cells[0].set_source("old = 1")
+    dock = AIChatDock(nb)
+    dock._on_done("```python cell=0\nnew = 2\n```")
+    n = len(nb.cells)
+    dock._insert_cells()
+    assert len(nb.cells) == n                           # replaced, not added
+    assert nb.cells[0].source() == "new = 2"
+    nb.undo()                                            # one step reverts it
+    assert nb.cells[0].source() == "old = 1"
+
+
+def test_ai_never_overwrites_svg_cell(qapp):
+    from khervebook.ai_chat import AIChatDock
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    nb.add_cell("svg", "<svg/>")
+    svg_index = len(nb.cells) - 1
+    dock = AIChatDock(nb)
+    # the model wrongly targets the drawing cell -> appended instead
+    dock._on_done(f"```python cell={svg_index}\nz = 3\n```")
+    dock._insert_cells()
+    assert nb.cells[svg_index].CELL_TYPE == "svg"
+    assert nb.cells[svg_index].source() == "<svg/>"     # untouched
+    assert any(c.CELL_TYPE == "code" and c.source() == "z = 3"
+               for c in nb.cells)

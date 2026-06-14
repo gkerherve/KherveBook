@@ -85,3 +85,20 @@ class ConvertCellCmd(QUndoCommand):
 
     def undo(self):
         self.nb._swap_cell(self.new, self.old, self.index)
+
+
+class SetSourceCmd(QUndoCommand):
+    """Replace a cell's source text (e.g. an AI edit), invertible."""
+
+    def __init__(self, nb, cell, new_source, text="Edit cell"):
+        super().__init__(text)
+        self.nb, self.cell = nb, cell
+        self.old, self.new = cell.source(), new_source
+
+    def redo(self):
+        self.cell.set_source(self.new)
+        self.nb.modified.emit()
+
+    def undo(self):
+        self.cell.set_source(self.old)
+        self.nb.modified.emit()

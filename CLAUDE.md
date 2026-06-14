@@ -50,7 +50,11 @@ into a new module and import.
   - `ai_providers.py`— AI provider registry (Claude/ChatGPT/Mistral/
                        Ollama/Local) + urllib chat calls.
   - `ai_chat.py`     — AI Assistant dock (bottom-left): chat, settings,
-                       fenced-block replies inserted as cells.
+                       fenced-block replies. The system prompt feeds the
+                       model the full content of every cell (svg bodies
+                       hidden); replies add new cells or replace an
+                       existing one (```python cell=N) — any type except
+                       svg — applied as one undoable macro.
   - `examples.py`    — Examples menu registry (name, category, builder),
                        like KherveSheet's.
   - `sheet_examples.py` — ~50 spreadsheet examples ported from

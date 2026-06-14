@@ -27,34 +27,70 @@ from PyQt5.QtWidgets import (QComboBox, QDialog, QDialogButtonBox,
 from . import ai_providers as prov
 from .icons import icon
 
-_FENCE = re.compile(
-    r"```[ \t]*(python|markdown|md|latex|tex|sheet)[ \t]*\r?\n(.*?)```",
-    re.S | re.I)
+#: One fenced block: an info string (language + optional "cell=N"
+#: target) then the body up to the closing fence.
+_FENCE = re.compile(r"```[ \t]*([^\r\n`]*)\r?\n(.*?)```", re.S)
 
-_KIND = {"python": "code", "md": "markdown", "markdown": "markdown",
-         "tex": "latex", "latex": "latex", "sheet": "sheet"}
+_KIND = {"python": "code", "py": "code", "md": "markdown",
+         "markdown": "markdown", "tex": "latex", "latex": "latex",
+         "sheet": "sheet"}
+
+#: How much of each cell to show the model, and a total cap.
+_MAX_CELL_CHARS = 4000
+_MAX_TOTAL_CHARS = 20000
 
 
 def extract_cells(text: str) -> list:
-    """Fenced blocks in an assistant reply -> cell dicts, in order."""
+    """Fenced blocks in a reply -> cell dicts {type, source, target}.
+
+    The info string after the fence picks the language; an optional
+    number (e.g. ```python cell=3) targets an existing cell to replace.
+    Unknown languages (svg, bash, json, ...) are ignored."""
     cells = []
-    for lang, body in _FENCE.findall(text or ""):
-        cells.append({"type": _KIND[lang.lower()],
-                      "source": body.strip("\n")})
+    for info, body in _FENCE.findall(text or ""):
+        tokens = info.strip().split()
+        if not tokens:
+            continue
+        lang = tokens[0].lower()
+        if lang not in _KIND:           # svg / drawing and others: skip
+            continue
+        target = None
+        for tok in tokens[1:]:
+            m = re.search(r"\d+", tok)
+            if m:
+                target = int(m.group())
+                break
+        cells.append({"type": _KIND[lang], "source": body.strip("\n"),
+                      "target": target})
     return cells
 
 
-def build_system_prompt(notebook) -> str:
-    outline = []
+def _notebook_listing(notebook) -> str:
+    blocks, total = [], 0
     for i, cell in enumerate(notebook.cells):
-        first = (cell.source().strip().splitlines() or [""])[0]
-        outline.append(f"  [{i}] {cell.CELL_TYPE}: {first[:70]}")
+        if cell.CELL_TYPE == "svg":
+            body = "(an SVG drawing — you cannot read or edit this cell)"
+        else:
+            body = cell.source()
+            if len(body) > _MAX_CELL_CHARS:
+                body = body[:_MAX_CELL_CHARS] + "\n… (truncated)"
+        block = f"=== Cell [{i}] ({cell.CELL_TYPE}) ===\n{body}"
+        total += len(block)
+        if total > _MAX_TOTAL_CHARS and blocks:
+            blocks.append(f"… ({len(notebook.cells) - i} more cells omitted)")
+            break
+        blocks.append(block)
+    return "\n".join(blocks) if blocks else "(empty notebook)"
+
+
+def build_system_prompt(notebook) -> str:
     return f"""\
 You are the AI assistant inside KherveBook, a Jupyter-style desktop \
-notebook mixing four cell types: code (Python), markdown, latex \
+notebook. The editable cell types are: code (Python), markdown, latex \
 (one display equation, no $ delimiters) and sheet (a small \
 spreadsheet, JSON {{"rows", "cols", "data": {{"A1": "value or \
-=python formula"}}}}).
+=python formula"}}}}). There is also an svg "drawing" cell that you \
+must NEVER create or modify.
 
 YOUR PRIMARY SKILL is writing excellent, complete, runnable Python \
 for code cells. Key facts about the kernel:
@@ -67,16 +103,25 @@ plotting cells with `fig`.
 - A code cell whose first line contains "runs continuously" can be \
 looped for animations; keep per-frame state in globals().
 - Sheet cells publish their computed grid to code cells as sheet1, \
-sheet2, ... (lists of rows).
+sheet2, ... (lists of rows). ks("A1") reads a sheet from Python and \
+ks("A1", value) writes back.
 
-When you create or modify notebook content, output each cell as ONE \
-fenced block in document order, choosing the right language tag: \
-```python, ```markdown, ```latex or ```sheet. The user inserts them \
-with one click, so make every block self-contained and runnable. \
-Keep prose outside the fences brief.
+READING: the full current notebook is included below — read it to \
+understand and reason about the user's existing code in any cell.
+
+WRITING: reply with each cell you want as ONE fenced block.
+- To ADD a new cell, tag it with just the language: ```python, \
+```markdown, ```latex or ```sheet.
+- To REPLACE an existing cell, add its index from the listing, e.g. \
+```python cell=3 — keep the same language unless the user wants the \
+type changed.
+- You may read and write code, markdown, latex and sheet cells. \
+Never emit an svg cell.
+Make every block self-contained and runnable; keep prose outside the \
+fences brief.
 
 Current notebook ({len(notebook.cells)} cells):
-{chr(10).join(outline)}"""
+{_notebook_listing(notebook)}"""
 
 
 def _md_to_html(text: str) -> str:
@@ -208,8 +253,10 @@ class AIChatDock(QDockWidget):
         self.view = QTextBrowser()
         self.view.setOpenExternalLinks(False)
         self.view.setPlaceholderText(
-            "Ask for analysis, plots or whole notebooks — replies "
-            "arrive as ready-to-insert cells.")
+            "Ask about your notebook, or for analysis, plots or whole "
+            "notebooks. The assistant reads every cell and can add new "
+            "cells or rewrite existing ones (code, markdown, latex, "
+            "sheet — never drawings); apply with one click.")
         column.addWidget(self.view, 1)
 
         self.insert_btn = QPushButton("Insert cells into notebook")
@@ -283,8 +330,19 @@ class AIChatDock(QDockWidget):
         n = len(self._pending_cells)
         self.insert_btn.setVisible(n > 0)
         if n:
+            nb = self._notebook
+            edits = sum(1 for it in self._pending_cells
+                        if it.get("target") is not None
+                        and 0 <= it["target"] < len(nb.cells)
+                        and nb.cells[it["target"]].CELL_TYPE != "svg")
+            adds = n - edits
+            bits = []
+            if adds:
+                bits.append(f"add {adds}")
+            if edits:
+                bits.append(f"replace {edits}")
             self.insert_btn.setText(
-                f"Insert {n} cell{'s' if n > 1 else ''} into notebook")
+                f"Apply to notebook ({', '.join(bits)})")
         self.status.setText("")
 
     def _on_failed(self, message: str):
@@ -297,14 +355,45 @@ class AIChatDock(QDockWidget):
             self._worker = None
 
     def _insert_cells(self):
+        """Apply the pending blocks: replace targeted cells (never an svg
+        drawing), append the rest, as one undo step."""
+        from .undo_commands import SetSourceCmd
         nb = self._notebook
+        replaces, appends = [], []
         for item in self._pending_cells:
-            cell = nb.add_cell_below(item["type"], item["source"])
-            if item["type"] in ("markdown", "latex"):
+            t = item.get("target")
+            if (t is not None and 0 <= t < len(nb.cells)
+                    and nb.cells[t].CELL_TYPE != "svg"):
+                replaces.append(item)
+            else:
+                appends.append(item)
+
+        nb.undo_stack.beginMacro("AI edit")
+        for item in replaces:               # indices stay stable here
+            cell = nb.cells[item["target"]]
+            nb._select(cell)
+            if cell.CELL_TYPE != item["type"]:
+                nb.convert_current(item["type"])
+                cell = nb.current
+            nb.undo_stack.push(SetSourceCmd(nb, cell, item["source"],
+                                            "AI edit"))
+            if item["type"] in ("markdown", "latex", "sheet"):
                 cell.execute(nb.kernel)
+        for item in appends:
+            cell = nb.add_cell_below(item["type"], item["source"],
+                                     label="AI edit")
+            if item["type"] in ("markdown", "latex", "sheet"):
+                cell.execute(nb.kernel)
+        nb.undo_stack.endMacro()
+
+        parts = []
+        if appends:
+            parts.append(f"added {len(appends)}")
+        if replaces:
+            parts.append(f"replaced {len(replaces)}")
         self.status.setText(
-            f"Inserted {len(self._pending_cells)} cell(s) — review and "
-            "run the code cells.")
+            f"AI edit: {', '.join(parts) or 'nothing'} — review and run "
+            "the code cells. Ctrl+Z undoes it.")
         self._pending_cells = []
         self.insert_btn.hide()
 

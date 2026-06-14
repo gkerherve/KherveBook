@@ -112,6 +112,23 @@ def test_fetch_models_openai_filters_chat_models(monkeypatch):
     assert prov.fetch_models("openai", "K") == ["gpt-4o", "o1-mini"]
 
 
+def test_dock_greeting_title_and_font(qapp):
+    from khervebook.ai_chat import GREETING, AIChatDock
+    from khervebook.notebook import NotebookWidget
+    dock = AIChatDock(NotebookWidget())
+    assert "AI Assistant" in dock.title.text()
+    assert "·" in dock.title.text()                    # provider · model
+    assert GREETING[:24] in dock.view.toPlainText()    # greeting shown
+    before = dock._font_pt
+    dock._change_font(+2)
+    assert dock._font_pt == before + 2                 # zoom changes size
+    dock._history = [{"role": "user", "content": "hi"}]
+    dock._render_all()
+    dock._clear()                                      # clears + re-greets
+    assert dock._history == []
+    assert GREETING[:24] in dock.view.toPlainText()
+
+
 def test_settings_dialog_matches_khervesheet(qapp):
     from khervebook.ai_chat import ApiKeyDialog
     dlg = ApiKeyDialog(provider="anthropic")

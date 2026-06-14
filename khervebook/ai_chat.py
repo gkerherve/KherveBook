@@ -17,16 +17,20 @@ the Free Software Foundation, either version 3 of the License, or
 
 import re
 
-from PyQt5.QtCore import QThread, Qt, pyqtSignal
+from PyQt5.QtCore import QSettings, QSize, Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QTextDocument
 from PyQt5.QtWidgets import (QComboBox, QDialog, QDialogButtonBox,
                              QDockWidget, QFormLayout, QGroupBox, QHBoxLayout,
                              QLabel, QLineEdit, QMessageBox, QPlainTextEdit,
-                             QPushButton, QTextBrowser, QToolButton,
-                             QVBoxLayout, QWidget)
+                             QPushButton, QSizePolicy, QTextBrowser,
+                             QToolButton, QVBoxLayout, QWidget)
 
 from . import ai_providers as prov
 from .icons import icon
+
+
+def _settings_store():
+    return QSettings("Kherve", "KherveBook")
 
 #: One fenced block: an info string (language + optional "cell=N"
 #: target) then the body up to the closing fence.
@@ -320,55 +324,100 @@ class _ChatInput(QPlainTextEdit):
         super().keyPressEvent(event)
 
 
+GREETING = (
+    "Hello! I can help you build your notebook. Ask me to write or edit "
+    "Python, Markdown, LaTeX or sheet cells, analyse your data, or make "
+    "plots. I read every cell and can add new ones or rewrite existing "
+    "ones (code, markdown, latex, sheet — never drawings); apply with one "
+    "click and Ctrl+Z to undo. Set your provider (Anthropic, OpenAI, "
+    "Mistral, Ollama, or Local AI) and API key via the gear icon.")
+
+#: Example prompts shown by the ? button.
+_PROMPTS = [
+    "Plot a damped sine wave and label the axes.",
+    "Add error handling and a docstring to cell 2.",
+    "Make a 6×3 sheet of monthly sales with a Total column.",
+    "Write a Markdown summary of what this notebook does.",
+    "Rewrite cell 0 to vectorise the loop with NumPy.",
+    "Add a LaTeX cell with the quadratic formula.",
+    "Fit a Gaussian to the data in sheet1 and plot the fit.",
+]
+
+
+class _PromptHelpDialog(QDialog):
+    """Click an example prompt to drop it into the chat input."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Example prompts")
+        self.setMinimumWidth(360)
+        self.chosen = None
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("Try one of these — click to use it:"))
+        for text in _PROMPTS:
+            btn = QPushButton(text)
+            btn.setStyleSheet("text-align:left; padding:6px")
+            btn.clicked.connect(lambda _=False, t=text: self._pick(t))
+            layout.addWidget(btn)
+        close = QDialogButtonBox(QDialogButtonBox.Close)
+        close.rejected.connect(self.reject)
+        layout.addWidget(close)
+
+    def _pick(self, text):
+        self.chosen = text
+        self.accept()
+
+
 class AIChatDock(QDockWidget):
     """Bottom-left chat panel driving the notebook."""
 
     def __init__(self, notebook, parent=None):
-        super().__init__("AI Assistant", parent)
+        super().__init__("AI Chat", parent)
         self.setObjectName("ai_chat")
+        self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self._notebook = notebook
         self._history = []          # neutral [{"role", "content"}]
         self._pending_cells = []
         self._worker = None
+        self._font_pt = float(_settings_store().value("ai/chat_font_pt", 10.0))
 
         container = QWidget()
         column = QVBoxLayout(container)
         column.setContentsMargins(4, 4, 4, 4)
         column.setSpacing(4)
 
+        # Header: "AI Assistant  provider · model"  +  A− A+ ? gear clear
         header = QHBoxLayout()
-        self.provider_combo = QComboBox()
-        for name, meta in prov.PROVIDERS.items():
-            self.provider_combo.addItem(meta["label"], name)
-        self.provider_combo.setCurrentIndex(
-            list(prov.PROVIDERS).index(prov.saved_provider()))
-        self.provider_combo.currentIndexChanged.connect(
-            self._remember_provider)
-        header.addWidget(self.provider_combo, 1)
-        gear = QToolButton()
-        gear.setIcon(icon("mdi.cog-outline"))
-        gear.setToolTip("AI settings (provider, API key, model)")
-        gear.setAutoRaise(True)
-        gear.clicked.connect(self._settings)
-        header.addWidget(gear)
-        clear = QToolButton()
-        clear.setIcon(icon("mdi.broom"))
-        clear.setToolTip("Clear the conversation")
-        clear.setAutoRaise(True)
-        clear.clicked.connect(self._clear)
-        header.addWidget(clear)
+        self.title = QLabel("<b>AI Assistant</b>")
+        self.title.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        header.addWidget(self.title, 1)
+        for text, tip, slot in (
+                ("A−", "Decrease text size", lambda: self._change_font(-1)),
+                ("A+", "Increase text size", lambda: self._change_font(+1))):
+            btn = QToolButton()
+            btn.setText(text)
+            btn.setToolTip(tip)
+            btn.setAutoRaise(True)
+            btn.clicked.connect(slot)
+            header.addWidget(btn)
+        for icon_name, tip, slot in (
+                ("mdi.help-circle-outline", "Example prompts", self._help),
+                ("mdi.cog", "AI Chat settings", self._settings),
+                ("mdi.delete-sweep", "Clear conversation", self._clear)):
+            btn = QToolButton()
+            btn.setIcon(icon(icon_name))
+            btn.setToolTip(tip)
+            btn.setAutoRaise(True)
+            btn.clicked.connect(slot)
+            header.addWidget(btn)
         column.addLayout(header)
 
         self.view = QTextBrowser()
         self.view.setOpenExternalLinks(False)
-        self.view.setPlaceholderText(
-            "Ask about your notebook, or for analysis, plots or whole "
-            "notebooks. The assistant reads every cell and can add new "
-            "cells or rewrite existing ones (code, markdown, latex, "
-            "sheet — never drawings); apply with one click.")
+        self.view.setFrameShape(self.view.NoFrame)
         column.addWidget(self.view, 1)
 
-        self.insert_btn = QPushButton("Insert cells into notebook")
+        self.insert_btn = QPushButton("Apply to notebook")
         self.insert_btn.setIcon(icon("mdi.tray-arrow-down"))
         self.insert_btn.hide()
         self.insert_btn.clicked.connect(self._insert_cells)
@@ -380,40 +429,81 @@ class AIChatDock(QDockWidget):
 
         row = QHBoxLayout()
         self.input = _ChatInput()
-        self.input.setPlaceholderText("Ask the AI…  (Enter sends)")
-        self.input.setFixedHeight(64)
+        self.input.setPlaceholderText("Ask Claude to edit the notebook…")
+        self.input.setFixedHeight(72)
         self.input.send.connect(self._send)
         row.addWidget(self.input, 1)
         self.send_btn = QToolButton()
         self.send_btn.setIcon(icon("mdi.send", "#27ae60"))
-        self.send_btn.setToolTip("Send")
+        self.send_btn.setToolTip("Send (Enter)")
+        self.send_btn.setAutoRaise(True)
         self.send_btn.clicked.connect(self._send)
         row.addWidget(self.send_btn)
         column.addLayout(row)
 
         self.setWidget(container)
+        self._update_title()
+        self._apply_font()
+        self._render_all()
 
-    def _remember_provider(self, _index):
-        from PyQt5.QtCore import QSettings
-        QSettings("Kherve", "KherveBook").setValue(
-            "ai/provider", self.provider_combo.currentData())
+    def sizeHint(self):
+        return QSize(300, 600)
+
+    # -- header / font -----------------------------------------------------
+    def _update_title(self):
+        cfg = prov.load_config(prov.saved_provider())
+        meta = prov.PROVIDERS[cfg["provider"]]
+        self.title.setText(
+            f"<b>AI Assistant</b> <span style='color:#888;font-size:10px'>"
+            f"{meta['label']} · {cfg['model']}</span>")
+
+    def _change_font(self, delta: float):
+        self._font_pt = max(7.0, min(24.0, self._font_pt + delta))
+        _settings_store().setValue("ai/chat_font_pt", self._font_pt)
+        self._apply_font()
+        self._render_all()
+
+    def _apply_font(self):
+        f = self.input.font()
+        f.setPointSizeF(self._font_pt)
+        self.input.setFont(f)
+        self.view.document().setDefaultFont(f)
+
+    def _help(self):
+        dlg = _PromptHelpDialog(self)
+        if dlg.exec_() and dlg.chosen:
+            self.input.setPlainText(dlg.chosen)
+            self.input.setFocus()
 
     # -- conversation ------------------------------------------------------
-    def _append(self, role: str, text: str):
+    def _render_all(self):
+        """Rebuild the transcript: greeting bubble, then the history."""
+        self.view.clear()
+        self._bubble("assistant", GREETING)
+        for msg in self._history:
+            self._bubble(msg["role"], msg["content"])
+
+    def _bubble(self, role: str, text: str):
         if role == "user":
-            self.view.append(
-                f'<p><b style="color:#2176c7">You</b></p>{_md_to_html(text)}')
+            who, color, bg = "You", "#2176c7", "#e7f0fb"
         else:
-            self.view.append(
-                f'<p><b style="color:#27ae60">AI</b></p>{_md_to_html(text)}')
+            who, color, bg = "AI", "#1f8a4c", "#eef1f4"
+        self.view.append(
+            f'<table width="100%" cellspacing="0" cellpadding="8" '
+            f'style="margin:4px 0"><tr><td bgcolor="{bg}">'
+            f'<b style="color:{color}">{who}</b>{_md_to_html(text)}'
+            f'</td></tr></table>')
         self.view.verticalScrollBar().setValue(
             self.view.verticalScrollBar().maximum())
+
+    def _append(self, role: str, text: str):
+        self._bubble(role, text)
 
     def _send(self):
         text = self.input.toPlainText().strip()
         if not text or self._worker is not None:
             return
-        name = self.provider_combo.currentData()
+        name = prov.saved_provider()
         cfg = prov.load_config(name)
         if prov.PROVIDERS[name]["needs_key"] and not cfg["key"]:
             self._settings()
@@ -507,14 +597,13 @@ class AIChatDock(QDockWidget):
         self.insert_btn.hide()
 
     def _settings(self):
-        dlg = ApiKeyDialog(self, self.provider_combo.currentData())
+        dlg = ApiKeyDialog(self, prov.saved_provider())
         if dlg.exec_():
-            self.provider_combo.setCurrentIndex(
-                list(prov.PROVIDERS).index(prov.saved_provider()))
+            self._update_title()
 
     def _clear(self):
         self._history = []
         self._pending_cells = []
         self.insert_btn.hide()
-        self.view.clear()
         self.status.setText("")
+        self._render_all()             # back to the greeting

@@ -16,11 +16,14 @@ import io
 import re
 
 from PyQt5.QtCore import QEvent, QSize, Qt, QThread, pyqtSignal
-from PyQt5.QtGui import (QColor, QFont, QFontMetrics, QPixmap,
-                         QSyntaxHighlighter, QTextCharFormat, QTextCursor)
-from PyQt5.QtWidgets import (QAction, QFrame, QHBoxLayout, QLabel,
+from PyQt5.QtGui import (QColor, QFont, QFontMetrics, QPainter, QPixmap,
+                         QSyntaxHighlighter, QTextCharFormat, QTextCursor,
+                         QTextDocument)
+from PyQt5.QtWidgets import (QAction, QFrame, QHBoxLayout, QLabel, QLineEdit,
                              QPlainTextEdit, QScrollArea, QSizePolicy,
                              QTextBrowser, QToolButton, QVBoxLayout, QWidget)
+
+from . import thesaurus
 
 from .icons import icon
 
@@ -358,6 +361,20 @@ class _FitImage(QLabel):
         self.setFixedHeight(scaled.height())
 
 
+class _LineNumberArea(QWidget):
+    """Gutter that paints line numbers down the left of a code editor."""
+
+    def __init__(self, editor):
+        super().__init__(editor)
+        self._editor = editor
+
+    def sizeHint(self):
+        return QSize(self._editor._lna_width(), 0)
+
+    def paintEvent(self, event):
+        self._editor._paint_line_numbers(event)
+
+
 class _GrowingEdit(QPlainTextEdit):
     """Editor that grows with its content, up to MAX_ROWS lines —
     beyond that it scrolls internally instead of swallowing the page."""
@@ -370,6 +387,7 @@ class _GrowingEdit(QPlainTextEdit):
         self.setFont(MONO)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._lna = None                     # line-number gutter (code cells)
         self.textChanged.connect(self._resize)
         self._resize()
 
@@ -382,7 +400,65 @@ class _GrowingEdit(QPlainTextEdit):
                 and event.modifiers() & Qt.ControlModifier):
             self.toggle_comment()
             return
+        if (event.key() == Qt.Key_F
+                and event.modifiers() & Qt.ControlModifier):
+            cell = getattr(self, "cell", None)
+            if cell is not None and hasattr(cell, "show_find"):
+                cell.show_find()
+                return
         super().keyPressEvent(event)
+
+    # -- line numbers ------------------------------------------------------
+    def enable_line_numbers(self):
+        if self._lna is not None:
+            return
+        self._lna = _LineNumberArea(self)
+        self.blockCountChanged.connect(lambda _=0: self._update_lna_width())
+        self.updateRequest.connect(self._on_update_request)
+        self._update_lna_width()
+
+    def _lna_width(self) -> int:
+        digits = max(2, len(str(max(1, self.blockCount()))))
+        return 12 + QFontMetrics(self.font()).horizontalAdvance("9") * digits
+
+    def _update_lna_width(self):
+        if self._lna is not None:
+            self.setViewportMargins(self._lna_width(), 0, 0, 0)
+
+    def _on_update_request(self, rect, dy):
+        if self._lna is None:
+            return
+        if dy:
+            self._lna.scroll(0, dy)
+        else:
+            self._lna.update(0, rect.y(), self._lna.width(), rect.height())
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self._lna is not None:
+            cr = self.contentsRect()
+            self._lna.setGeometry(cr.left(), cr.top(),
+                                  self._lna_width(), cr.height())
+
+    def _paint_line_numbers(self, event):
+        from .style import tokens
+        t = tokens()
+        painter = QPainter(self._lna)
+        painter.fillRect(event.rect(), QColor(t["editor"]))
+        painter.setPen(QColor(t["icon"] if t["dark"] else t["border"]))
+        block = self.firstVisibleBlock()
+        top = self.blockBoundingGeometry(block).translated(
+            self.contentOffset()).top()
+        height = QFontMetrics(self.font()).height()
+        num = block.blockNumber()
+        while block.isValid() and top <= event.rect().bottom():
+            bottom = top + self.blockBoundingRect(block).height()
+            if block.isVisible() and bottom >= event.rect().top():
+                painter.drawText(0, int(top), self._lna.width() - 5, height,
+                                 Qt.AlignRight | Qt.AlignVCenter, str(num + 1))
+            block = block.next()
+            top = bottom
+            num += 1
 
     def toggle_comment(self):
         """Comment/uncomment the selected lines using the cell's syntax
@@ -436,16 +512,55 @@ class _GrowingEdit(QPlainTextEdit):
             super().dragEnterEvent(event)
 
     def contextMenuEvent(self, event):
-        """Standard edit menu with a "Run Cell" entry on top."""
+        """Standard edit menu with Run Cell, Find, and (for prose cells)
+        a Synonyms submenu for the word under the cursor."""
         menu = self.createStandardContextMenu()
         cell = getattr(self, "cell", None)
+        first = menu.actions()[0] if menu.actions() else None
         if cell is not None:
             run = QAction("Run Cell", menu)
             run.triggered.connect(lambda: cell.run_clicked.emit(cell))
-            first = menu.actions()[0] if menu.actions() else None
             menu.insertAction(first, run)
             menu.insertSeparator(first)
+            find = QAction("Find…", menu)
+            find.setShortcut("Ctrl+F")
+            find.triggered.connect(cell.show_find)
+            menu.addSeparator()
+            menu.addAction(find)
+            if getattr(cell, "CELL_TYPE", "") in ("markdown", "latex"):
+                self._add_synonyms(menu, event.pos())
         menu.exec_(event.globalPos())
+
+    def _add_synonyms(self, menu, pos):
+        """Add a Synonyms submenu for the word at *pos* (fetched on open)."""
+        cur = self.cursorForPosition(pos)
+        cur.select(QTextCursor.WordUnderCursor)
+        word = cur.selectedText().strip()
+        if not word.isalpha():
+            return
+        sub = menu.addMenu(f"Synonyms for “{word}”")
+        loading = sub.addAction("Looking up…")
+        loading.setEnabled(False)
+        done = {"v": False}
+
+        def populate():
+            if done["v"]:
+                return
+            done["v"] = True
+            sub.clear()
+            words = thesaurus.synonyms(word)
+            if not words:
+                empty = sub.addAction("(no synonyms found / offline)")
+                empty.setEnabled(False)
+                return
+            for syn in words:
+                sub.addAction(
+                    syn, lambda _=False, w=syn: self._replace_word(cur, w))
+
+        sub.aboutToShow.connect(populate)
+
+    def _replace_word(self, cursor, word):
+        cursor.insertText(word)             # cursor holds the word selection
 
     def _resize(self):
         rows = max(1, self.document().blockCount())
@@ -455,6 +570,79 @@ class _GrowingEdit(QPlainTextEdit):
         self.setVerticalScrollBarPolicy(
             Qt.ScrollBarAsNeeded if rows > self.MAX_ROWS
             else Qt.ScrollBarAlwaysOff)
+
+
+class _FindBar(QWidget):
+    """A compact find-in-cell bar: term + previous/next + close, with
+    wrap-around, case-insensitive matching, and incremental search."""
+
+    def __init__(self, editor):
+        super().__init__()
+        self._editor = editor
+        row = QHBoxLayout(self)
+        row.setContentsMargins(2, 2, 2, 2)
+        row.setSpacing(3)
+        self.edit = QLineEdit()
+        self.edit.setPlaceholderText("Find in cell…")
+        self.edit.setClearButtonEnabled(True)
+        self.edit.returnPressed.connect(lambda: self.find(True))
+        self.edit.textChanged.connect(self._incremental)
+        row.addWidget(self.edit, 1)
+        for text, tip, fwd in (("▲", "Previous", False), ("▼", "Next", True)):
+            btn = QToolButton()
+            btn.setText(text)
+            btn.setToolTip(tip)
+            btn.setAutoRaise(True)
+            btn.clicked.connect(lambda _=False, f=fwd: self.find(f))
+            row.addWidget(btn)
+        close = QToolButton()
+        close.setText("✕")
+        close.setToolTip("Close (Esc)")
+        close.setAutoRaise(True)
+        close.clicked.connect(self._close)
+        row.addWidget(close)
+        self.hide()
+
+    def open(self):
+        cur = self._editor.textCursor()
+        if cur.hasSelection():
+            self.edit.setText(cur.selectedText())
+        self.show()
+        self.edit.setFocus()
+        self.edit.selectAll()
+
+    def _close(self):
+        self.hide()
+        self._editor.setFocus()
+
+    def _incremental(self):
+        cur = self._editor.textCursor()       # search from the current match
+        if cur.hasSelection():
+            cur.setPosition(cur.selectionStart())
+            self._editor.setTextCursor(cur)
+        self.find(True)
+
+    def find(self, forward=True):
+        text = self.edit.text()
+        if not text:
+            self.edit.setStyleSheet("")
+            return
+        flags = (QTextDocument.FindFlags() if forward
+                 else QTextDocument.FindBackward)
+        found = self._editor.find(text, flags)
+        if not found:                          # wrap around the document
+            cur = self._editor.textCursor()
+            cur.movePosition(QTextCursor.Start if forward
+                             else QTextCursor.End)
+            self._editor.setTextCursor(cur)
+            found = self._editor.find(text, flags)
+        self.edit.setStyleSheet("" if found else "background:#ffd6d6")
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self._close()
+            return
+        super().keyPressEvent(event)
 
 
 class CellWidget(QFrame):
@@ -555,6 +743,14 @@ class CellWidget(QFrame):
         self.editor.run_requested.connect(lambda: self.run_requested.emit(self))
         self.editor.installEventFilter(self)
         self.column.addWidget(self.editor)
+        self._find_bar = None
+
+    def show_find(self):
+        """Reveal the find-in-cell bar (Ctrl+F or right-click → Find)."""
+        if self._find_bar is None:
+            self._find_bar = _FindBar(self.editor)
+            self.column.addWidget(self._find_bar)
+        self._find_bar.open()
 
     def contextMenuEvent(self, event):
         self.menu_requested.emit(self, event.globalPos())
@@ -690,6 +886,7 @@ class CodeCell(CellWidget):
     def __init__(self, source=""):
         super().__init__(source)
         self.gutter.setText("In [ ]:")
+        self.editor.enable_line_numbers()    # numbered gutter for Python
         from .style import tokens
         self._highlighter = PythonHighlighter(self.editor.document(),
                                               dark=tokens()["dark"])

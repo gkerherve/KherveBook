@@ -36,6 +36,19 @@ def test_cell_type_conversion(window):
     assert nb.current.source() == "# hello"
 
 
+def test_side_panel_toggles_on_toolbar(window):
+    tb = window._main_tb.actions()
+    # the toolbar buttons ARE the docks' own toggle actions (Qt guarantees
+    # those show/hide the dock and stay in sync with its close button)
+    assert window._explorer_toggle is window.explorer.toggleViewAction()
+    assert window._ai_toggle is window.ai_chat.toggleViewAction()
+    assert window._explorer_toggle in tb and window._ai_toggle in tb
+    assert window._explorer_toggle.isCheckable()
+    assert window._ai_toggle.isCheckable()
+    assert not window._explorer_toggle.icon().isNull()
+    assert not window._ai_toggle.icon().isNull()
+
+
 def test_new_instance_command(window):
     import os
     import sys

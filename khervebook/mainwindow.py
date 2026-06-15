@@ -166,14 +166,14 @@ class MainWindow(QMainWindow):
                               self.notebook.restart_kernel))
 
         v = m.addMenu("&View")
-        toggle = self.explorer.toggleViewAction()
-        toggle.setText("&File Explorer")
-        toggle.setShortcut("Ctrl+B")
-        v.addAction(toggle)
-        ai_toggle = self.ai_chat.toggleViewAction()
-        ai_toggle.setText("&AI Assistant")
-        ai_toggle.setShortcut("Ctrl+Shift+A")
-        v.addAction(ai_toggle)
+        self._explorer_toggle = self.explorer.toggleViewAction()
+        self._explorer_toggle.setText("&File Explorer")
+        self._explorer_toggle.setShortcut("Ctrl+B")
+        v.addAction(self._explorer_toggle)
+        self._ai_toggle = self.ai_chat.toggleViewAction()
+        self._ai_toggle.setText("&AI Assistant")
+        self._ai_toggle.setShortcut("Ctrl+Shift+A")
+        v.addAction(self._ai_toggle)
         pos = v.addMenu("File Explorer &Position")
         pos.addAction(self._act("&Left", None,
                                 lambda: self._dock_explorer(Qt.LeftDockWidgetArea)))
@@ -275,6 +275,18 @@ class MainWindow(QMainWindow):
         tb.addAction(self._act("Run all", None, nb.run_all,
                                "mdi.fast-forward",
                                "Restart and run every cell"))
+        tb.addSeparator()
+        # Side-panel toggles — the same checkable actions as the View menu,
+        # so the button, menu item and the dock's own close button all stay
+        # in sync. Icons set here so they recolour on a theme rebuild.
+        self._explorer_toggle.setIcon(icon("mdi.file-tree"))
+        self._explorer_toggle.setToolTip(
+            "Show/hide the file explorer (Ctrl+B)")
+        tb.addAction(self._explorer_toggle)
+        self._ai_toggle.setIcon(icon("mdi.robot-outline"))
+        self._ai_toggle.setToolTip(
+            "Show/hide the AI assistant (Ctrl+Shift+A)")
+        tb.addAction(self._ai_toggle)
         tb.addSeparator()
         # Reuse the View-menu action so the button and menu item share
         # state; set its icon here so it recolours on a theme rebuild.

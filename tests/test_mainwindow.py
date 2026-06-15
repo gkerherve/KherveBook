@@ -36,6 +36,19 @@ def test_cell_type_conversion(window):
     assert nb.current.source() == "# hello"
 
 
+def test_app_icon_is_kbook(qapp):
+    from khervebook.icons import _paint_kbook, app_icon
+    ic = app_icon()
+    assert not ic.isNull()
+    sizes = [(s.width(), s.height()) for s in ic.availableSizes()]
+    assert (16, 16) in sizes and (256, 256) in sizes
+    pm = _paint_kbook(64)
+    assert not pm.isNull() and pm.width() == 64
+    img = pm.toImage()
+    # the mark is actually painted (opaque pixels across the cover row)
+    assert any(img.pixelColor(x, 32).alpha() > 0 for x in range(64))
+
+
 def test_side_panel_toggles_on_toolbar(window):
     tb = window._main_tb.actions()
     # the toolbar buttons ARE the docks' own toggle actions (Qt guarantees

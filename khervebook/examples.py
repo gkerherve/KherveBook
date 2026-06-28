@@ -1188,9 +1188,14 @@ from .examples_svg import SVG_EXAMPLES       # noqa: E402
 from .examples_latex import LATEX_EXAMPLES   # noqa: E402
 from .examples_js import JS_EXAMPLES         # noqa: E402
 from .examples_arpes import ARPES_EXAMPLES   # noqa: E402
+from .examples_arpes_bands import ARPES_BANDS_EXAMPLES        # noqa: E402
+from .examples_arpes_fit import ARPES_FIT_EXAMPLES            # noqa: E402
+from .examples_arpes_xps_tr import ARPES_XPS_TR_EXAMPLES      # noqa: E402
+from .examples_arpes_nano_bz import ARPES_NANO_BZ_EXAMPLES    # noqa: E402
 
 EXAMPLES += (SHEET_EXAMPLES + SVG_EXAMPLES + LATEX_EXAMPLES + JS_EXAMPLES
-             + ARPES_EXAMPLES)
+             + ARPES_EXAMPLES + ARPES_BANDS_EXAMPLES + ARPES_FIT_EXAMPLES
+             + ARPES_XPS_TR_EXAMPLES + ARPES_NANO_BZ_EXAMPLES)
 
 _LIVE_RE = re.compile(r"runs continuously(?:\s*\((\d+)\s*ms\))?")
 

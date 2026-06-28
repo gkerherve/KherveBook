@@ -18,6 +18,25 @@ def test_arpes_example_registered_and_unique():
     assert "Spectroscopy" in {c for _n, c, _b in EXAMPLES}
 
 
+def test_all_peaks_capabilities_have_an_example():
+    """One Spectroscopy example per peaks tutorial / capability."""
+    from khervebook.examples import EXAMPLES
+    spectro = {n for n, c, _b in EXAMPLES if c == "Spectroscopy"}
+    expected = {
+        "ARPES Dispersion (peaks)",          # getting started + plotting
+        "ARPES Fermi Surface (peaks)",       # constant-energy maps
+        "Angle to Momentum (peaks)",         # k-conversion
+        "Band Curvature (peaks)",            # data processing
+        "Fermi Edge & Resolution (peaks)",   # gold fit / resolution
+        "EDC Peak Fitting (peaks)",          # lmfit-style peak fitting
+        "XPS Core Levels (peaks)",           # XPS
+        "TR-ARPES (peaks)",                  # time-resolved
+        "nanoARPES Spatial Map (peaks)",     # spatial mapping
+        "Brillouin Zone (peaks)",            # structure / BZs
+    }
+    assert expected <= spectro, expected - spectro
+
+
 def test_arpes_example_runs_and_recovers_band():
     import matplotlib
     matplotlib.use("Agg")

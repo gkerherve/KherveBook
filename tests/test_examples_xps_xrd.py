@@ -25,7 +25,6 @@ def test_xps_examples_registered():
         "Shirley vs Tougaard (lmfitxps)",
         "Chemical-State Fit (lmfitxps)",
         "XPS Survey & Element ID (XPS)",
-        "XPS Quantification (XPS)",
         "Fermi Edge & Resolution (lmfitxps)",
         "XPS Depth Profile (XPS)",
         "Angle-Resolved XPS (XPS)",

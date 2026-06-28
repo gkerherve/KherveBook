@@ -137,98 +137,7 @@ def _survey():
     return [_md(_SURVEY_INTRO), _code(_SURVEY)]
 
 
-# -- 2. Quantification via relative sensitivity factors -------------------
-
-_QUANT_INTRO = """\
-# XPS quantification (atomic %)
-
-Once the elements are known, XPS is **quantitative**: the area under a
-core-level peak is proportional to how much of that element the surface
-contains. But a given number of atoms produces a different peak area for
-each element and orbital, because the **photoionisation cross-section**,
-the analyser transmission and the electron escape depth all differ. Those
-effects are folded into a tabulated **relative sensitivity factor (RSF)**
-(Scofield-based values are standard).
-
-The atomic concentration of element *i* is the RSF-corrected area,
-normalised over all measured elements:
-
-$$\\mathrm{at\\%}_i = \\frac{A_i / S_i}{\\sum_j A_j / S_j} \\times 100$$
-
-where *A* is the integrated peak area and *S* the RSF. The cell below
-builds C 1s, O 1s and Ti 2p peaks with known areas, integrates each over
-its own window with `np.trapz`, applies RSFs (C 1s 1.00, O 1s 2.93,
-Ti 2p 7.91) and reports the composition as a bar chart and a small table.
-"""
-
-
-_QUANT = r'''
-# XPS quantification: integrate C 1s, O 1s and Ti 2p peak areas, apply
-# relative sensitivity factors (RSF) and convert to atomic percent.
-import numpy as np
-import matplotlib.pyplot as plt
-
-rng = np.random.default_rng(0)
-DATA, BAR = "#3776ab", "#e07b39"
-
-
-def gaussian(x, area, center, fwhm):
-    sigma = fwhm / 2.355
-    return area / (sigma * np.sqrt(2.0 * np.pi)) * \
-        np.exp(-0.5 * ((x - center) / sigma) ** 2)
-
-
-# Each core level: (label, E_B center, FWHM, true area, RSF, window half).
-#   RSF: Scofield-like sensitivity factors (C 1s = 1.00 reference).
-LEVELS = [
-    ("C 1s",  285.0, 1.8,  6.0, 1.00, 12.0),
-    ("O 1s",  531.0, 2.2, 30.0, 2.93, 14.0),
-    ("Ti 2p", 458.5, 3.0, 42.0, 7.91, 18.0),
-]
-
-labels, areas, rsfs = [], [], []
-for lbl, center, fwhm, area_true, rsf, half in LEVELS:
-    # Build a narrow high-resolution window around the peak + flat bg.
-    x = np.linspace(center - half, center + half, 600)
-    y = 0.4 + gaussian(x, area_true, center, fwhm)
-    y = y + rng.normal(0.0, 0.02, x.size)
-    bg = np.linspace(y[0], y[-1], x.size)      # linear (Shirley-like) bg
-    area_meas = np.trapz(y - bg, x)            # integrate above background
-    labels.append(lbl)
-    areas.append(area_meas)
-    rsfs.append(rsf)
-
-areas = np.asarray(areas)
-rsfs = np.asarray(rsfs)
-corrected = areas / rsfs                        # RSF-normalised areas
-atpct = 100.0 * corrected / corrected.sum()     # atomic concentration (%)
-
-# --- small table to stdout ----------------------------------------------
-print("element    area     RSF    at%")
-print("-" * 34)
-for lbl, a, s, p in zip(labels, areas, rsfs, atpct):
-    print("%-8s %8.1f %6.2f %7.1f" % (lbl, a, s, p))
-print("-" * 34)
-print("%-8s %8s %6s %7.1f" % ("total", "", "", atpct.sum()))
-
-fig, ax = plt.subplots(figsize=(5.6, 4.2))
-bars = ax.bar(labels, atpct, color=BAR, edgecolor=DATA, width=0.6)
-for b, p in zip(bars, atpct):
-    ax.text(b.get_x() + b.get_width() / 2.0, p + 1.0,
-            "%.1f%%" % p, ha="center", va="bottom", fontsize=9)
-ax.set_ylabel("atomic concentration (%)")
-ax.set_title("XPS quantification (RSF-corrected)")
-ax.set_ylim(0, max(atpct) * 1.25)
-fig.tight_layout()
-fig
-'''
-
-
-def _quant():
-    return [_md(_QUANT_INTRO), _code(_QUANT)]
-
-
-# -- 3. Fermi edge & resolution (lmfitxps) --------------------------------
+# -- 2. Fermi edge & resolution (lmfitxps) --------------------------------
 
 _FERMI_INTRO = """\
 # Fermi edge & spectrometer resolution
@@ -394,6 +303,5 @@ def _fermi_edge():
 XPS_QUANT_EXAMPLES = [
     # (name, category, builder)
     ("XPS Survey & Element ID (XPS)", "XPS", _survey),
-    ("XPS Quantification (XPS)", "XPS", _quant),
     ("Fermi Edge & Resolution (lmfitxps)", "XPS", _fermi_edge),
 ]

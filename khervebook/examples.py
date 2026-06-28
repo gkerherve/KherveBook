@@ -1202,6 +1202,13 @@ from .examples_xrd import XRD_EXAMPLES                        # noqa: E402
 from .examples_xrd2 import XRD2_EXAMPLES                      # noqa: E402
 from .examples_arpes_tour import ARPES_TOUR_EXAMPLES         # noqa: E402
 from .examples_ftir import FTIR_EXAMPLES                     # noqa: E402
+from .examples_xrd3 import XRD3_EXAMPLES                     # noqa: E402
+from .examples_edx import EDX_EXAMPLES                       # noqa: E402
+from .examples_eels import EELS_EXAMPLES                     # noqa: E402
+from .examples_tga import TGA_EXAMPLES                       # noqa: E402
+from .examples_bet import BET_EXAMPLES                       # noqa: E402
+from .examples_sims import SIMS_EXAMPLES                     # noqa: E402
+from .examples_nmr import NMR_EXAMPLES                       # noqa: E402
 
 EXAMPLES += (SHEET_EXAMPLES + SVG_EXAMPLES + LATEX_EXAMPLES + JS_EXAMPLES
              + ARPES_EXAMPLES + ARPES_BANDS_EXAMPLES + ARPES_FIT_EXAMPLES
@@ -1209,7 +1216,9 @@ EXAMPLES += (SHEET_EXAMPLES + SVG_EXAMPLES + LATEX_EXAMPLES + JS_EXAMPLES
              + ARPES_CUTS_EXAMPLES + ARPES_HV_EXAMPLES + ARPES_SE_EXAMPLES
              + ARPES_TOUR_EXAMPLES
              + XPS_FIT_EXAMPLES + XPS_QUANT_EXAMPLES + XPS_ADV_EXAMPLES
-             + XRD_EXAMPLES + XRD2_EXAMPLES + FTIR_EXAMPLES)
+             + XRD_EXAMPLES + XRD2_EXAMPLES + XRD3_EXAMPLES + FTIR_EXAMPLES
+             + EDX_EXAMPLES + EELS_EXAMPLES + TGA_EXAMPLES + BET_EXAMPLES
+             + SIMS_EXAMPLES + NMR_EXAMPLES)
 
 _LIVE_RE = re.compile(r"runs continuously(?:\s*\((\d+)\s*ms\))?")
 

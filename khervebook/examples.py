@@ -1184,8 +1184,11 @@ EXAMPLES = [
 # Spreadsheet examples ported from KherveSheet (markdown + live sheet
 # cell, some with a chart). Kept in their own module for file size.
 from .sheet_examples import SHEET_EXAMPLES   # noqa: E402
+from .examples_svg import SVG_EXAMPLES       # noqa: E402
+from .examples_latex import LATEX_EXAMPLES   # noqa: E402
+from .examples_js import JS_EXAMPLES         # noqa: E402
 
-EXAMPLES += SHEET_EXAMPLES
+EXAMPLES += SHEET_EXAMPLES + SVG_EXAMPLES + LATEX_EXAMPLES + JS_EXAMPLES
 
 _LIVE_RE = re.compile(r"runs continuously(?:\s*\((\d+)\s*ms\))?")
 

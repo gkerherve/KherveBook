@@ -409,9 +409,10 @@ class SvgCell(CellWidget):
         self._watcher.addPath(str(tmp))
         QMessageBox.information(
             self, "Editing in KherveScribe",
-            "A copy of this drawing was written to:\n\n" + str(tmp) +
-            "\n\nIn KherveScribe: Open that file, edit it, then Export "
-            "as SVG back to the same path — it will reload here.")
+            "This drawing is opening in KherveScribe.\n\nEdit it there, "
+            "then Save (Ctrl+S) — KherveBook reloads it automatically.\n\n"
+            "If it doesn't open on its own (older KherveScribe), use "
+            "File ▸ Open on:\n" + str(tmp))
 
     def _on_scribe_saved(self, path):
         try:

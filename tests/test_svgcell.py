@@ -46,3 +46,45 @@ def test_drop_svg_file_makes_svg_cell(qapp, tmp_path):
     assert nb.open_file_in_cell(str(f))
     assert nb.current.CELL_TYPE == "svg"
     assert nb.current.view.isVisibleTo(nb)        # rendered on drop
+
+
+def test_svg_cell_has_drawing_toolbar(qapp):
+    from khervebook.svgcell import SvgCell
+    cell = SvgCell()
+    for tool in ("select", "pen", "line", "rect", "ellipse", "text"):
+        assert tool in cell._tool_buttons
+
+
+def test_svg_cell_draws_shape_and_syncs_source(qapp):
+    from khervebook.svgcell import SvgCell, STARTER_SVG
+    from PyQt5.QtGui import QColor
+    cell = SvgCell(STARTER_SVG)
+    cell.execute(None)
+    surf = cell.view
+    surf.tool = "rect"
+    surf.color = QColor("#e07b39")
+    surf.stroke_width = 4
+    surf._commit(surf._shape_element((50, 50), (150, 120)))
+    assert "<rect" in surf.source()               # element appended to the SVG
+    assert "#e07b39" in surf.source()
+    assert "<rect" in cell.source()               # synced back to the editor text
+    surf.undo_shape()
+    assert "#e07b39" not in surf.source()          # undo removes the last shape
+
+
+def test_svg_cell_coordinate_round_trip(qapp):
+    from khervebook.svgcell import SvgCell, STARTER_SVG
+    from PyQt5.QtCore import QPoint
+    cell = SvgCell(STARTER_SVG)
+    cell.execute(None)
+    surf = cell.view
+    surf.resize(300, 180)
+    px = surf._to_px(150, 90)
+    sx, sy = surf._to_svg(QPoint(int(px.x()), int(px.y())))
+    assert abs(sx - 150) < 3 and abs(sy - 90) < 3
+
+
+def test_svg_cell_open_in_scribe_is_callable(qapp):
+    from khervebook.svgcell import SvgCell
+    cell = SvgCell()
+    assert hasattr(cell, "open_in_scribe") and callable(cell.open_in_scribe)

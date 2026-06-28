@@ -40,3 +40,74 @@ def test_thesaurus_rejects_non_words_offline():
     assert thesaurus.synonyms("") == []
     assert thesaurus.synonyms("abc123") == []   # non-alpha: never hits network
     assert thesaurus.synonyms("  ") == []
+
+
+# -- interactive plots --------------------------------------------------
+
+def test_plot_canvas_wraps_figure(qapp):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    from khervebook.plotcanvas import make_plot_widget
+    fig, ax = plt.subplots()
+    ax.plot([1, 2, 3], [1, 4, 9])
+    w = make_plot_widget(fig)
+    assert w.canvas is not None and w.toolbar is not None   # zoom/pan toolbar
+    w.close_figure()
+
+
+def test_code_cell_uses_live_canvas_when_interactive(qapp):
+    from khervebook.cells import make_cell
+    from khervebook.kernel import Kernel
+    k = Kernel()
+    k.interactive_figures = True
+    cell = make_cell("code", "fig, ax = plt.subplots(); ax.plot([1,2,3]); fig")
+    cell.execute(k)
+    assert cell._plot_widgets and not cell._figure_labels    # canvas, not PNG
+    # turning it off goes back to a PNG label
+    k.interactive_figures = False
+    cell.execute(k)
+    assert cell._figure_labels and not cell._plot_widgets
+
+
+def test_interactive_off_for_continuous_runs(qapp):
+    from khervebook.cells import make_cell
+    from khervebook.kernel import Kernel
+    k = Kernel()
+    k.interactive_figures = True
+    cell = make_cell("code", "fig, ax = plt.subplots(); ax.plot([1]); fig")
+    cell.set_looping(True)                       # animations stay PNG
+    cell.execute(k)
+    assert cell._figure_labels and not cell._plot_widgets
+
+
+# -- JavaScript cells ---------------------------------------------------
+
+def test_js_cell_registered_and_round_trips(qapp):
+    from khervebook.jscell import JsCell
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    nb.add_cell("js", "console.log('hi')")
+    assert isinstance(nb.cells[-1], JsCell)
+    nb2 = NotebookWidget()
+    nb2.load_json(nb.to_json())
+    assert nb2.cells[-1].CELL_TYPE == "js"
+    assert nb2.cells[-1].source() == "console.log('hi')"
+
+
+def test_js_to_html_wrapping():
+    from khervebook.jscell import js_to_html
+    bare = js_to_html("console.log(1 + 1)")
+    assert "<script>" in bare and "kb_out" in bare       # console capture
+    snippet = js_to_html("<canvas id='c'></canvas><script>1</script>")
+    assert "<canvas" in snippet                          # html kept
+
+
+def test_js_cell_execute_degrades_without_webengine(qapp):
+    # In the headless test app QtWebEngine can't init; the cell must show a
+    # hint label instead of crashing.
+    from khervebook.cells import make_cell
+    cell = make_cell("js", "console.log(1)")
+    cell.execute(None)
+    assert cell._web is not None or cell._fallback is not None

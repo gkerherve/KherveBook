@@ -24,6 +24,7 @@ from .undo_commands import (AddCellCmd, ConvertCellCmd, MoveCellCmd,
                             RemoveCellCmd)
 from . import sheetcell                  # noqa: F401  (registers "sheet")
 from . import svgcell                    # noqa: F401  (registers "svg")
+from . import jscell                     # noqa: F401  (registers "js")
 
 # v4: cells gained "height" (v3: title/column, v2: collapsed).
 FORMAT_VERSION = 4
@@ -378,7 +379,7 @@ class NotebookWidget(QScrollArea):
         conv = menu.addMenu("Convert To")
         for label, key in (("Code", "code"), ("Markdown", "markdown"),
                            ("LaTeX", "latex"), ("Sheet", "sheet"),
-                           ("SVG", "svg")):
+                           ("SVG", "svg"), ("JavaScript", "js")):
             if key != cell.CELL_TYPE:
                 conv.addAction(label,
                                lambda k=key: self.convert_current(k))

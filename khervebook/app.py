@@ -13,6 +13,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication
 
 CRASH_LOG = Path(tempfile.gettempdir()) / "khervebook_crash.log"
@@ -22,6 +23,9 @@ def main():
     crash_file = open(CRASH_LOG, "w")
     faulthandler.enable(file=crash_file)
 
+    # Must be set before the QApplication so JavaScript cells can later
+    # embed a QtWebEngine view (harmless if PyQtWebEngine isn't installed).
+    QApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setApplicationName("KherveBook")

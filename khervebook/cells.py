@@ -744,6 +744,7 @@ class CellWidget(QFrame):
         self.editor.installEventFilter(self)
         self.column.addWidget(self.editor)
         self._find_bar = None
+        self._looping = False
 
     def show_find(self):
         """Reveal the find-in-cell bar (Ctrl+F or right-click → Find)."""
@@ -757,6 +758,7 @@ class CellWidget(QFrame):
 
     def set_looping(self, on: bool):
         """Show/hide the stop button while a continuous run is active."""
+        self._looping = bool(on)             # loops stay PNG, never canvases
         self.stop_btn.setVisible(on)
 
     # -- collapse ----------------------------------------------------------
@@ -897,9 +899,14 @@ class CodeCell(CellWidget):
         self.output.hide()
         self.column.addWidget(self.output)
         self._figure_labels = []
+        self._plot_widgets = []
 
     def execute(self, kernel):
-        res = kernel.run(self.source())
+        # Interactive (zoom/pan) canvases when the toggle is on — but never
+        # for continuous runs, which stay PNG for smooth, flicker-free frames.
+        interactive = (getattr(kernel, "interactive_figures", False)
+                       and not self._looping)
+        res = kernel.run(self.source(), interactive=interactive)
         self.gutter.setText(f"In [{kernel.exec_count}]:")
 
         text = res.stdout
@@ -914,20 +921,44 @@ class CodeCell(CellWidget):
         self.output.setStyleSheet("color: #b71c1c;" if res.error else "")
         self.output.setVisible(bool(text.strip()))
 
+        if res.live_figures:
+            self._show_live_figures(res.live_figures)
+        else:
+            self._show_png_figures(res.figures)
+
+    def _show_png_figures(self, figures):
+        self._clear_plot_widgets()
         # Reuse the existing labels when the figure count is unchanged
         # so continuous runs animate without flicker or relayout.
-        if len(res.figures) != len(self._figure_labels):
+        if len(figures) != len(self._figure_labels):
             for lab in self._figure_labels:
                 lab.deleteLater()
             self._figure_labels = []
-            for _png in res.figures:
+            for _png in figures:
                 lab = QLabel()
                 self.column.addWidget(lab)
                 self._figure_labels.append(lab)
-        for lab, png in zip(self._figure_labels, res.figures):
+        for lab, png in zip(self._figure_labels, figures):
             pix = QPixmap()
             pix.loadFromData(png, "PNG")
             lab.setPixmap(pix)
+
+    def _show_live_figures(self, figures):
+        from .plotcanvas import make_plot_widget
+        for lab in self._figure_labels:         # drop any prior PNG plots
+            lab.deleteLater()
+        self._figure_labels = []
+        self._clear_plot_widgets()
+        for fig in figures:
+            w = make_plot_widget(fig, self)
+            self.column.addWidget(w)
+            self._plot_widgets.append(w)
+
+    def _clear_plot_widgets(self):
+        for w in self._plot_widgets:
+            w.close_figure()
+            w.deleteLater()
+        self._plot_widgets = []
 
 
 class MarkdownCell(CellWidget):

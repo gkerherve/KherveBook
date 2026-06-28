@@ -87,12 +87,19 @@ into a new module and import.
                        range as a persisted static plot view.
   - `svgcell.py`     — `SvgCell`: renders an SVG drawing (KhervePaint
                        saves .svg) via QSvgRenderer.
+  - `jscell.py`      — `JsCell`: a JavaScript/HTML cell rendered in a
+                       QtWebEngine view (D3/Plotly/canvas); falls back to
+                       a hint if PyQtWebEngine is absent.
+  - `plotcanvas.py`  — `PlotCanvas`: a live matplotlib figure embedded as
+                       a Qt canvas + the zoom/pan/save navigation toolbar,
+                       used when "Interactive Plots" is on.
   - `kernel.py`      — in-process Python kernel: shared namespace
-                       (np/plt/pd/scipy preloaded), timeout guard,
-                       stdout/stderr capture, trailing-expression echo,
-                       figure/image capture. `ks("A1")` reads a sheet
-                       grid; `ks("A1", value)` writes back into the live
-                       sheet (two-way Python <-> sheet bridge).
+                       (np/plt/pd/scipy/dask preloaded; da/dd aliases),
+                       timeout guard, stdout/stderr capture,
+                       trailing-expression echo, figure/image capture
+                       (PNG, or live Figures when `interactive_figures`).
+                       `ks("A1")` reads a sheet grid; `ks("A1", value)`
+                       writes back into the live sheet.
   - `welcome.py`     — pre-run example notebook shown on startup.
   - `undo_commands.py` — QUndoCommand classes for cell structure
                        (add/remove/move/convert); they keep the live
@@ -104,7 +111,7 @@ into a new module and import.
 ## Document format
 
 `.kbook` is JSON: `{"format": "kbook", "version": 3, "cells":
-[{"type": "code"|"markdown"|"latex"|"sheet"|"svg", "source": "...",
+[{"type": "code"|"markdown"|"latex"|"sheet"|"svg"|"js", "source": "...",
 optional "title", "collapsed", "column", "width", "height"}]}`. The
 optional per-cell keys: `title` (heading shown at the top),
 `collapsed` (minimised to its title/summary), `column` (sits beside

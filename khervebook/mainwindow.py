@@ -80,6 +80,10 @@ class MainWindow(QMainWindow):
         from .svgcell import STARTER_SVG
         self.notebook.add_cell_below("svg", STARTER_SVG)
 
+    def _add_js_cell(self):
+        from .jscell import JS_STARTER
+        self.notebook.add_cell_below("js", JS_STARTER)
+
     def _load_example(self, builder):
         if not self._confirm_discard():
             return
@@ -141,6 +145,8 @@ class MainWindow(QMainWindow):
                               lambda: self.notebook.add_cell_below("sheet")))
         c.addAction(self._act("Add S&VG Cell", None,
                               self._add_svg_cell))
+        c.addAction(self._act("Add &JavaScript Cell", None,
+                              self._add_js_cell))
         c.addSeparator()
         c.addAction(self._act("&Run Cell", "Ctrl+Return",
                               self.notebook.run_current))
@@ -191,6 +197,16 @@ class MainWindow(QMainWindow):
         v.addAction(self.page_mode_act)
         if page_on:
             self.notebook.set_page_mode(True)
+
+        self.interactive_act = QAction("&Interactive Plots (zoom/pan)", self,
+                                       checkable=True)
+        interactive_on = QSettings("Kherve", "KherveBook").value(
+            "view/interactive_plots", False, type=bool)
+        self.interactive_act.setChecked(interactive_on)
+        self.notebook.kernel.interactive_figures = interactive_on
+        self.interactive_act.toggled.connect(self._toggle_interactive_plots)
+        v.addAction(self.interactive_act)
+
         theme_menu = v.addMenu("&Theme")
         group = QActionGroup(self)
         group.setExclusive(True)
@@ -218,7 +234,8 @@ class MainWindow(QMainWindow):
 
     #: (label, type-key) pairs for the Jupyter-style cell-type selector.
     CELL_TYPES = [("Code", "code"), ("Markdown", "markdown"),
-                  ("LaTeX", "latex"), ("Sheet", "sheet"), ("SVG", "svg")]
+                  ("LaTeX", "latex"), ("Sheet", "sheet"), ("SVG", "svg"),
+                  ("JavaScript", "js")]
 
     def _build_toolbar(self):
         """Jupyter-style main toolbar: file/cell ops, run, cell type."""
@@ -313,6 +330,13 @@ class MainWindow(QMainWindow):
     def _toggle_page_mode(self, on):
         self.notebook.set_page_mode(on)
         QSettings("Kherve", "KherveBook").setValue("view/page_mode", on)
+
+    def _toggle_interactive_plots(self, on):
+        """Embed live zoom/pan figures instead of static PNGs (re-run a
+        cell to apply). Survives a kernel restart."""
+        self.notebook.kernel.interactive_figures = on
+        QSettings("Kherve", "KherveBook").setValue(
+            "view/interactive_plots", on)
 
     def _dock_explorer(self, area):
         self.explorer.setFloating(False)

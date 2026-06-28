@@ -188,6 +188,7 @@ class ExecResult:
     stderr: str = ""
     result_repr: str = ""          # repr of trailing expression, if any
     figures: list = field(default_factory=list)  # list of PNG bytes
+    live_figures: list = field(default_factory=list)  # live mpl Figures
     error: str = ""                # formatted traceback on failure
 
     @property
@@ -206,6 +207,10 @@ class Kernel:
         self.namespace = {}
         self.exec_count = 0
         self.timeout = self.DEFAULT_TIMEOUT
+        #: user preference: embed live, zoom/pan-able figures (set by the
+        #: "Interactive plots" toggle) instead of static PNGs. Survives a
+        #: kernel restart, so it lives outside reset().
+        self.interactive_figures = False
         self.reset()
 
     def reset(self):
@@ -251,6 +256,17 @@ class Kernel:
                 g[mod] = __import__(mod)
             except Exception:
                 pass
+        # Dask for parallel / larger-than-memory compute: dask, plus the
+        # da (array) and dd (dataframe) aliases, mirroring np / pd.
+        try:
+            import dask
+            g["dask"] = dask
+            import dask.array as _da
+            g["da"] = _da
+            import dask.dataframe as _dd
+            g["dd"] = _dd
+        except Exception:
+            pass
         # KherveSheet-style grid accessors for imported =PY cells: ks("A1")
         # reads (and ks("A1", v) / ks_set write) a sheet cell's grid
         # (sheet1, sheet2, ...). xl and cell are aliases of ks.
@@ -260,12 +276,22 @@ class Kernel:
         g["cell"] = ks_fn
         g["ks_set"] = ks_set_fn
 
-    def run(self, source: str) -> ExecResult:
-        """Execute *source*; return captured output and figures."""
+    def run(self, source: str, interactive: bool = False) -> ExecResult:
+        """Execute *source*; return captured output and figures.
+
+        When *interactive*, figures are returned as live matplotlib
+        ``Figure`` objects (res.live_figures) for an embedded Qt canvas
+        with a zoom/pan toolbar; otherwise as static PNG bytes."""
         self.exec_count += 1
         self._seed_namespace()
         res = ExecResult()
         out, err = io.StringIO(), io.StringIO()
+
+        def _emit_figure(fig):
+            if interactive:
+                res.live_figures.append(fig)
+            else:
+                res.figures.append(self._fig_png(fig))
 
         # Split a trailing expression so its value is echoed, Jupyter-style.
         try:
@@ -306,7 +332,7 @@ class Kernel:
                 # pyplot figure; otherwise (bare Figure()) render it here.
                 if not (plt and getattr(value, "number", None)
                         in plt.get_fignums()):
-                    res.figures.append(self._fig_png(value))
+                    _emit_figure(value)
             else:
                 png = self._to_png(value, plt)
                 if png is not None:
@@ -318,7 +344,10 @@ class Kernel:
             for num in plt.get_fignums():
                 if num in before:
                     continue
-                res.figures.append(self._fig_png(plt.figure(num)))
+                fig = plt.figure(num)
+                _emit_figure(fig)
+                # Drop it from pyplot's registry. The Figure object lives on
+                # (held by res when interactive) for embedding in a canvas.
                 plt.close(num)
         return res
 

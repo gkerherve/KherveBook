@@ -127,6 +127,27 @@ def test_np_compat_bridges_both_directions():
     assert g.trapezoid == "TRAPZ"
 
 
+def test_dask_preloaded_when_installed(kernel):
+    import importlib.util
+    if importlib.util.find_spec("dask") is None:
+        pytest.skip("dask not installed")
+    assert kernel.run("da.__name__").result_repr == "'dask.array'"
+    assert kernel.run("dd.__name__").result_repr == "'dask.dataframe'"
+    assert kernel.run("hasattr(dask, '__version__')").result_repr == "True"
+
+
+def test_interactive_run_returns_live_figures(kernel):
+    code = "fig, ax = plt.subplots(); ax.plot([1, 2, 3]); fig"
+    res = kernel.run(code, interactive=True)
+    assert len(res.live_figures) == 1 and not res.figures
+    # default (non-interactive) still gives PNG bytes
+    res2 = kernel.run(code)
+    assert len(res2.figures) == 1 and not res2.live_figures
+    import matplotlib.pyplot as plt
+    for f in res.live_figures:
+        plt.close(f)
+
+
 def test_cell_and_xl_are_aliases_of_ks(kernel):
     kernel.namespace["sheet1"] = [["a", 7], ["b", 8]]
     assert kernel.run('cell("B1")').result_repr == "7"

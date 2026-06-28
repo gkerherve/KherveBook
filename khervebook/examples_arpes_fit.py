@@ -1,7 +1,7 @@
 """ARPES curve-fitting examples using the ``peaks`` library.
 
 A self-contained companion to ``examples.py`` (Examples menu,
-"Spectroscopy" category). ``peaks`` (``pip install peaks-arpes``) is the
+"ARPES" category). ``peaks`` (``pip install peaks-arpes``) is the
 angle-resolved photoemission toolkit from the King group at the
 University of St Andrews; alongside the raw dispersion data it bundles
 fitting models for the two everyday ARPES quantitative analyses:
@@ -293,6 +293,6 @@ def _edc_fit():
 
 ARPES_FIT_EXAMPLES = [
     # (name, category, builder)
-    ("Fermi Edge & Resolution (peaks)", "Spectroscopy", _fermi_edge),
-    ("EDC Peak Fitting (peaks)", "Spectroscopy", _edc_fit),
+    ("Fermi Edge & Resolution (peaks)", "ARPES", _fermi_edge),
+    ("EDC Peak Fitting (peaks)", "ARPES", _edc_fit),
 ]

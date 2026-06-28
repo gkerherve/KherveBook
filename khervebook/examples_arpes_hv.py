@@ -1,7 +1,7 @@
 """Photon-energy / data-product ARPES examples on ``peaks`` sample data.
 
 A self-contained companion to ``examples.py`` (Examples menu,
-"Spectroscopy" category) and the other ``examples_arpes*`` modules.
+"ARPES" category) and the other ``examples_arpes*`` modules.
 ``peaks`` (``pip install peaks-arpes``) is the angle-resolved
 photoemission toolkit from the King group at the University of St
 Andrews; it ships Diamond Light Source beamline-I05 scans through
@@ -321,7 +321,7 @@ def _arpes_ce_stack():
 
 ARPES_HV_EXAMPLES = [
     # (name, category, builder)
-    ("Photon-Energy Scan / kz (peaks)", "Spectroscopy", _arpes_hv_scan),
-    ("I0 Flux Normalization (peaks)", "Spectroscopy", _arpes_i0_norm),
-    ("Constant-Energy Map Stack (peaks)", "Spectroscopy", _arpes_ce_stack),
+    ("Photon-Energy Scan / kz (peaks)", "ARPES", _arpes_hv_scan),
+    ("I0 Flux Normalization (peaks)", "ARPES", _arpes_i0_norm),
+    ("Constant-Energy Map Stack (peaks)", "ARPES", _arpes_ce_stack),
 ]

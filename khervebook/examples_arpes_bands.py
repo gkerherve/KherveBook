@@ -1,7 +1,7 @@
 """More ARPES examples built on the ``peaks`` library's sample data.
 
 A self-contained companion to ``examples.py`` (Examples menu,
-"Spectroscopy" category) and ``examples_arpes.py``. ``peaks``
+"ARPES" category) and ``examples_arpes.py``. ``peaks``
 (``pip install peaks-arpes``) is the angle-resolved photoemission
 toolkit from the King group at the University of St Andrews; it ships
 Diamond Light Source beamline-I05 scans through
@@ -283,7 +283,7 @@ def _arpes_band_curvature():
 
 ARPES_BANDS_EXAMPLES = [
     # (name, category, builder)
-    ("ARPES Fermi Surface (peaks)", "Spectroscopy", _arpes_fermi_surface),
-    ("Angle to Momentum (peaks)", "Spectroscopy", _arpes_angle_to_k),
-    ("Band Curvature (peaks)", "Spectroscopy", _arpes_band_curvature),
+    ("ARPES Fermi Surface (peaks)", "ARPES", _arpes_fermi_surface),
+    ("Angle to Momentum (peaks)", "ARPES", _arpes_angle_to_k),
+    ("Band Curvature (peaks)", "ARPES", _arpes_band_curvature),
 ]

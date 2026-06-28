@@ -1,7 +1,7 @@
 """ARPES data-operation examples built on the ``peaks`` library's ideas.
 
 A self-contained companion to ``examples.py`` (Examples menu,
-"Spectroscopy" category) alongside ``examples_arpes.py`` and
+"ARPES" category) alongside ``examples_arpes.py`` and
 ``examples_arpes_bands.py``. ``peaks`` (``pip install peaks-arpes``) is
 the angle-resolved photoemission toolkit from the King group at the
 University of St Andrews; beyond loading Diamond Light Source beamline-
@@ -317,7 +317,7 @@ def _arpes_dos():
 
 ARPES_CUTS_EXAMPLES = [
     # (name, category, builder)
-    ("Data Symmetrization (peaks)", "Spectroscopy", _arpes_symmetrise),
-    ("Arbitrary & Radial Cuts (peaks)", "Spectroscopy", _arpes_cuts),
-    ("Angle-Integrated DOS (peaks)", "Spectroscopy", _arpes_dos),
+    ("Data Symmetrization (peaks)", "ARPES", _arpes_symmetrise),
+    ("Arbitrary & Radial Cuts (peaks)", "ARPES", _arpes_cuts),
+    ("Angle-Integrated DOS (peaks)", "ARPES", _arpes_dos),
 ]

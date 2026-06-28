@@ -1,4 +1,4 @@
-"""A single end-to-end ARPES walkthrough (Examples menu, "Spectroscopy").
+"""A single end-to-end ARPES walkthrough (Examples menu, "ARPES").
 
 The other ARPES examples each live on their own page; this one strings the
 whole analysis chain into a single notebook that runs top to bottom on one
@@ -324,5 +324,5 @@ def _tour():
 # -- Registry --------------------------------------------------------------
 
 ARPES_TOUR_EXAMPLES = [
-    ("ARPES Walkthrough (peaks)", "Spectroscopy", _tour),
+    ("ARPES Walkthrough (peaks)", "ARPES", _tour),
 ]

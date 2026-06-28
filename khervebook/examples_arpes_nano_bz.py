@@ -1,7 +1,7 @@
 """nanoARPES spatial-mapping and Brillouin-zone examples using ``peaks``.
 
 A self-contained companion to ``examples.py`` (Examples menu,
-"Spectroscopy" category), in the spirit of ``examples_arpes.py``.
+"ARPES" category), in the spirit of ``examples_arpes.py``.
 ``peaks`` (``pip install peaks-arpes``) is the angle-resolved
 photoemission toolkit from the King group at the University of St
 Andrews; alongside the tutorial dispersion it ships nanoARPES spatial
@@ -322,6 +322,6 @@ def _brillouin_zone():
 
 ARPES_NANO_BZ_EXAMPLES = [
     # (name, category, builder)
-    ("nanoARPES Spatial Map (peaks)", "Spectroscopy", _nano_spatial_map),
-    ("Brillouin Zone (peaks)", "Spectroscopy", _brillouin_zone),
+    ("nanoARPES Spatial Map (peaks)", "ARPES", _nano_spatial_map),
+    ("Brillouin Zone (peaks)", "ARPES", _brillouin_zone),
 ]

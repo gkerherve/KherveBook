@@ -1,7 +1,7 @@
 """ARPES example using the ``peaks`` library's bundled sample data.
 
 A self-contained companion to ``examples.py`` (Examples menu,
-"Spectroscopy" category). ``peaks`` (``pip install peaks-arpes``) is the
+"ARPES" category). ``peaks`` (``pip install peaks-arpes``) is the
 angle-resolved photoemission toolkit from the King group at the
 University of St Andrews; it ships a Diamond Light Source beamline-I05
 scan, ``i05-59819.nxs``, exposed through
@@ -155,5 +155,5 @@ def _arpes_dispersion():
 
 ARPES_EXAMPLES = [
     # (name, category, builder)
-    ("ARPES Dispersion (peaks)", "Spectroscopy", _arpes_dispersion),
+    ("ARPES Dispersion (peaks)", "ARPES", _arpes_dispersion),
 ]

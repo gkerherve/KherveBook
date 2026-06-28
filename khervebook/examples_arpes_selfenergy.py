@@ -1,7 +1,7 @@
 """Advanced ARPES self-energy & many-body examples using ``peaks``.
 
 A self-contained companion to ``examples.py`` (Examples menu,
-"Spectroscopy" category). ``peaks`` (``pip install peaks-arpes``) is the
+"ARPES" category). ``peaks`` (``pip install peaks-arpes``) is the
 angle-resolved photoemission toolkit from the King group at the
 University of St Andrews; beyond loading raw dispersions it underpins the
 quantitative many-body analyses that ARPES is famous for:
@@ -436,7 +436,7 @@ def _fermi_surface():
 
 ARPES_SE_EXAMPLES = [
     # (name, category, builder)
-    ("Self-Energy & Kink (peaks)", "Spectroscopy", _self_energy),
-    ("Superconducting Gap (peaks)", "Spectroscopy", _gap),
-    ("Fermi Surface + Brillouin Zone (peaks)", "Spectroscopy", _fermi_surface),
+    ("Self-Energy & Kink (peaks)", "ARPES", _self_energy),
+    ("Superconducting Gap (peaks)", "ARPES", _gap),
+    ("Fermi Surface + Brillouin Zone (peaks)", "ARPES", _fermi_surface),
 ]

@@ -1,7 +1,7 @@
 """XPS core-level and time-resolved ARPES examples using ``peaks``.
 
 A self-contained companion to ``examples.py`` (Examples menu,
-"Spectroscopy" category) and a sibling of ``examples_arpes.py``.
+"ARPES" category) and a sibling of ``examples_arpes.py``.
 ``peaks`` (``pip install peaks-arpes``) is the angle-resolved
 photoemission / photoelectron-spectroscopy toolkit from the King group
 at the University of St Andrews
@@ -341,6 +341,6 @@ def _tr_arpes():
 
 ARPES_XPS_TR_EXAMPLES = [
     # (name, category, builder)
-    ("XPS Core Levels (peaks)", "Spectroscopy", _xps_core_levels),
-    ("TR-ARPES (peaks)", "Spectroscopy", _tr_arpes),
+    ("XPS Core Levels (peaks)", "ARPES", _xps_core_levels),
+    ("TR-ARPES (peaks)", "ARPES", _tr_arpes),
 ]

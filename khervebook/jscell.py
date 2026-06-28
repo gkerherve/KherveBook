@@ -17,7 +17,8 @@ import os
 
 from PyQt5.QtWidgets import QLabel, QSizePolicy
 
-from .cells import CELL_CLASSES, CellWidget
+from .cells import CELL_CLASSES, CellWidget, JsHighlighter
+from .style import tokens
 
 #: A starter JS/canvas snippet for a fresh JavaScript cell.
 JS_STARTER = (
@@ -72,6 +73,8 @@ class JsCell(CellWidget):
     def __init__(self, source=""):
         super().__init__(source)
         self.gutter.setText("js")
+        self._highlighter = JsHighlighter(self.editor.document(),
+                                          dark=tokens()["dark"])
         self._web = None
         self._fallback = None
 

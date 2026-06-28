@@ -330,6 +330,138 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                 self.setFormat(m.start(), m.end() - m.start(), fmt)
 
 
+def _highlight_multiline(hl, text, start_re, end_re, fmt, state):
+    """Colour multi-line regions (e.g. block comments) across blocks.
+
+    ``hl`` is the QSyntaxHighlighter; a region runs from ``start_re`` to
+    ``end_re`` and continues over line breaks via block state ``state``.
+    Call this last in ``highlightBlock`` so it overrides single-line rules
+    inside the region."""
+    hl.setCurrentBlockState(0)
+    if hl.previousBlockState() == state:
+        start = 0
+    else:
+        m = start_re.search(text)
+        start = m.start() if m else -1
+    while start >= 0:
+        m = end_re.search(text, start)
+        if m:
+            length = m.end() - start
+            nxt = start_re.search(text, m.end())
+            new_start = nxt.start() if nxt else -1
+        else:
+            length = len(text) - start
+            hl.setCurrentBlockState(state)
+            new_start = -1
+        hl.setFormat(start, length, fmt)
+        start = new_start
+
+
+class XmlHighlighter(QSyntaxHighlighter):
+    """Highlights SVG/XML tags, attributes, values and comments."""
+
+    #: (tag, attribute, value, comment) per background brightness.
+    LIGHT = ("#0000C0", "#9a6700", "#A31515", "#808080")
+    DARK = ("#6f9fff", "#d0a050", "#e8907e", "#8a939c")
+
+    _COM_START = re.compile(r"<!--")
+    _COM_END = re.compile(r"-->")
+
+    def __init__(self, document, dark=False):
+        super().__init__(document)
+        self._build_rules(dark)
+
+    def _build_rules(self, dark: bool):
+        tag_c, attr_c, val_c, com_c = self.DARK if dark else self.LIGHT
+        self._rules = []
+        tag = QTextCharFormat()
+        tag.setForeground(QColor(tag_c))
+        tag.setFontWeight(QFont.Bold)
+        self._rules.append((re.compile(r"</?\s*[\w:.-]+"), tag))   # <tag </tag
+        self._rules.append((re.compile(r"/?>"), tag))              # > />
+        attr = QTextCharFormat()
+        attr.setForeground(QColor(attr_c))
+        self._rules.append((re.compile(r"[\w:.-]+(?=\s*=)"), attr))
+        val = QTextCharFormat()
+        val.setForeground(QColor(val_c))
+        self._rules.append((re.compile(r"\"[^\"]*\"|'[^']*'"), val))
+        self._com_fmt = QTextCharFormat()
+        self._com_fmt.setForeground(QColor(com_c))
+        self._com_fmt.setFontItalic(True)
+
+    def set_dark(self, dark: bool):
+        self._build_rules(dark)
+        self.rehighlight()
+
+    def highlightBlock(self, text):
+        for pattern, fmt in self._rules:
+            for m in pattern.finditer(text):
+                self.setFormat(m.start(), m.end() - m.start(), fmt)
+        _highlight_multiline(self, text, self._COM_START, self._COM_END,
+                             self._com_fmt, 1)
+
+
+class JsHighlighter(QSyntaxHighlighter):
+    """Highlights JavaScript (plus embedded HTML tags) for js cells."""
+
+    _KEYWORDS = (
+        "var let const function return if else for while do switch case "
+        "break continue new delete typeof instanceof in of this class "
+        "extends super import export default from await async yield void "
+        "try catch finally throw null true false undefined").split()
+
+    #: (keyword, number, string, comment, tag) per background brightness.
+    LIGHT = ("#0000C0", "#098658", "#A31515", "#808080", "#0b7261")
+    DARK = ("#6f9fff", "#6ccb9e", "#e8907e", "#8a939c", "#5ec8b0")
+
+    _COM_START = re.compile(r"/\*")
+    _COM_END = re.compile(r"\*/")
+
+    def __init__(self, document, dark=False):
+        super().__init__(document)
+        self._build_rules(dark)
+
+    def _build_rules(self, dark: bool):
+        kw_c, num_c, str_c, com_c, tag_c = self.DARK if dark else self.LIGHT
+        self._rules = []
+        tag = QTextCharFormat()                                    # HTML tags
+        tag.setForeground(QColor(tag_c))
+        # A real delimiter must follow the name so `a<b` isn't seen as a tag.
+        self._rules.append(
+            (re.compile(r"</?[a-zA-Z][\w-]*(?=[\s/>])"), tag))
+        kw = QTextCharFormat()
+        kw.setForeground(QColor(kw_c))
+        kw.setFontWeight(QFont.Bold)
+        for word in self._KEYWORDS:
+            self._rules.append((re.compile(rf"\b{word}\b"), kw))
+        num = QTextCharFormat()
+        num.setForeground(QColor(num_c))
+        self._rules.append(
+            (re.compile(r"\b0x[0-9a-fA-F]+\b|\b\d+(\.\d+)?\b"), num))
+        com = QTextCharFormat()                       # // — skip URL slashes
+        com.setForeground(QColor(com_c))
+        com.setFontItalic(True)
+        self._rules.append((re.compile(r"(?<!:)//[^\n]*"), com))
+        s = QTextCharFormat()                         # strings win over the
+        s.setForeground(QColor(str_c))                # rules above (last)
+        self._rules.append(
+            (re.compile(r"\"[^\"]*\"|'[^']*'|`[^`]*`"), s))
+        self._com_fmt = QTextCharFormat()
+        self._com_fmt.setForeground(QColor(com_c))
+        self._com_fmt.setFontItalic(True)
+
+    def set_dark(self, dark: bool):
+        self._build_rules(dark)
+        self.rehighlight()
+
+    def highlightBlock(self, text):
+        for pattern, fmt in self._rules:
+            for m in pattern.finditer(text):
+                self.setFormat(m.start(), m.end() - m.start(), fmt)
+        _highlight_multiline(self, text, self._COM_START, self._COM_END,
+                             self._com_fmt, 1)
+
+
 class _FitImage(QLabel):
     """An image that always scales to fill its width (keeping aspect),
     re-fitting whenever the cell is resized — no side margins."""

@@ -30,8 +30,9 @@ from PyQt5.QtWidgets import (QColorDialog, QHBoxLayout, QInputDialog,
                              QMessageBox, QSizePolicy, QSpinBox, QToolButton,
                              QWidget)
 
-from .cells import CELL_CLASSES, CellWidget
+from .cells import CELL_CLASSES, CellWidget, XmlHighlighter
 from .icons import icon
+from .style import tokens
 
 #: Starter SVG offered for a brand-new svg cell / the example.
 STARTER_SVG = (
@@ -282,6 +283,8 @@ class SvgCell(CellWidget):
     def __init__(self, source=""):
         super().__init__(source)
         self.gutter.setText("svg")
+        self._highlighter = XmlHighlighter(self.editor.document(),
+                                           dark=tokens()["dark"])
         self.view = _SvgDrawSurface()
         self.view.changed.connect(self._on_drawn)
         self.view.edit_requested.connect(self._edit_again)

@@ -96,6 +96,63 @@ def test_js_cell_registered_and_round_trips(qapp):
     assert nb2.cells[-1].source() == "console.log('hi')"
 
 
+# -- syntax highlighting (svg = XML, js = JavaScript) -------------------
+
+def _highlight_colors(cell):
+    """The set of foreground colours the cell's highlighter applies.
+
+    Headless tests must force a pass — without an event loop Qt never
+    fires the highlighter's deferred rehighlight (the live app does)."""
+    cell._highlighter.rehighlight()
+    doc = cell.editor.document()
+    colors, blk = set(), doc.firstBlock()
+    while blk.isValid():
+        for r in blk.layout().formats():
+            colors.add(r.format.foreground().color().name())
+        blk = blk.next()
+    return colors
+
+
+def test_svg_cell_has_xml_highlighting(qapp):
+    from khervebook.svgcell import SvgCell
+    from khervebook.cells import XmlHighlighter
+    cell = SvgCell('<svg viewBox="0 0 10 10"><!-- note -->'
+                   '<rect width="5" height="5" fill="#f00"/></svg>')
+    assert isinstance(cell._highlighter, XmlHighlighter)
+    colors = _highlight_colors(cell)
+    assert "#0000c0" in colors        # tag names / brackets (blue)
+    assert "#9a6700" in colors        # attribute names (amber)
+    assert "#a31515" in colors        # attribute values (red)
+    assert "#808080" in colors        # <!-- comment --> (grey)
+
+
+def test_js_cell_has_javascript_highlighting(qapp):
+    from khervebook.jscell import JsCell
+    from khervebook.cells import JsHighlighter
+    cell = JsCell("// hi\nconst n = 42;\n/* block\n comment */\n"
+                  "function f() { return n; }")
+    assert isinstance(cell._highlighter, JsHighlighter)
+    colors = _highlight_colors(cell)
+    assert "#0000c0" in colors        # keywords (blue)
+    assert "#098658" in colors        # number 42 (green)
+    assert "#808080" in colors        # // line + /* block */ comments (grey)
+
+
+def test_js_url_slashes_are_not_a_comment(qapp):
+    from khervebook.jscell import JsCell
+    cell = JsCell('let u = "http://d3js.org/d3.js";')
+    colors = _highlight_colors(cell)
+    assert "#a31515" in colors        # the URL is one string (red)
+    assert "#808080" not in colors    # the // after ':' is NOT a comment
+
+
+def test_highlighter_follows_dark_theme(qapp):
+    from khervebook.jscell import JsCell
+    cell = JsCell("const n = 1;")
+    cell._highlighter.set_dark(True)
+    assert "#6f9fff" in _highlight_colors(cell)   # dark keyword blue
+
+
 def test_js_to_html_wrapping():
     from khervebook.jscell import js_to_html
     bare = js_to_html("console.log(1 + 1)")

@@ -33,6 +33,15 @@ def test_all_peaks_capabilities_have_an_example():
         "TR-ARPES (peaks)",                  # time-resolved
         "nanoARPES Spatial Map (peaks)",     # spatial mapping
         "Brillouin Zone (peaks)",            # structure / BZs
+        "Data Symmetrization (peaks)",       # symmetrisation
+        "Arbitrary & Radial Cuts (peaks)",   # arbitrary / radial cuts
+        "Angle-Integrated DOS (peaks)",      # DOS()
+        "Photon-Energy Scan / kz (peaks)",   # hv map / kz, inner potential
+        "I0 Flux Normalization (peaks)",     # flux normalisation
+        "Constant-Energy Map Stack (peaks)",  # 3D CE stack / plot_grid
+        "Self-Energy & Kink (peaks)",        # MDC self-energy, kink
+        "Superconducting Gap (peaks)",       # symmetrised EDC gap
+        "Fermi Surface + Brillouin Zone (peaks)",  # BZ overlay
     }
     assert expected <= spectro, expected - spectro
 

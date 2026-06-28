@@ -46,6 +46,20 @@ def test_all_peaks_capabilities_have_an_example():
     assert expected <= spectro, expected - spectro
 
 
+def test_arpes_walkthrough_is_a_full_tour():
+    """The single-file ARPES walkthrough strings the steps together: one
+    Spectroscopy example with a markdown narrative and many code steps."""
+    from khervebook.examples import EXAMPLES
+    by_name = {n: (c, b) for n, c, b in EXAMPLES}
+    assert "ARPES Walkthrough (peaks)" in by_name
+    cat, build = by_name["ARPES Walkthrough (peaks)"]
+    assert cat == "Spectroscopy"
+    cells = build()
+    n_code = sum(1 for c in cells if c["type"] == "code")
+    n_md = sum(1 for c in cells if c["type"] == "markdown")
+    assert n_code >= 8 and n_md >= 8        # ~8 analysis steps, each narrated
+
+
 def test_arpes_example_runs_and_recovers_band():
     import matplotlib
     matplotlib.use("Agg")

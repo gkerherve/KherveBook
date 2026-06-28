@@ -46,6 +46,16 @@ def test_xrd_examples_registered():
     } <= xrd
 
 
+def test_ftir_examples_registered():
+    from khervebook.examples import EXAMPLES
+    ftir = {n for n, c, _b in EXAMPLES if c == "FTIR"}
+    assert {
+        "FTIR Spectrum & Functional Groups (FTIR)",
+        "FTIR Baseline & Peak Fit (FTIR)",
+        "FTIR Beer-Lambert Quantification (FTIR)",
+    } <= ftir
+
+
 def test_doublet_partner_sits_at_higher_binding_energy():
     """Guards the Au 4f example's physics: the weaker spin-orbit partner
     (4f5/2) must lie at HIGHER binding energy than 4f7/2. lmfitxps places

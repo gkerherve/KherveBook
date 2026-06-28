@@ -21,6 +21,7 @@ import math
 import random
 
 from .sheetcell import DEFAULT_COLS, DEFAULT_ROWS, col_letter
+from .sheet_extras import NO_PLOT, drawing_for, formula_for, generic_plot
 
 
 def _md(text):
@@ -29,6 +30,14 @@ def _md(text):
 
 def _code(text):
     return {"type": "code", "source": text}
+
+
+def _tex(text):
+    return {"type": "latex", "source": text}
+
+
+def _svg(text):
+    return {"type": "svg", "source": text}
 
 
 def _fv(v, d=4):
@@ -75,12 +84,18 @@ def _sheet_source(sheets) -> str:
     return json.dumps({"sheets": out, "active": sheets[0][0]})
 
 
-def _doc(title, desc, sheets, plot=None):
-    """A markdown heading + a sheet cell (+ an optional chart code cell)."""
-    cells = [_md(f"# {title}\n{desc}"),
+def _build(name, category, desc, sheets, plot=None):
+    """A full example document: heading + live sheet, then (where they
+    fit) the governing equation, a chart of the data and a themed drawing
+    — so every sheet example mixes markdown, sheet, latex, code and svg."""
+    cells = [_md(f"# {name}\n{desc}"),
              {"type": "sheet", "source": _sheet_source(sheets)}]
-    if plot:
-        cells.append(_code(plot))
+    tex = formula_for(name)
+    if tex:
+        cells.append(_tex(tex))
+    if name not in NO_PLOT:
+        cells.append(_code(plot or generic_plot(name)))
+    cells.append(_svg(drawing_for(name, category)))
     return cells
 
 
@@ -897,6 +912,7 @@ def _live_news():
             "prints the latest headlines. Run the cell again to refresh; "
             "works offline with sample text."),
         _code(NEWS_SOURCE),
+        _svg(drawing_for("Live News Headlines", "Live Data")),
     ]
 
 
@@ -1098,8 +1114,8 @@ _SPECS = [
 ]
 
 
-def _make(raw, title, desc, plot):
-    return lambda: _doc(title, desc, raw(), plot)
+def _make(raw, name, category, desc, plot):
+    return lambda: _build(name, category, desc, raw(), plot)
 
 
 SHEET_EXAMPLES = []
@@ -1107,4 +1123,5 @@ for _name, _cat, _raw, _desc, _plot in _SPECS:
     if _raw is None:                       # the live-news special case
         SHEET_EXAMPLES.append((_name, _cat, _live_news))
     else:
-        SHEET_EXAMPLES.append((_name, _cat, _make(_raw, _name, _desc, _plot)))
+        SHEET_EXAMPLES.append(
+            (_name, _cat, _make(_raw, _name, _cat, _desc, _plot)))

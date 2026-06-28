@@ -69,3 +69,33 @@ def test_one_example_publishes_and_charts(qapp, monkeypatch):
     nb.stop_loop()
     assert "sheet1" in nb.kernel.namespace
     assert any(c.CELL_TYPE == "code" for c in nb.cells)
+
+
+# -- enrichment: every sheet example also has a chart, drawing, formula ------
+
+def test_every_sheet_example_has_drawing_and_plot():
+    from khervebook.sheet_extras import NO_PLOT
+    for name, _cat, build in SHEET_EXAMPLES:
+        if name == "Live News Headlines":          # special live builder
+            continue
+        types = [c["type"] for c in build()]
+        assert "svg" in types, f"{name} has no drawing"
+        if name not in NO_PLOT:
+            assert "code" in types, f"{name} has no chart"
+
+
+def test_formula_examples_carry_a_latex_cell():
+    from khervebook.sheet_extras import FORMULAS
+    by_name = {n: b for n, _c, b in SHEET_EXAMPLES}
+    for name in FORMULAS:
+        if name in by_name:                         # all of them are sheets
+            types = [c["type"] for c in by_name[name]()]
+            assert "latex" in types, f"{name} lost its formula cell"
+
+
+def test_generic_plot_and_drawings_resolve():
+    from khervebook.sheet_extras import generic_plot, drawing_for, DRAWINGS
+    assert 'set_title("Monthly Budget")' in generic_plot("Monthly Budget")
+    assert drawing_for("Sine / Cosine Table", "Math") is DRAWINGS["wave"]
+    assert drawing_for("anything", "Finance") is DRAWINGS["coins"]
+    assert drawing_for("x", "Mystery").lstrip().startswith("<svg")  # fallback

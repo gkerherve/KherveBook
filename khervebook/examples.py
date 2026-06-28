@@ -1195,11 +1195,18 @@ from .examples_arpes_nano_bz import ARPES_NANO_BZ_EXAMPLES    # noqa: E402
 from .examples_arpes_cuts import ARPES_CUTS_EXAMPLES          # noqa: E402
 from .examples_arpes_hv import ARPES_HV_EXAMPLES              # noqa: E402
 from .examples_arpes_selfenergy import ARPES_SE_EXAMPLES      # noqa: E402
+from .examples_xps_fit import XPS_FIT_EXAMPLES                # noqa: E402
+from .examples_xps_quant import XPS_QUANT_EXAMPLES            # noqa: E402
+from .examples_xps_adv import XPS_ADV_EXAMPLES                # noqa: E402
+from .examples_xrd import XRD_EXAMPLES                        # noqa: E402
+from .examples_xrd2 import XRD2_EXAMPLES                      # noqa: E402
 
 EXAMPLES += (SHEET_EXAMPLES + SVG_EXAMPLES + LATEX_EXAMPLES + JS_EXAMPLES
              + ARPES_EXAMPLES + ARPES_BANDS_EXAMPLES + ARPES_FIT_EXAMPLES
              + ARPES_XPS_TR_EXAMPLES + ARPES_NANO_BZ_EXAMPLES
-             + ARPES_CUTS_EXAMPLES + ARPES_HV_EXAMPLES + ARPES_SE_EXAMPLES)
+             + ARPES_CUTS_EXAMPLES + ARPES_HV_EXAMPLES + ARPES_SE_EXAMPLES
+             + XPS_FIT_EXAMPLES + XPS_QUANT_EXAMPLES + XPS_ADV_EXAMPLES
+             + XRD_EXAMPLES + XRD2_EXAMPLES)
 
 _LIVE_RE = re.compile(r"runs continuously(?:\s*\((\d+)\s*ms\))?")
 

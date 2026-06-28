@@ -20,7 +20,9 @@ the Free Software Foundation, either version 3 of the License, or
 
 import base64
 import json
+import math
 import re
+import statistics
 
 from PyQt5.QtCore import QEvent, QSize, Qt, QTimer
 from PyQt5.QtGui import QPixmap
@@ -33,6 +35,59 @@ from .kernel import Kernel
 
 _REF = re.compile(r"\b([A-Z]{1,2})(\d{1,3})\b")
 _RANGE = re.compile(r"\b([A-Z]{1,2})(\d{1,3})\s*:\s*([A-Z]{1,2})(\d{1,3})\b")
+
+
+def _flat(args):
+    """Flatten ranges (lists) and scalars into one list — Excel-style."""
+    out = []
+    for a in args:
+        if isinstance(a, (list, tuple)):
+            out.extend(_flat(a))
+        else:
+            out.append(a)
+    return out
+
+
+def _nums(args):
+    return [x for x in _flat(args)
+            if isinstance(x, (int, float)) and not isinstance(x, bool)]
+
+
+#: Excel-style functions available inside a sheet cell's =formulas, so
+#: `=SUM(A1:A5)`, `=IF(A1>0,"+","-")`, `=AVERAGE(B:B)` etc. work like
+#: KherveSheet. Python builtins (sum, min, abs, round...) already cover
+#: the lowercase forms; these add the uppercase spreadsheet vocabulary.
+SHEET_FUNCS = {
+    "SUM": lambda *a: sum(_nums(a)),
+    "AVERAGE": lambda *a: (sum(_nums(a)) / len(_nums(a)) if _nums(a) else 0),
+    "AVG": lambda *a: (sum(_nums(a)) / len(_nums(a)) if _nums(a) else 0),
+    "MIN": lambda *a: (min(_nums(a)) if _nums(a) else 0),
+    "MAX": lambda *a: (max(_nums(a)) if _nums(a) else 0),
+    "COUNT": lambda *a: len(_nums(a)),
+    "COUNTA": lambda *a: len([x for x in _flat(a) if x not in (None, "")]),
+    "PRODUCT": lambda *a: (math.prod(_nums(a)) if _nums(a) else 0),
+    "MEDIAN": lambda *a: (statistics.median(_nums(a)) if _nums(a) else 0),
+    "STDEV": lambda *a: (statistics.stdev(_nums(a))
+                         if len(_nums(a)) > 1 else 0),
+    "VAR": lambda *a: (statistics.variance(_nums(a))
+                       if len(_nums(a)) > 1 else 0),
+    "ROUND": lambda x, n=0: round(float(x), int(n)),
+    "ABS": abs, "SQRT": lambda x: math.sqrt(x),
+    "POWER": lambda x, y: x ** y, "MOD": lambda x, y: x % y,
+    "INT": lambda x: int(x), "EXP": lambda x: math.exp(x),
+    "LN": lambda x: math.log(x), "LOG": lambda x, b=10: math.log(x, b),
+    "LOG10": lambda x: math.log10(x), "SIGN": lambda x: (x > 0) - (x < 0),
+    "PI": lambda: math.pi, "SIN": lambda x: math.sin(x),
+    "COS": lambda x: math.cos(x), "TAN": lambda x: math.tan(x),
+    "DEGREES": lambda x: math.degrees(x), "RADIANS": lambda x: math.radians(x),
+    "IF": lambda c, a, b=False: a if c else b,
+    "AND": lambda *a: all(_flat(a)), "OR": lambda *a: any(_flat(a)),
+    "NOT": lambda x: not x, "TRUE": True, "FALSE": False,
+    "CONCAT": lambda *a: "".join(str(x) for x in _flat(a)),
+    "CONCATENATE": lambda *a: "".join(str(x) for x in _flat(a)),
+    "LEN": lambda x: len(str(x)), "UPPER": lambda x: str(x).upper(),
+    "LOWER": lambda x: str(x).lower(), "TRIM": lambda x: str(x).strip(),
+}
 
 DEFAULT_ROWS, DEFAULT_COLS = 6, 4
 MAX_PASSES = 8      # formula chains resolve iteratively
@@ -420,7 +475,10 @@ class SheetCell(CellWidget):
                                letter_col(match.group(1))))
 
         py = _REF.sub(sub_ref, _RANGE.sub(sub_range, expr))
-        return eval(py, namespace)   # noqa: S307
+        # Excel-style SUM/IF/AVERAGE/... on top of the kernel namespace
+        # (so code-cell variables remain visible). Not stored in the
+        # namespace, so they never shadow user names in code cells.
+        return eval(py, {**namespace, **SHEET_FUNCS})   # noqa: S307
 
     def _publish(self, kernel):
         """Expose each sheet to code cells as sheet1, sheet2, ... globally,

@@ -44,6 +44,22 @@ def test_formula_chain_and_numpy(qapp):
     assert sheet.table.item(0, 2).text() == "2"
 
 
+def test_excel_style_functions(qapp):
+    from khervebook.kernel import Kernel
+    sheet = make_sheet(qapp, {
+        "A1": "10", "A2": "20", "A3": "30",
+        "B1": "=SUM(A1:A3)", "B2": "=AVERAGE(A1:A3)",
+        "B3": '=IF(A1>15,"big","small")',
+        "C1": "=ROUND(AVERAGE(A1:A3),0)",
+        "C2": '=CONCAT("n=",COUNT(A1:A3))'})
+    sheet.execute(Kernel())
+    assert sheet.table.item(0, 1).text() == "60"        # SUM
+    assert sheet.table.item(1, 1).text() == "20"        # AVERAGE
+    assert sheet.table.item(2, 1).text() == "small"     # IF (10 > 15 false)
+    assert sheet.table.item(0, 2).text() == "20"        # ROUND(AVERAGE,0)
+    assert sheet.table.item(1, 2).text() == "n=3"       # CONCAT + COUNT
+
+
 def test_formula_sees_kernel_variables(qapp):
     from khervebook.kernel import Kernel
     k = Kernel()

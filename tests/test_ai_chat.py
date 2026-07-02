@@ -26,12 +26,19 @@ def test_extract_cells_kinds():
         "```python\nx = 1\nx\n```\n"
         "Some prose.\n"
         "```latex\nE = mc^2\n```\n"
-        "```sheet\n{\"rows\": 2, \"cols\": 1, \"data\": {}}\n```\n")
+        "```sheet\n{\"rows\": 2, \"cols\": 1, \"data\": {}}\n```\n"
+        "```js\nconsole.log('hi')\n```\n")
     cells = extract_cells(reply)
     assert [c["type"] for c in cells] == ["markdown", "code", "latex",
-                                          "sheet"]
+                                          "sheet", "js"]
     assert cells[1]["source"] == "x = 1\nx"
     assert all(c["target"] is None for c in cells)     # all are new cells
+
+
+def test_extract_cells_js_aliases():
+    # javascript / html fences both become a js cell
+    assert extract_cells("```javascript\nlet a = 1;\n```")[0]["type"] == "js"
+    assert extract_cells("```html\n<p>hi</p>\n```")[0]["type"] == "js"
 
 
 def test_extract_cells_ignores_unknown_and_svg():
@@ -256,6 +263,13 @@ def test_system_prompt_includes_full_cell_content(qapp):
     assert "x = 42" in prompt and "print(x * 2)" in prompt
     assert "```python" in prompt
     assert "never" in prompt.lower() and "svg" in prompt.lower()
+
+
+def test_system_prompt_teaches_js_cells(qapp):
+    from khervebook.notebook import NotebookWidget
+    prompt = build_system_prompt(NotebookWidget())
+    assert "```js" in prompt                             # js is writable
+    assert "NOT see the Python namespace" in prompt      # data as literals
 
 
 def test_system_prompt_describes_sheet_grids(qapp):

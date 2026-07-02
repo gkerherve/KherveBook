@@ -4,8 +4,8 @@ notebook and insert the cells they propose.
 Ported in spirit from KherveSheet's ai_chat: same provider set,
 settings dialog and QSettings scheme. KherveBook's unit is the cell,
 so instead of tool calls the assistant answers with fenced blocks
-(```python / ```markdown / ```latex / ```sheet) which the Insert
-button turns into real cells.
+(```python / ```markdown / ```latex / ```sheet / ```js) which the
+Insert button turns into real cells.
 
 Copyright (C) 2026 Gwilherm Kerherve
 
@@ -56,7 +56,7 @@ _FENCE = re.compile(r"```[ \t]*([^\r\n`]*)\r?\n(.*?)```", re.S)
 
 _KIND = {"python": "code", "py": "code", "md": "markdown",
          "markdown": "markdown", "tex": "latex", "latex": "latex",
-         "sheet": "sheet"}
+         "sheet": "sheet", "js": "js", "javascript": "js", "html": "js"}
 
 #: How much of each cell to show the model, and a total cap.
 _MAX_CELL_CHARS = 4000
@@ -136,9 +136,10 @@ def build_system_prompt(notebook) -> str:
     return f"""\
 You are the AI assistant inside KherveBook, a Jupyter-style desktop \
 notebook. The editable cell types are: code (Python), markdown, latex \
-(one display equation, no $ delimiters) and sheet (a small \
+(one display equation, no $ delimiters), sheet (a small \
 spreadsheet, JSON {{"rows", "cols", "data": {{"A1": "value or \
-=python formula"}}}}). There is also an svg "drawing" cell that you \
+=python formula"}}}}) and js (JavaScript/HTML rendered in an embedded \
+Chromium view). There is also an svg "drawing" cell that you \
 must NEVER create or modify.
 
 YOUR PRIMARY SKILL is writing excellent, complete, runnable Python \
@@ -162,17 +163,23 @@ sheet name and the columns of every sheet — use it to pick the right \
 variable (e.g. a sheet shown as "sheet5 — name 'Sheet5'" is read as \
 `sheet5`). Do NOT loop ks() cell by cell; ks("A1") / ks("A1", v) is \
 only for reading or writing a SINGLE cell.
+- js cells are for interactive web visuals Python can't do (D3, \
+Plotly.js, ECharts, three.js, canvas animations). Bare JavaScript is \
+wrapped in a page that shows console.log output; anything with HTML \
+tags loads as a page, and CDN <script src> tags work. A js cell does \
+NOT see the Python namespace — embed the data it needs as literals. \
+Prefer Python/matplotlib for ordinary plots.
 
 READING: the full current notebook is included below — read it to \
 understand and reason about the user's existing code in any cell.
 
 WRITING: reply with each cell you want as ONE fenced block.
 - To ADD a new cell, tag it with just the language: ```python, \
-```markdown, ```latex or ```sheet.
+```markdown, ```latex, ```sheet or ```js.
 - To REPLACE an existing cell, add its index from the listing, e.g. \
 ```python cell=3 — keep the same language unless the user wants the \
 type changed.
-- You may read and write code, markdown, latex and sheet cells. \
+- You may read and write code, markdown, latex, sheet and js cells. \
 Never emit an svg cell.
 
 Each applied cell is RUN immediately, so the task you are asked to do \
@@ -468,9 +475,10 @@ class _ChatInput(QPlainTextEdit):
 
 GREETING = (
     "Hello! I can help you build your notebook. Ask me to write or edit "
-    "Python, Markdown, LaTeX or sheet cells, analyse your data, or make "
-    "plots. I read every cell and can add new ones or rewrite existing "
-    "ones (code, markdown, latex, sheet — never drawings); apply with one "
+    "Python, Markdown, LaTeX, sheet or JavaScript cells, analyse your "
+    "data, or make plots. I read every cell and can add new ones or "
+    "rewrite existing ones (code, markdown, latex, sheet, js — never "
+    "drawings); apply with one "
     "click and Ctrl+Z to undo. You can also paste a screenshot or image "
     "(Ctrl+V) for me to look at. Set your provider (Anthropic, OpenAI, "
     "Mistral, Ollama, or Local AI) and API key via the gear icon.")
@@ -484,6 +492,7 @@ _PROMPTS = [
     "Rewrite cell 0 to vectorise the loop with NumPy.",
     "Add a LaTeX cell with the quadratic formula.",
     "Fit a Gaussian to the data in sheet1 and plot the fit.",
+    "Add a JavaScript cell with an animated bouncing-ball canvas.",
 ]
 
 

@@ -8,13 +8,15 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
+from datetime import datetime
 from pathlib import Path
 
-from PyQt5.QtCore import QSettings, QSize, Qt
+from PyQt5.QtCore import QSettings, QSize, Qt, QThread, pyqtSignal
 from PyQt5.QtWidgets import (QAction, QActionGroup, QApplication, QComboBox,
-                             QFileDialog, QMainWindow, QMessageBox, QToolBar)
+                             QFileDialog, QInputDialog, QMainWindow,
+                             QMessageBox, QToolBar)
 
-from . import examples, style
+from . import examples, git_backend, style
 
 from . import APP_NAME, __version__
 from .celltoolbar import CellToolBar
@@ -23,6 +25,39 @@ from .icons import app_icon, icon
 from .notebook import NotebookWidget
 
 FILE_FILTER = "KherveBook notebook (*.kbook);;All files (*)"
+
+
+class _GitNetworkWorker(QThread):
+    """Run pull / push on a background thread so the GUI doesn't lock
+    up for the duration of a libgit2 network round-trip. Without this,
+    saving or pulling against an unreachable remote freezes the window
+    for 30+ seconds (Windows shows it as "Not Responding") — to the
+    user that reads as a crash, even though it's just blocked I/O on
+    the main thread.
+
+    The worker emits `finished_with` carrying (operation, success,
+    message). The caller decides how to surface that — status bar,
+    message box, etc.
+    """
+    finished_with = pyqtSignal(str, bool, str)  # op, ok, msg
+
+    def __init__(self, op, repo_dir, remote_name="origin"):
+        super().__init__()
+        self._op = op   # "pull" or "push"
+        self._repo_dir = repo_dir
+        self._remote = remote_name
+
+    def run(self):
+        try:
+            if self._op == "pull":
+                ok, msg = git_backend.pull(self._repo_dir, self._remote)
+            elif self._op == "push":
+                ok, msg = git_backend.push(self._repo_dir, self._remote)
+            else:
+                ok, msg = False, f"Unknown git op: {self._op!r}"
+        except Exception as exc:  # pragma: no cover — defensive
+            ok, msg = False, f"{self._op} crashed: {exc}"
+        self.finished_with.emit(self._op, ok, msg)
 
 
 class MainWindow(QMainWindow):
@@ -34,6 +69,8 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.notebook)
         self.path = None
         self.dirty = False
+        self._git_worker = None
+        self._pending_commit_msg = None
         self.setWindowIcon(app_icon())
         self.explorer = FileExplorer(self)
         self.explorer.open_requested.connect(self._open_path)
@@ -171,6 +208,29 @@ class MainWindow(QMainWindow):
         k.addAction(self._act("&Restart Kernel", "Ctrl+Shift+R",
                               self.notebook.restart_kernel))
 
+        g = m.addMenu("&Git")
+        g.addAction(self._act("&Save Snapshot && Upload", None,
+                              self._commit_and_maybe_push,
+                              "mdi.cloud-upload-outline",
+                              "Save, snapshot this version, and upload it "
+                              "to the cloud (GitHub, GitLab, …)"))
+        g.addAction(self._act("&Download Latest from Cloud", None,
+                              self._pull_from_remote,
+                              "mdi.cloud-download-outline",
+                              "Download the newest version (e.g. changes a "
+                              "collaborator pushed)"))
+        g.addSeparator()
+        g.addAction(self._act("&Connect to GitHub / GitLab...", None,
+                              self._configure_remotes, "mdi.github",
+                              "Link this notebook to a cloud repository"))
+        g.addSeparator()
+        g.addAction(self._act("View &Version History...", None,
+                              self._show_history, "mdi.history",
+                              "Browse every saved snapshot and what changed"))
+        g.addAction(self._act("&Branches...", None, self._show_branches,
+                              "mdi.source-branch",
+                              "View, create, switch or delete branches"))
+
         v = m.addMenu("&View")
         self._explorer_toggle = self.explorer.toggleViewAction()
         self._explorer_toggle.setText("&File Explorer")
@@ -254,6 +314,13 @@ class MainWindow(QMainWindow):
         tb.addAction(self._act("Save", None, self.save_file,
                                "mdi.content-save",
                                "Save the notebook (Ctrl+S)"))
+        tb.addAction(self._act("Snapshot", None, self._commit_and_maybe_push,
+                               "mdi.cloud-upload-outline",
+                               "Save a version snapshot and upload it to "
+                               "the cloud (GitHub, GitLab, …)"))
+        tb.addAction(self._act("History", None, self._show_history,
+                               "mdi.history",
+                               "Browse this notebook's version history"))
         tb.addSeparator()
         tb.addAction(self._act("Undo", None, self._smart_undo,
                                "mdi.undo", "Undo (Ctrl+Z)"))
@@ -502,6 +569,7 @@ class MainWindow(QMainWindow):
         self._add_recent(self.path)
         self.explorer.show_file(self.path)
         self._update_title()
+        self._git_after_save(Path(self.path))
 
     def save_as(self):
         recent = self._recent_files()
@@ -618,6 +686,261 @@ class MainWindow(QMainWindow):
             fw.redo()
         else:
             self.notebook.redo()
+
+    # -- git integration ----------------------------------------------------
+    def _git_after_save(self, path: Path):
+        """Auto-commit the just-saved notebook and, if a remote is set,
+        push it in the background. No-op when pygit2 is unavailable."""
+        if not git_backend.is_available():
+            self.statusBar().showMessage(
+                "Saved (install pygit2 to enable version history)", 5000)
+            return
+        commit_msg = self._pending_commit_msg or (
+            f"Save {path.name} at "
+            f"{datetime.now().isoformat(timespec='seconds')}")
+        self._pending_commit_msg = None
+        try:
+            git_backend.init_repo(path.parent)
+            oid = git_backend.commit_all(path.parent, commit_msg,
+                                         file_stem=path.stem)
+        except Exception as exc:
+            self.statusBar().showMessage(f"Snapshot failed: {exc}", 5000)
+            return
+        if not oid:
+            self.statusBar().showMessage(
+                "Saved (nothing new to snapshot)", 4000)
+            return
+        if git_backend.get_remotes(path.parent):
+            # Push off the main thread so a slow / dead remote can't
+            # freeze the window on every Ctrl+S.
+            if self._git_worker is not None and self._git_worker.isRunning():
+                self.statusBar().showMessage(
+                    "Saved and snapshot created (a git upload is already "
+                    "running)", 5000)
+                return
+            self.statusBar().showMessage(
+                "Saved and snapshot created — uploading…", 0)
+            self._start_git_worker("push", path.parent, "origin")
+        else:
+            self.statusBar().showMessage(
+                "Saved and snapshot created "
+                "(use Git → Connect to GitHub to enable cloud backup)", 6000)
+
+    def _commit_and_maybe_push(self):
+        if self.path is None:
+            # No file yet — saving creates the first snapshot for us.
+            self.save_as()
+            return
+        default_msg = (f"Save {Path(self.path).name} at "
+                       f"{datetime.now().isoformat(timespec='seconds')}")
+        msg, ok = QInputDialog.getText(
+            self, "Commit message", "Describe what you changed:",
+            text=default_msg)
+        if not ok:
+            return
+        self._pending_commit_msg = msg.strip() or default_msg
+        self.save_file()
+
+    def _start_git_worker(self, op: str, repo_dir: Path, remote_name: str):
+        """Spawn a _GitNetworkWorker for pull / push. Held on
+        self._git_worker so Qt doesn't GC the thread mid-run."""
+        worker = _GitNetworkWorker(op, repo_dir, remote_name)
+        worker.finished_with.connect(self._on_git_done)
+        self._git_worker = worker
+        if op == "pull":
+            self.statusBar().showMessage(
+                f"Downloading latest from {remote_name}…", 0)
+        worker.start()
+
+    def _on_git_done(self, op: str, ok: bool, msg: str):
+        if op == "pull":
+            if ok:
+                if "up to date" in msg.lower():
+                    self.statusBar().showMessage(
+                        "Already up to date — you have the latest version",
+                        5000)
+                else:
+                    self.statusBar().showMessage(msg, 6000)
+                    self._reload_current()
+            else:
+                self.statusBar().clearMessage()
+                QMessageBox.warning(
+                    self, "Download failed",
+                    f"{msg}\n\n"
+                    "What you can try:\n"
+                    "  • Check your internet connection\n"
+                    "  • Make sure the cloud URL is correct "
+                    "(Git → Connect to GitHub)\n"
+                    "  • If the problem says \"diverged\", resolve the "
+                    "merge from the git command line")
+        elif op == "push":
+            if ok:
+                self.statusBar().showMessage(
+                    "Saved, snapshot created, and uploaded to cloud", 5000)
+            else:
+                self.statusBar().showMessage(
+                    "Saved and snapshot created "
+                    "(upload failed — see dialog)", 8000)
+                self._show_push_failure_dialog(msg)
+        self._git_worker = None
+
+    def _show_push_failure_dialog(self, error_msg: str):
+        """Surface a real push failure with actionable advice. The most
+        common cause on Windows is HTTPS authentication — GitHub needs a
+        Personal Access Token stored via Windows Credential Manager
+        (which the system `git` CLI talks to)."""
+        hints = []
+        if "authentication" in error_msg.lower():
+            hints.append(
+                "GitHub no longer accepts your account password over "
+                "HTTPS — you need a <b>Personal Access Token</b>.<br>"
+                "&nbsp;&nbsp;1. Go to "
+                "<a href='https://github.com/settings/tokens'>"
+                "github.com/settings/tokens</a> → Generate new token "
+                "(classic)<br>"
+                "&nbsp;&nbsp;2. Tick the <code>repo</code> scope, generate, "
+                "copy the token<br>"
+                "&nbsp;&nbsp;3. Next time the app asks for a password, paste "
+                "the token instead.")
+        elif "not found" in error_msg.lower() or "404" in error_msg:
+            hints.append(
+                "GitHub says the repository does not exist. Check that "
+                "the URL in <b>Git → Connect to GitHub</b> matches the one "
+                "on the repo's GitHub page (Code → HTTPS).")
+        elif "rejected" in error_msg.lower() or "non-fast-forward" in error_msg:
+            hints.append(
+                "Someone else pushed to this branch since you last pulled. "
+                "Use <b>Git → Download latest from cloud</b> first, then "
+                "save again.")
+        if not git_backend._system_git_available():
+            hints.append(
+                "<i>Tip: install Git for Windows so the app can use your "
+                "Windows Credential Manager for HTTPS pushes — "
+                "<a href='https://git-scm.com/download/win'>"
+                "git-scm.com/download/win</a></i>")
+        body = (f"<b>Could not upload to cloud.</b><br><br>"
+                f"<code>{error_msg}</code>")
+        if hints:
+            body += "<br><br>" + "<br><br>".join(hints)
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle("Upload failed")
+        box.setTextFormat(Qt.RichText)
+        box.setTextInteractionFlags(
+            Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse)
+        box.setText(body)
+        box.exec_()
+
+    def _pull_from_remote(self):
+        if self.path is None:
+            QMessageBox.information(
+                self, "Download latest",
+                "You need to save your notebook first.\n\n"
+                "Use File → Save (Ctrl+S), then try again.")
+            return
+        if not git_backend.is_available():
+            QMessageBox.warning(
+                self, "Download latest",
+                "The pygit2 library is not installed, so cloud features "
+                "are unavailable.\n\nTo fix this, run:  pip install pygit2")
+            return
+        repo_dir = Path(self.path).parent
+        remotes = git_backend.get_remotes(repo_dir)
+        if not remotes:
+            ask = QMessageBox.question(
+                self, "Download latest",
+                "This notebook is not connected to a cloud service yet.\n\n"
+                "To download changes you first need to connect to GitHub, "
+                "GitLab or another git server.\n\nSet that up now?")
+            if ask == QMessageBox.Yes:
+                self._configure_remotes()
+            return
+        if len(remotes) == 1:
+            remote_name = remotes[0][0]
+        else:
+            names = [n for n, _ in remotes]
+            chosen, ok = QInputDialog.getItem(
+                self, "Download from…", "Which cloud service?",
+                names, 0, False)
+            if not ok:
+                return
+            remote_name = chosen
+        if self._git_worker is not None and self._git_worker.isRunning():
+            self.statusBar().showMessage(
+                "A git operation is already in progress, please wait…", 4000)
+            return
+        self._start_git_worker("pull", repo_dir, remote_name)
+
+    def _configure_remotes(self):
+        if self.path is None:
+            QMessageBox.information(
+                self, "Connect to cloud",
+                "You need to save your notebook first so KherveBook knows "
+                "where to create the connection.\n\n"
+                "Use File → Save (Ctrl+S), then try again.")
+            return
+        if not git_backend.is_available():
+            QMessageBox.warning(
+                self, "Connect to cloud",
+                "The pygit2 library is not installed, so cloud features "
+                "are unavailable.\n\nTo fix this, run:  pip install pygit2")
+            return
+        from .remote_dialog import RemoteDialog
+        RemoteDialog(Path(self.path).parent, self).exec_()
+
+    def _reload_current(self):
+        """Re-read the current notebook from disk after an external
+        change (e.g. a successful pull or a restore)."""
+        if self.path is None or not Path(self.path).exists():
+            return
+        try:
+            self.notebook.load_json(
+                Path(self.path).read_text(encoding="utf-8"))
+            self.dirty = False
+            self._update_title()
+        except Exception as exc:
+            self.statusBar().showMessage(f"Reload failed: {exc}", 6000)
+
+    def _show_history(self):
+        if self.path is None:
+            QMessageBox.information(
+                self, "Version history",
+                "You need to save your notebook at least once before there "
+                "is any history to show.\n\n"
+                "Use File → Save (Ctrl+S), then try again.")
+            return
+        if not git_backend.is_available():
+            QMessageBox.warning(
+                self, "Version history",
+                "The pygit2 library is not installed, so version history "
+                "is unavailable.\n\nTo fix this, run:  pip install pygit2")
+            return
+        repo_dir = Path(self.path).parent
+        if not git_backend.history_detailed(repo_dir, limit=1):
+            QMessageBox.information(
+                self, "Version history",
+                "No snapshots yet. Every time you save, KherveBook "
+                "automatically creates a snapshot.\n\n"
+                "Save your notebook and come back to see its history.")
+            return
+        from .history_dialog import HistoryDialog
+        HistoryDialog(repo_dir, self,
+                      file_stem=Path(self.path).stem).exec_()
+
+    def _show_branches(self):
+        if self.path is None:
+            QMessageBox.information(
+                self, "Branches",
+                "Save your notebook first so the repository exists.")
+            return
+        if not git_backend.is_available():
+            QMessageBox.warning(
+                self, "Branches",
+                "The pygit2 library is not installed.\n\n"
+                "To fix this, run:  pip install pygit2")
+            return
+        from .history_dialog import HistoryDialog
+        HistoryDialog(Path(self.path).parent, self).exec_()
 
     def _user_guide(self):
         from .userguide import show_user_guide

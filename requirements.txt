@@ -11,3 +11,4 @@ openpyxl>=3.1   # read dropped .xlsx / .xlsm workbooks into a sheet cell
 pymupdf>=1.23   # render compiled LaTeX (with the tectonic engine) to images
 dask>=2024.1    # optional: parallel / larger-than-memory compute (da, dd)
 PyQtWebEngine>=5.15  # optional: JavaScript / HTML cells (D3, Plotly, canvas)
+pygit2>=1.14    # optional: per-notebook version history + push/pull to GitHub

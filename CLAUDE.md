@@ -108,6 +108,20 @@ into a new module and import.
   - `undo_commands.py` — QUndoCommand classes for cell structure
                        (add/remove/move/convert); they keep the live
                        widget so an undone delete restores its output.
+  - `git_backend.py` — per-notebook Git (pygit2): the .kbook's folder is
+                       its own repo (fresh repos start on `dev`; a save
+                       inside an existing repo commits there, never
+                       nests). Auto-commit on save (`file_stem` stages
+                       only that notebook's files), fast-forward-only
+                       pull, and push (libgit2 SSH/HTTPS, falling back to
+                       the system `git` CLI for Windows Credential
+                       Manager). Also branch/history/diff/restore helpers.
+                       No-ops gracefully when pygit2 is absent.
+  - `remote_dialog.py` — Git → Connect to GitHub/GitLab: add/edit/remove
+                       remotes in plain language.
+  - `history_dialog.py` — Git → Version history: painted DAG commit
+                       graph, per-commit diff, branch switch/create/delete,
+                       and "restore this version".
   - `userguide.py`   — the Help > User Guide window (scrollable HTML).
 - `tests/` — pytest suite (offscreen Qt; run `python -m pytest tests/`).
 - `requirements.txt`, `LICENSE` (GPL-3.0).
@@ -149,12 +163,12 @@ but copy and adapt, never import across project boundaries.
 
 - Make cell title/column/collapse/resize undoable too (extend the stack).
 - Inline `$...$` math inside Markdown cells.
-- Per-document Git history (port `git_backend.py` from KherveSheet).
 - AI tool-calling (let the assistant run/edit cells directly).
 
 Done: timeout-guarded kernel, code syntax highlighting, `.ipynb`
 import/export, full LaTeX via tectonic, themes, sheet cells, undo/redo
-for cell structure, xlsx/image/PDF import, User Guide.
+for cell structure, xlsx/image/PDF import, User Guide, per-notebook Git
+history + push/pull to GitHub (`git_backend.py` + Git menu).
 
 ## Undo / redo policy
 

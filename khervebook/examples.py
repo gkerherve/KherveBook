@@ -47,6 +47,41 @@ BALLS_SOURCE = (
     "ax.set_xticks([]); ax.set_yticks([])\n"
     "fig")
 
+#: Source of the flocking-birds (boids) live demo (shared with the welcome).
+BOIDS_SOURCE = (
+    "# Flocking birds (boids) — runs continuously; stop with the red button\n"
+    "if 'birds_pos' not in globals():\n"
+    "    _rng = np.random.default_rng(4)\n"
+    "    birds_pos = _rng.uniform(0.25, 0.75, (28, 2))\n"
+    "    _a = _rng.uniform(0, 2 * np.pi, 28)\n"
+    "    birds_vel = 0.011 * np.c_[np.cos(_a), np.sin(_a)]\n"
+    "_off = birds_pos[:, None] - birds_pos[None, :]   # pairwise offsets\n"
+    "_d2 = (_off ** 2).sum(-1)\n"
+    "np.fill_diagonal(_d2, np.inf)\n"
+    "_nb = (_d2 < 0.15 ** 2)[..., None]               # neighbours\n"
+    "_n = np.maximum(_nb.sum(1), 1)\n"
+    "_sep = (_off / _d2[..., None] * (_d2 < 0.05 ** 2)[..., None]).sum(1)\n"
+    "_ali = (birds_vel[None] * _nb).sum(1) / _n - birds_vel\n"
+    "_coh = (birds_pos[None] * _nb).sum(1) / _n - birds_pos\n"
+    "birds_vel += 1e-4 * _sep + 0.05 * _ali + 0.006 * _coh\n"
+    "birds_vel += 0.004 * (0.5 - birds_pos)   # wheel about the centre\n"
+    "_sp = np.hypot(*birds_vel.T)[:, None]\n"
+    "birds_vel *= np.clip(_sp, 0.009, 0.013) / _sp   # keep them flying\n"
+    "birds_pos = np.clip(birds_pos + birds_vel, 0.03, 0.97)\n"
+    "_u = birds_vel / np.hypot(*birds_vel.T)[:, None]   # unit headings\n"
+    "_w = np.c_[-_u[:, 1], _u[:, 0]]                    # wing direction\n"
+    "_tri = np.stack([birds_pos + 0.030 * _u,           # beak\n"
+    "                 birds_pos - 0.018 * _u + 0.013 * _w,\n"
+    "                 birds_pos - 0.018 * _u - 0.013 * _w], axis=1)\n"
+    "from matplotlib.collections import PolyCollection\n"
+    "fig, ax = plt.subplots(figsize=(4.2, 4.2))\n"
+    "ax.add_collection(PolyCollection(_tri, facecolors='#3776ab',\n"
+    "                                 edgecolors='none'))\n"
+    "ax.set_xlim(0, 1); ax.set_ylim(0, 1)\n"
+    "ax.set_xticks([]); ax.set_yticks([])\n"
+    "ax.set_aspect('equal')\n"
+    "fig")
+
 
 def _md(text):
     return {"type": "markdown", "source": text}
@@ -225,6 +260,15 @@ def _balls():
         _md("# Bouncing Balls\nElastic collisions; state persists in "
             "the kernel between frames. Stop with the red button."),
         _code(BALLS_SOURCE),
+    ]
+
+
+def _boids():
+    return [
+        _md("# Flocking Birds\nA boids flock — separation, alignment and "
+            "cohesion make the triangles wheel around as one. Stop with "
+            "the red button."),
+        _code(BOIDS_SOURCE),
     ]
 
 
@@ -1171,6 +1215,7 @@ EXAMPLES = [
     ("Pandas Quickstart",        "Data",              _pandas),
     ("Sheet ↔ Python",           "Data",              _sheet_python),
     ("Bouncing Balls",           "Simulations",       _balls),
+    ("Flocking Birds",           "Simulations",       _boids),
     ("Random Walk",              "Simulations",       _random_walk),
     ("Game of Life",             "Simulations",       _life),
     ("Double Pendulum",          "Simulations",       _double_pendulum),

@@ -13,7 +13,7 @@ the Free Software Foundation, either version 3 of the License, or
 
 import json
 
-from .examples import BALLS_SOURCE
+from .examples import BOIDS_SOURCE
 
 #: A multi-panel matplotlib showcase for the welcome's code cell:
 #: line+fill, coloured scatter, a filled contour and a 3D surface —
@@ -141,8 +141,8 @@ WELCOME_CELLS = [
         "**Live simulations** — a cell can re-run continuously "
         "(the ⟳ toolbar button, or right-click → *Run Continuously*). "
         "State lives in the kernel between frames. Press the red stop "
-        "button next to the play button to pause these bouncing balls:")},
-    {"type": "code", "source": None},   # balls; filled below
+        "button next to the play button to pause this flock of birds:")},
+    {"type": "code", "source": None},   # boids; filled below
     {"type": "markdown", "source": (
         "## Try it\n\n"
         "Click into any cell and edit it, or add a new one with the "
@@ -156,7 +156,7 @@ WELCOME_CELLS = [
 ]
 for _cell in WELCOME_CELLS:
     if _cell["source"] is None:
-        _cell["source"] = BALLS_SOURCE
+        _cell["source"] = BOIDS_SOURCE
 
 
 def welcome_json() -> str:
@@ -168,12 +168,12 @@ def welcome_json() -> str:
 def load_welcome(notebook):
     """Load and pre-run the welcome notebook into *notebook*."""
     notebook.load_json(welcome_json())
-    balls = None
+    boids = None
     for cell in notebook.cells:
         source = cell.source()
-        if source.startswith("# Bouncing balls"):
-            balls = cell             # started below, not run once
+        if source.startswith("# Flocking birds"):
+            boids = cell             # started below, not run once
         elif source.strip():
             cell.execute(notebook.kernel)
-    if balls is not None:
-        notebook.start_loop(balls)
+    if boids is not None:
+        notebook.start_loop(boids)

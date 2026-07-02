@@ -299,22 +299,22 @@ def test_examples_run_clean(qapp, builder, monkeypatch):
             assert "#ERR" not in text, text
 
 
-def test_bouncing_balls_physics(qapp):
-    """Elastic collisions: kinetic energy conserved, balls stay boxed."""
+def test_flocking_birds_physics(qapp):
+    """Boids: the flock polarises (common heading) and stays boxed."""
     from khervebook.kernel import Kernel
     from khervebook.welcome import WELCOME_CELLS
     source = next(c["source"] for c in WELCOME_CELLS
-                  if c["source"].startswith("# Bouncing balls"))
-    physics = source.split("fig, ax")[0]      # skip plotting per frame
+                  if c["source"].startswith("# Flocking birds"))
+    physics = source.split("_u = birds_vel")[0]   # skip drawing per frame
     k = Kernel()
-    k.run(physics)
-    ke0 = k.run("float((balls_vel ** 2).sum())").result_repr
-    for _ in range(400):
+    for _ in range(500):
         k.run(physics)
-    ke1 = k.run("float((balls_vel ** 2).sum())").result_repr
-    assert abs(float(ke0) - float(ke1)) < 1e-9   # elastic = no energy loss
-    res = k.run("bool((balls_pos > -0.02).all() and (balls_pos < 1.02).all())")
+    res = k.run("bool((birds_pos >= 0.03).all()"
+                " and (birds_pos <= 0.97).all())")
     assert res.result_repr == "True"
+    pol = k.run("float(np.hypot(*birds_vel.mean(0))"
+                " / np.hypot(*birds_vel.T).mean())")
+    assert float(pol.result_repr) > 0.9   # aligned = wheeling as one flock
 
 
 def test_restart_kernel_resets_gutters(qapp):

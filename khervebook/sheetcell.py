@@ -25,10 +25,11 @@ import re
 import statistics
 
 from PyQt5.QtCore import QEvent, QSize, Qt, QTimer
-from PyQt5.QtGui import QPixmap
-from PyQt5.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QLineEdit,
-                             QSizePolicy, QStackedWidget, QStyledItemDelegate,
-                             QTableWidget, QTableWidgetItem, QWidget)
+from PyQt5.QtGui import QKeySequence, QPixmap
+from PyQt5.QtWidgets import (QApplication, QComboBox, QHBoxLayout, QLabel,
+                             QLineEdit, QSizePolicy, QStackedWidget,
+                             QStyledItemDelegate, QTableWidget,
+                             QTableWidgetItem, QWidget)
 
 from .cells import MONO, CELL_CLASSES, CellWidget
 from .kernel import Kernel
@@ -788,12 +789,107 @@ class SheetCell(CellWidget):
 
     def eventFilter(self, obj, event):
         try:
-            if (event.type() == QEvent.FocusIn
-                    and obj in getattr(self, "_tables", [])):
-                self.focused.emit(self)
+            if obj in getattr(self, "_tables", []):
+                if event.type() == QEvent.FocusIn:
+                    self.focused.emit(self)
+                elif event.type() == QEvent.KeyPress:
+                    if event.matches(QKeySequence.Paste):
+                        self._paste_clipboard(obj)
+                        return True
+                    if event.matches(QKeySequence.Copy):
+                        self._copy_selection(obj)
+                        return True
+                    if event.matches(QKeySequence.Cut):
+                        self._copy_selection(obj)
+                        self._clear_selection(obj)
+                        return True
+                    if event.key() == Qt.Key_Delete:
+                        self._clear_selection(obj)
+                        return True
             return CellWidget.eventFilter(self, obj, event)
         except RuntimeError:
             return False
+
+    # -- clipboard: paste/copy tab-separated blocks (Excel / KherveSheet) --
+    def _paste_clipboard(self, table):
+        """Paste the clipboard's tab/newline-delimited block at the current
+        cell, growing the grid to fit. This is how Excel and KherveSheet put
+        a copied range on the clipboard, so it round-trips both ways."""
+        text = QApplication.clipboard().text()
+        if not text:
+            return
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        if text.endswith("\n"):
+            text = text[:-1]
+        grid = [line.split("\t") for line in text.split("\n")]
+        if not grid:
+            return
+        r0 = max(table.currentRow(), 0)
+        c0 = max(table.currentColumn(), 0)
+        if r0 + len(grid) > table.rowCount():
+            table.setRowCount(r0 + len(grid))
+        need_cols = c0 + max(len(row) for row in grid)
+        if need_cols > table.columnCount():
+            table.setColumnCount(need_cols)
+            table.setHorizontalHeaderLabels(
+                [col_letter(c) for c in range(table.columnCount())])
+        table.blockSignals(True)
+        for i, row in enumerate(grid):
+            for j, val in enumerate(row):
+                self._set_item_of(table, r0 + i, c0 + j, val, val)
+        table.blockSignals(False)
+        table.setCurrentCell(r0, c0)
+        self._fit_table(table)
+        self.stack.updateGeometry()
+        self.focused.emit(self)
+        self.content_changed.emit()
+        self._recalc_timer.start()
+
+    def _selected_cells(self, table):
+        """List of (row, col) in the selection, or the current cell."""
+        cells = []
+        for rng in table.selectedRanges():
+            for r in range(rng.topRow(), rng.bottomRow() + 1):
+                for c in range(rng.leftColumn(), rng.rightColumn() + 1):
+                    cells.append((r, c))
+        if not cells:
+            r, c = table.currentRow(), table.currentColumn()
+            if r >= 0 and c >= 0:
+                cells = [(r, c)]
+        return cells
+
+    def _copy_selection(self, table):
+        """Copy the selected range to the clipboard as a tab/newline block
+        (the displayed values), so it pastes into Excel or KherveSheet."""
+        ranges = table.selectedRanges()
+        if ranges:
+            rng = ranges[0]
+            rows = range(rng.topRow(), rng.bottomRow() + 1)
+            cols = range(rng.leftColumn(), rng.rightColumn() + 1)
+        else:
+            r, c = table.currentRow(), table.currentColumn()
+            if r < 0 or c < 0:
+                return
+            rows, cols = [r], [c]
+        lines = []
+        for r in rows:
+            cells = []
+            for c in cols:
+                item = table.item(r, c)
+                cells.append(item.text() if item is not None else "")
+            lines.append("\t".join(cells))
+        QApplication.clipboard().setText("\n".join(lines))
+
+    def _clear_selection(self, table):
+        cells = self._selected_cells(table)
+        if not cells:
+            return
+        table.blockSignals(True)
+        for r, c in cells:
+            self._set_item_of(table, r, c, "", "")
+        table.blockSignals(False)
+        self.content_changed.emit()
+        self._recalc_timer.start()
 
     # -- toolbar operations (active grid) ---------------------------------
     def add_row(self):

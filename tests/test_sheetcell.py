@@ -323,3 +323,59 @@ def test_ks_writes_string_and_reports_bad_ref(qapp):
     k = Kernel()
     res = k.run('ks("A1", 5)')
     assert not res.ok and "run the sheet cell first" in res.error
+
+
+# -- clipboard: paste/copy tab-separated blocks (Excel / KherveSheet) ------
+
+def test_paste_tsv_block_from_clipboard(qapp):
+    from PyQt5.QtCore import Qt
+    from PyQt5.QtWidgets import QApplication
+    from khervebook.sheetcell import SheetCell
+    cell = SheetCell()
+    table = cell.table
+    QApplication.clipboard().setText("10\t20\t30\n40\t50\t60")
+    table.setCurrentCell(0, 0)
+    cell._paste_clipboard(table)
+    assert table.item(0, 0).text() == "10"
+    assert table.item(1, 2).text() == "60"
+    assert table.item(1, 1).data(Qt.UserRole) == "50"   # stored as raw input
+
+
+def test_paste_grows_the_grid(qapp):
+    from PyQt5.QtWidgets import QApplication
+    from khervebook.sheetcell import SheetCell
+    cell = SheetCell()
+    table = cell.table
+    r0, c0 = table.rowCount(), table.columnCount()
+    QApplication.clipboard().setText("a\tb\tc\nd\te\tf")
+    table.setCurrentCell(r0 - 1, c0 - 1)          # paste past the corner
+    cell._paste_clipboard(table)
+    assert table.rowCount() >= r0 + 1
+    assert table.columnCount() >= c0 + 2
+    assert table.item(r0, c0 + 1).text() == "f"
+
+
+def test_pasted_values_round_trip_through_source(qapp):
+    from PyQt5.QtWidgets import QApplication
+    from khervebook.sheetcell import SheetCell
+    cell = SheetCell()
+    QApplication.clipboard().setText("name\tvalue\nalpha\t=1+1")
+    cell.table.setCurrentCell(0, 0)
+    cell._paste_clipboard(cell.table)
+    src = cell.source()
+    assert '"name"' in src and '"=1+1"' in src         # saved to .kbook
+
+
+def test_copy_selection_to_clipboard(qapp):
+    from PyQt5.QtWidgets import QApplication, QTableWidgetSelectionRange
+    from khervebook.sheetcell import SheetCell
+    cell = SheetCell()
+    table = cell.table
+    table.blockSignals(True)
+    for r, c, v in [(0, 0, "1"), (0, 1, "2"), (1, 0, "3"), (1, 1, "4")]:
+        cell._set_item_of(table, r, c, v, v)
+    table.blockSignals(False)
+    table.clearSelection()
+    table.setRangeSelected(QTableWidgetSelectionRange(0, 0, 1, 1), True)
+    cell._copy_selection(table)
+    assert QApplication.clipboard().text() == "1\t2\n3\t4"

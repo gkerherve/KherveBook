@@ -185,52 +185,128 @@ class _WidthGrip(QWidget):
 
 
 class PythonHighlighter(QSyntaxHighlighter):
-    """Minimal Python syntax highlighting for code cell editors."""
+    """Rich, colourful Python syntax highlighting for code cell editors:
+    control flow, keywords, builtins, constants, decorators, def/class
+    names, calls, self/cls, numbers, strings (incl. multi-line
+    docstrings) and comments each get their own colour."""
 
-    _KEYWORDS = (
-        "def class return if elif else for while in is and or not import "
-        "from as with try except finally raise lambda yield global nonlocal "
-        "pass break continue None True False assert del").split()
+    _CONTROL = ("if elif else for while break continue return yield pass "
+                "try except finally raise with async await").split()
+    _KEYWORDS = ("def class lambda import from as global nonlocal del assert "
+                 "in is and or not").split()
+    _CONSTANTS = "True False None Ellipsis NotImplemented".split()
+    _BUILTINS = (
+        "print len range list dict set tuple int float str bool bytes "
+        "enumerate zip map filter sum min max abs round sorted reversed "
+        "open isinstance issubclass type super object property staticmethod "
+        "classmethod hasattr getattr setattr delattr callable iter next id "
+        "hash repr format input all any divmod pow chr ord bin hex oct vars "
+        "frozenset complex slice globals locals dir help "
+        "Exception ValueError TypeError KeyError IndexError RuntimeError "
+        "AttributeError ImportError OSError StopIteration ZeroDivisionError "
+        "FileNotFoundError NotImplementedError").split()
 
-    #: (keyword, number, string, comment) per background brightness.
-    LIGHT = ("#0000C0", "#098658", "#A31515", "#808080")
-    DARK = ("#6f9fff", "#6ccb9e", "#e8907e", "#8a939c")
+    #: colour per token category, per background brightness (VS Code-ish).
+    LIGHT = {
+        "keyword": "#0000ff", "control": "#af00db", "constant": "#0070c1",
+        "builtin": "#267f99", "decorator": "#b5730a", "defname": "#795e26",
+        "classname": "#267f99", "call": "#795e26", "selfcls": "#0e8a9c",
+        "number": "#098658", "string": "#a31515", "comment": "#6e7781",
+    }
+    DARK = {
+        "keyword": "#569cd6", "control": "#c586c0", "constant": "#569cd6",
+        "builtin": "#4ec9b0", "decorator": "#dcdcaa", "defname": "#dcdcaa",
+        "classname": "#4ec9b0", "call": "#dcdcaa", "selfcls": "#9cdcfe",
+        "number": "#b5cea8", "string": "#ce9178", "comment": "#6a9955",
+    }
+
+    #: single-line string (with r/b/f/u prefixes) and triple delimiters.
+    _STRING = (r"(?<!\w)[rbfuRBFU]{0,2}"
+               r"""(?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")""")
 
     def __init__(self, document, dark=False):
         super().__init__(document)
         self._build_rules(dark)
 
+    def _fmt(self, color, bold=False, italic=False):
+        f = QTextCharFormat()
+        f.setForeground(QColor(color))
+        if bold:
+            f.setFontWeight(QFont.Bold)
+        if italic:
+            f.setFontItalic(True)
+        return f
+
+    @staticmethod
+    def _words(words):
+        return r"\b(?:%s)\b" % "|".join(words)
+
     def _build_rules(self, dark: bool):
-        kw_c, num_c, str_c, com_c = self.DARK if dark else self.LIGHT
-        self._rules = []
+        c = self.DARK if dark else self.LIGHT
+        self._rules = []            # (compiled pattern, format, capture group)
 
-        kw = QTextCharFormat()
-        kw.setForeground(QColor(kw_c))
-        kw.setFontWeight(QFont.Bold)
-        for word in self._KEYWORDS:
-            self._rules.append((re.compile(rf"\b{word}\b"), kw))
+        def add(pattern, fmt, group=0):
+            self._rules.append((re.compile(pattern), fmt, group))
 
-        num = QTextCharFormat()
-        num.setForeground(QColor(num_c))
-        self._rules.append((re.compile(r"\b\d+(\.\d+)?\b"), num))
-
-        s = QTextCharFormat()
-        s.setForeground(QColor(str_c))
-        self._rules.append((re.compile(r"'[^']*'|\"[^\"]*\""), s))
-
-        c = QTextCharFormat()
-        c.setForeground(QColor(com_c))
-        c.setFontItalic(True)
-        self._rules.append((re.compile(r"#.*$"), c))
+        # Calls first so keywords/builtins repaint over them (print stays teal).
+        add(r"\b([A-Za-z_]\w*)\s*(?=\()", self._fmt(c["call"]), 1)
+        add(r"\bdef\s+([A-Za-z_]\w*)", self._fmt(c["defname"], bold=True), 1)
+        add(r"\bclass\s+([A-Za-z_]\w*)",
+            self._fmt(c["classname"], bold=True), 1)
+        add(r"^\s*(@[A-Za-z_][\w.]*)", self._fmt(c["decorator"]), 1)
+        add(self._words(self._BUILTINS), self._fmt(c["builtin"]))
+        add(self._words(self._CONSTANTS), self._fmt(c["constant"]))
+        add(self._words(self._CONTROL), self._fmt(c["control"], bold=True))
+        add(self._words(self._KEYWORDS), self._fmt(c["keyword"], bold=True))
+        add(r"\b(?:self|cls)\b", self._fmt(c["selfcls"], italic=True))
+        add(r"\b(?:0[xXoObB][0-9a-fA-F_]+|"
+            r"\d[\d_]*\.?[\d_]*(?:[eE][+-]?\d+)?j?)\b", self._fmt(c["number"]))
+        add(self._STRING, self._fmt(c["string"]))
+        add(r"#[^\n]*", self._fmt(c["comment"], italic=True))
+        self._str_fmt = self._fmt(c["string"])
 
     def set_dark(self, dark: bool):
         self._build_rules(dark)
         self.rehighlight()
 
     def highlightBlock(self, text):
-        for pattern, fmt in self._rules:
+        for pattern, fmt, group in self._rules:
             for m in pattern.finditer(text):
-                self.setFormat(m.start(), m.end() - m.start(), fmt)
+                start, end = m.span(group)
+                if start >= 0:
+                    self.setFormat(start, end - start, fmt)
+        self._highlight_triple(text)
+
+    def _highlight_triple(self, text):
+        """Colour multi-line triple-quoted strings/docstrings across blocks
+        (state 1 = inside \"\"\", state 2 = inside ''')."""
+        self.setCurrentBlockState(0)
+        n, i = len(text), 0
+        prev = self.previousBlockState()
+        if prev in (1, 2):                       # continuing an open string
+            delim = '"""' if prev == 1 else "'''"
+            j = text.find(delim)
+            if j == -1:
+                self.setFormat(0, n, self._str_fmt)
+                self.setCurrentBlockState(prev)
+                return
+            self.setFormat(0, j + 3, self._str_fmt)
+            i = j + 3
+        while i < n:
+            d1, d2 = text.find('"""', i), text.find("'''", i)
+            if d1 == -1 and d2 == -1:
+                break
+            if d2 == -1 or (d1 != -1 and d1 < d2):
+                start, delim, state = d1, '"""', 1
+            else:
+                start, delim, state = d2, "'''", 2
+            end = text.find(delim, start + 3)
+            if end == -1:                        # opens here, closes later
+                self.setFormat(start, n - start, self._str_fmt)
+                self.setCurrentBlockState(state)
+                return
+            self.setFormat(start, end + 3 - start, self._str_fmt)
+            i = end + 3
 
 
 class LatexHighlighter(QSyntaxHighlighter):

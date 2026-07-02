@@ -153,6 +153,42 @@ def test_highlighter_follows_dark_theme(qapp):
     assert "#6f9fff" in _highlight_colors(cell)   # dark keyword blue
 
 
+def test_python_highlighting_is_colourful(qapp):
+    from khervebook.cells import make_cell
+    code = ("import os\n"
+            "@dec\n"
+            "def f(x):\n"
+            "    '''doc'''\n"
+            "    n = 0x1F  # note\n"
+            "    return len(x) if x is None else None\n"
+            "class C:\n    pass\n")
+    colors = _highlight_colors(make_cell("code", code))
+    assert len(colors) >= 8                        # a rich palette, not 4
+    assert "#0000ff" in colors                     # keyword (import/def)
+    assert "#af00db" in colors                     # control flow (return/if)
+    assert "#267f99" in colors                     # builtin (len)
+    assert "#b5730a" in colors                     # decorator (@dec)
+    assert "#0070c1" in colors                     # constant (None)
+    assert "#a31515" in colors                     # string / docstring
+    assert "#098658" in colors                     # number (0x1F)
+
+
+def test_python_multiline_docstring_coloured(qapp):
+    from khervebook.cells import make_cell
+    cell = make_cell("code", 'x = 1\n"""line one\nline two"""\ny = 2\n')
+    colors = _highlight_colors(cell)
+    assert "#a31515" in colors                     # the two-line docstring
+
+
+def test_python_highlighting_dark_theme(qapp):
+    from khervebook.cells import make_cell
+    cell = make_cell("code", "def f():\n    return 1\n")
+    cell._highlighter.set_dark(True)
+    colors = _highlight_colors(cell)
+    assert "#569cd6" in colors                     # dark keyword blue
+    assert "#c586c0" in colors                     # dark control-flow purple
+
+
 def test_js_to_html_wrapping():
     from khervebook.jscell import js_to_html
     bare = js_to_html("console.log(1 + 1)")

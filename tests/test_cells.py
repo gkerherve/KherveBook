@@ -154,6 +154,7 @@ def test_highlighter_follows_dark_theme(qapp):
 
 
 def test_python_highlighting_is_colourful(qapp):
+    from khervebook import hltheme
     from khervebook.cells import make_cell
     code = ("import os\n"
             "@dec\n"
@@ -162,7 +163,9 @@ def test_python_highlighting_is_colourful(qapp):
             "    n = 0x1F  # note\n"
             "    return len(x) if x is None else None\n"
             "class C:\n    pass\n")
-    colors = _highlight_colors(make_cell("code", code))
+    cell = make_cell("code", code)
+    cell.set_highlight_theme(hltheme.AUTO)     # ignore any saved theme
+    colors = _highlight_colors(cell)
     assert len(colors) >= 8                        # a rich palette, not 4
     assert "#0000ff" in colors                     # keyword (import/def)
     assert "#af00db" in colors                     # control flow (return/if)
@@ -174,19 +177,52 @@ def test_python_highlighting_is_colourful(qapp):
 
 
 def test_python_multiline_docstring_coloured(qapp):
+    from khervebook import hltheme
     from khervebook.cells import make_cell
     cell = make_cell("code", 'x = 1\n"""line one\nline two"""\ny = 2\n')
+    cell.set_highlight_theme(hltheme.AUTO)
     colors = _highlight_colors(cell)
     assert "#a31515" in colors                     # the two-line docstring
 
 
 def test_python_highlighting_dark_theme(qapp):
+    from khervebook import hltheme
     from khervebook.cells import make_cell
     cell = make_cell("code", "def f():\n    return 1\n")
+    cell.set_highlight_theme(hltheme.AUTO)
     cell._highlighter.set_dark(True)
     colors = _highlight_colors(cell)
     assert "#569cd6" in colors                     # dark keyword blue
     assert "#c586c0" in colors                     # dark control-flow purple
+
+
+def test_python_highlight_theme_switch(qapp):
+    """An explicit theme recolours tokens, restyles the editor, and is
+    unaffected by the app light/dark switch; AUTO restores the default."""
+    from khervebook import hltheme
+    from khervebook.cells import make_cell
+    cell = make_cell("code", "def f():\n    return 'hi'  # note\n")
+    cell.set_highlight_theme("Monokai")
+    colors = _highlight_colors(cell)
+    assert "#f92672" in colors                     # Monokai keyword pink
+    assert "#e6db74" in colors                     # Monokai string yellow
+    assert "#272822" in cell.editor.styleSheet()   # editor background
+    cell._highlighter.set_dark(True)               # app theme flip: pinned
+    assert "#f92672" in _highlight_colors(cell)
+    cell.set_highlight_theme(hltheme.AUTO)
+    assert cell.editor.styleSheet() == ""
+    assert "#569cd6" in _highlight_colors(cell)    # back to auto (dark)
+
+
+def test_highlight_theme_names_and_persistence(qapp):
+    from khervebook import hltheme
+    names = hltheme.theme_names()
+    assert names[0] == hltheme.AUTO
+    assert "Monokai" in names and "Solarized Light" in names
+    for name in names:                             # every theme resolves
+        pal = hltheme.resolve(name)
+        assert {"keyword", "string", "comment"} <= set(pal)
+    assert hltheme.editor_colors(hltheme.AUTO) is None
 
 
 def test_js_to_html_wrapping():

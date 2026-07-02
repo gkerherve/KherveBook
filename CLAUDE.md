@@ -77,7 +77,11 @@ into a new module and import.
   - `cells.py`       — `CellWidget` base (gutter run button) +
                        `CodeCell` (line-number gutter), `MarkdownCell`,
                        `LatexCell`; the editor has a find bar (Ctrl+F)
-                       and, for prose cells, a right-click Synonyms menu.
+                       and, for prose cells, a right-click Synonyms menu;
+                       code cells add a right-click Highlight Theme menu.
+  - `hltheme.py`     — named highlight themes for Python cells (Monokai,
+                       Dracula, Solarized, …) + the QSettings-persisted
+                       choice; "Auto" follows the app light/dark theme.
   - `thesaurus.py`   — synonyms via the free Datamuse API (offline-safe).
   - `sheetcell.py`   — `SheetCell`: embedded workbook (many sheets +
                        plots, one view at a time via a left drop-down);

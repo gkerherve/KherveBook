@@ -23,7 +23,7 @@ from PyQt5.QtWidgets import (QAction, QFrame, QHBoxLayout, QLabel, QLineEdit,
                              QPlainTextEdit, QScrollArea, QSizePolicy,
                              QTextBrowser, QToolButton, QVBoxLayout, QWidget)
 
-from . import thesaurus
+from . import hltheme, thesaurus
 
 from .icons import icon
 
@@ -188,7 +188,8 @@ class PythonHighlighter(QSyntaxHighlighter):
     """Rich, colourful Python syntax highlighting for code cell editors:
     control flow, keywords, builtins, constants, decorators, def/class
     names, calls, self/cls, numbers, strings (incl. multi-line
-    docstrings) and comments each get their own colour."""
+    docstrings) and comments each get their own colour. The palette is
+    a named theme from ``hltheme`` (default: follow the app theme)."""
 
     _CONTROL = ("if elif else for while break continue return yield pass "
                 "try except finally raise with async await").split()
@@ -206,27 +207,19 @@ class PythonHighlighter(QSyntaxHighlighter):
         "AttributeError ImportError OSError StopIteration ZeroDivisionError "
         "FileNotFoundError NotImplementedError").split()
 
-    #: colour per token category, per background brightness (VS Code-ish).
-    LIGHT = {
-        "keyword": "#0000ff", "control": "#af00db", "constant": "#0070c1",
-        "builtin": "#267f99", "decorator": "#b5730a", "defname": "#795e26",
-        "classname": "#267f99", "call": "#795e26", "selfcls": "#0e8a9c",
-        "number": "#098658", "string": "#a31515", "comment": "#6e7781",
-    }
-    DARK = {
-        "keyword": "#569cd6", "control": "#c586c0", "constant": "#569cd6",
-        "builtin": "#4ec9b0", "decorator": "#dcdcaa", "defname": "#dcdcaa",
-        "classname": "#4ec9b0", "call": "#dcdcaa", "selfcls": "#9cdcfe",
-        "number": "#b5cea8", "string": "#ce9178", "comment": "#6a9955",
-    }
+    #: colour per token category, per app-theme brightness (in hltheme).
+    LIGHT = hltheme.AUTO_LIGHT
+    DARK = hltheme.AUTO_DARK
 
     #: single-line string (with r/b/f/u prefixes) and triple delimiters.
     _STRING = (r"(?<!\w)[rbfuRBFU]{0,2}"
                r"""(?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")""")
 
-    def __init__(self, document, dark=False):
+    def __init__(self, document, dark=False, theme=hltheme.AUTO):
         super().__init__(document)
-        self._build_rules(dark)
+        self._dark = dark
+        self.theme = theme
+        self._build_rules()
 
     def _fmt(self, color, bold=False, italic=False):
         f = QTextCharFormat()
@@ -241,8 +234,8 @@ class PythonHighlighter(QSyntaxHighlighter):
     def _words(words):
         return r"\b(?:%s)\b" % "|".join(words)
 
-    def _build_rules(self, dark: bool):
-        c = self.DARK if dark else self.LIGHT
+    def _build_rules(self):
+        c = hltheme.resolve(self.theme, self._dark)
         self._rules = []            # (compiled pattern, format, capture group)
 
         def add(pattern, fmt, group=0):
@@ -266,7 +259,13 @@ class PythonHighlighter(QSyntaxHighlighter):
         self._str_fmt = self._fmt(c["string"])
 
     def set_dark(self, dark: bool):
-        self._build_rules(dark)
+        self._dark = dark
+        self._build_rules()
+        self.rehighlight()
+
+    def set_theme(self, name: str):
+        self.theme = name
+        self._build_rules()
         self.rehighlight()
 
     def highlightBlock(self, text):
@@ -649,11 +648,17 @@ class _GrowingEdit(QPlainTextEdit):
                                   self._lna_width(), cr.height())
 
     def _paint_line_numbers(self, event):
-        from .style import tokens
-        t = tokens()
+        custom = getattr(self, "_gutter_colors", None)
+        if custom:                     # an explicit highlight theme's colours
+            bg, fg = custom
+        else:
+            from .style import tokens
+            t = tokens()
+            bg = t["editor"]
+            fg = t["icon"] if t["dark"] else t["border"]
         painter = QPainter(self._lna)
-        painter.fillRect(event.rect(), QColor(t["editor"]))
-        painter.setPen(QColor(t["icon"] if t["dark"] else t["border"]))
+        painter.fillRect(event.rect(), QColor(bg))
+        painter.setPen(QColor(fg))
         block = self.firstVisibleBlock()
         top = self.blockBoundingGeometry(block).translated(
             self.contentOffset()).top()
@@ -737,7 +742,21 @@ class _GrowingEdit(QPlainTextEdit):
             menu.addAction(find)
             if getattr(cell, "CELL_TYPE", "") in ("markdown", "latex"):
                 self._add_synonyms(menu, event.pos())
+            if hasattr(cell, "choose_highlight_theme"):
+                self._add_highlight_themes(menu, cell)
         menu.exec_(event.globalPos())
+
+    def _add_highlight_themes(self, menu, cell):
+        """Submenu of code highlight themes; picking one restyles every
+        code cell and persists app-wide."""
+        sub = menu.addMenu("Highlight Theme")
+        current = cell._highlighter.theme
+        for name in hltheme.theme_names():
+            act = sub.addAction(name)
+            act.setCheckable(True)
+            act.setChecked(name == current)
+            act.triggered.connect(
+                lambda _=False, n=name: cell.choose_highlight_theme(n))
 
     def _add_synonyms(self, menu, pos):
         """Add a Synonyms submenu for the word at *pos* (fetched on open)."""
@@ -1099,7 +1118,9 @@ class CodeCell(CellWidget):
         self.editor.enable_line_numbers()    # numbered gutter for Python
         from .style import tokens
         self._highlighter = PythonHighlighter(self.editor.document(),
-                                              dark=tokens()["dark"])
+                                              dark=tokens()["dark"],
+                                              theme=hltheme.saved_name())
+        self._apply_editor_colors()
         self.output = QLabel()
         self.output.setFont(MONO)
         self.output.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -1108,6 +1129,40 @@ class CodeCell(CellWidget):
         self.column.addWidget(self.output)
         self._figure_labels = []
         self._plot_widgets = []
+
+    # -- highlight themes ---------------------------------------------------
+    def set_highlight_theme(self, name: str):
+        """Restyle this cell with highlight theme *name* (no persistence)."""
+        self._highlighter.set_theme(name)
+        self._apply_editor_colors()
+
+    def choose_highlight_theme(self, name: str):
+        """The user picked *name* from the right-click menu: persist it
+        and restyle every code cell in the notebook."""
+        hltheme.save_name(name)
+        w = self.parentWidget()
+        while w is not None and not hasattr(w, "cells"):
+            w = w.parentWidget()
+        cells = [c for c in getattr(w, "cells", [])
+                 if isinstance(c, CodeCell)] or [self]
+        for cell in cells:
+            cell.set_highlight_theme(name)
+
+    def _apply_editor_colors(self):
+        """Give the editor (and its gutter) an explicit theme's background,
+        or hand it back to the app theme's stylesheet."""
+        colors = hltheme.editor_colors(self._highlighter.theme)
+        if colors:
+            bg, fg = colors
+            self.editor.setStyleSheet(
+                f"QPlainTextEdit {{ background: {bg}; color: {fg}; }}")
+            comment = hltheme.resolve(self._highlighter.theme)["comment"]
+            self.editor._gutter_colors = (bg, comment)
+        else:
+            self.editor.setStyleSheet("")
+            self.editor._gutter_colors = None
+        if self.editor._lna is not None:
+            self.editor._lna.update()
 
     def execute(self, kernel):
         # Interactive (zoom/pan) canvases when the toggle is on — but never

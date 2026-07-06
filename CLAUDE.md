@@ -16,6 +16,12 @@ KhervePDF, KherveDOC, KhervePlot, KherveDraw).
   matplotlib mathtext. Compile = `latexcompile.py` (background
   QThread; workers held in a module set, never parented to a cell).
 - Crash log: `%TEMP%/khervebook_crash.log`.
+- **Packaging** (Windows): PyInstaller **one-folder** build via
+  `packaging/KherveBook.spec` → `pyinstaller packaging/KherveBook.spec
+  --noconfirm`, producing `dist/KherveBook/KherveBook.exe` beside its
+  runtime folder. The exe icon is `packaging/khervebook.ico`, generated
+  from the in-app mark by `python packaging/make_icon.py` (re-run after
+  editing `icons.py`). `dist/`, `build/` are gitignored.
 - **Version string** is derived at runtime in `_version.py` from
   `git rev-list --count HEAD` and `git rev-parse --short HEAD`,
   cached with `lru_cache`. Falls back to `_FALLBACK = "0.1.0"`

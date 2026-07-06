@@ -46,9 +46,10 @@ def icon(name: str, color: str = None) -> QIcon:
         return QIcon()
 
 
-#: Below this pixel size the icon shows the compact "KB" monogram;
-#: at or above it the stacked "K" over "Book" wordmark is legible.
-_STACK_THRESHOLD = 40
+#: The app mark sits on a rounded square tinted from the Slate theme
+#: (the default): a light slate tile with a slightly darker slate edge.
+_SLATE_FILL = "#d5dbe3"
+_SLATE_EDGE = "#b9c1cc"
 
 # The letters are drawn as stroked vector paths (not text) so the mark
 # renders identically on every platform and without depending on any
@@ -121,69 +122,63 @@ def _stroke(p: QPainter, path: QPainterPath, color: str,
     p.drawPath(mapped)
 
 
-def _word_width(glyphs, gap: float) -> float:
-    return sum(w for _, w in glyphs) + gap * (len(glyphs) - 1)
+def _paint_slate_tile(p: QPainter, s: float) -> QRectF:
+    """Fill a rounded-square slate tile covering the icon, and return the
+    inner rectangle the wordmark is laid out in."""
+    m = s * 0.06                       # outer margin
+    radius = s * 0.22                  # corner rounding
+    rect = QRectF(m, m, s - 2 * m, s - 2 * m)
+    p.setPen(Qt.NoPen)
+    p.setBrush(QColor(_SLATE_FILL))
+    p.drawRoundedRect(rect, radius, radius)
+    pen = QPen(QColor(_SLATE_EDGE))
+    pen.setWidthF(max(1.0, s * 0.02))
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+    p.drawRoundedRect(rect, radius, radius)
+    return rect
 
 
-def _paint_monogram(p: QPainter, s: float):
-    """Compact mark for small sizes: a blue 'KB'."""
-    kp, kw = _glyph_K()
-    bp, bw = _glyph_B()
-    gap = 0.22
-    total = kw + gap + bw
-    h = s * 0.58
-    top = (s - h) / 2.0
-    left = (s - total * h) / 2.0
-    weight = 0.15
-    _stroke(p, kp, _BOOK_BLUE, QRectF(left, top, kw * h, h), weight)
-    _stroke(p, bp, _BOOK_BLUE,
-            QRectF(left + (kw + gap) * h, top, bw * h, h), weight)
-
-
-def _paint_stacked(p: QPainter, s: float):
-    """Full wordmark for larger sizes: a big blue 'K' over orange
-    'Book'."""
-    # Big K on top (Kherve blue).
-    kp, kw = _glyph_K()
-    kh = s * 0.50
-    ktop = s * 0.06
-    _stroke(p, kp, _BOOK_BLUE,
-            QRectF((s - kw * kh) / 2.0, ktop, kw * kh, kh), 0.15)
-
-    # "Book" underneath (Book orange).
+def _paint_wordmark(p: QPainter, rect: QRectF):
+    """Draw 'KBook' on a single baseline inside *rect*: a blue 'K' then
+    an orange 'Book', scaled to fill the tile."""
     xh = 0.66                          # x-height as a fraction of cap box
-    glyphs = [_glyph_B(), _glyph_o(xh), _glyph_o(xh), _glyph_k(xh)]
-    gap = 0.16
-    total = _word_width(glyphs, gap)
-    wh = s * 0.30                      # cap-height of the word
-    wtop = s * 0.63
-    left = (s - total * wh) / 2.0
-    weight = 0.17
-    x = left
-    for path, gw in glyphs:
-        _stroke(p, path, _BOOK_ORANGE, QRectF(x, wtop, gw * wh, wh), weight)
-        x += (gw + gap) * wh
+    items = [(_glyph_K(), _BOOK_BLUE),
+             (_glyph_B(), _BOOK_ORANGE),
+             (_glyph_o(xh), _BOOK_ORANGE),
+             (_glyph_o(xh), _BOOK_ORANGE),
+             (_glyph_k(xh), _BOOK_ORANGE)]
+    gap = 0.12
+    total = sum(w for (_path, w), _c in items) + gap * (len(items) - 1)
+    # Cap-height: as tall as the tile allows, but not so wide it overflows.
+    pad_x, pad_y = rect.width() * 0.13, rect.height() * 0.24
+    ch = min(rect.height() - 2 * pad_y, (rect.width() - 2 * pad_x) / total)
+    word_w = total * ch
+    x = rect.x() + (rect.width() - word_w) / 2.0
+    top = rect.y() + (rect.height() - ch) / 2.0
+    weight = 0.16
+    for (path, gw), color in items:
+        _stroke(p, path, color, QRectF(x, top, gw * ch, ch), weight)
+        x += (gw + gap) * ch
 
 
 def _paint_kbook(size: int) -> QPixmap:
-    """Draw the KherveBook mark: 'KB' when small, a stacked 'K' over
-    'Book' when large enough for the wordmark to read."""
+    """Draw the KherveBook mark: a single-line 'KBook' wordmark on a
+    rounded slate tile, at every size."""
     pm = QPixmap(size, size)
     pm.fill(Qt.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
     s = float(size)
-    if size < _STACK_THRESHOLD:
-        _paint_monogram(p, s)
-    else:
-        _paint_stacked(p, s)
+    rect = _paint_slate_tile(p, s)
+    _paint_wordmark(p, rect)
     p.end()
     return pm
 
 
 def app_icon() -> QIcon:
-    """Window/taskbar icon: the KherveBook wordmark. Small renderings
-    get the 'KB' monogram; larger ones get the stacked 'K' / 'Book'."""
+    """Window/taskbar icon: the single-line 'KBook' wordmark on a
+    rounded slate tile, rendered at each standard size."""
     ic = QIcon()
     for size in (16, 24, 32, 48, 64, 128, 256):
         ic.addPixmap(_paint_kbook(size))

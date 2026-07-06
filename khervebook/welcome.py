@@ -138,6 +138,28 @@ WELCOME_CELLS = [
                  "A4": "3", "B4": "=np.pi * A4**2",
                  "A5": "total", "B5": "=sum(B2:B4)"}})},
     {"type": "markdown", "source": (
+        "…and the other way round: a **code cell reads that same grid** as "
+        "`sheet1`, a list of rows with the header first. Here we pull "
+        "columns A (radius) and B (area) straight out of the sheet above "
+        "and plot them — edit a number in the grid, re-run, and the plot "
+        "follows:")},
+    {"type": "code", "source": (
+        "# sheet1 is the grid above: row 0 is the header, then the data\n"
+        "radius, area = [], []\n"
+        "for row in sheet1[1:]:\n"
+        "    try:                       # skip the 'total' row\n"
+        "        radius.append(float(row[0]))\n"
+        "        area.append(float(row[1]))\n"
+        "    except ValueError:\n"
+        "        continue\n"
+        "fig, ax = plt.subplots(figsize=(5, 3.2))\n"
+        "ax.bar(radius, area, width=0.5, color='#3776ab', alpha=0.35)\n"
+        "ax.plot(radius, area, 'o-', color='#e07b39', lw=2)\n"
+        "ax.set_xlabel('radius  (column A)')\n"
+        "ax.set_ylabel('area  (column B)')\n"
+        "ax.set_title('Sheet columns A and B, plotted in Python')\n"
+        "fig")},
+    {"type": "markdown", "source": (
         "**Live simulations** — a cell can re-run continuously "
         "(the ⟳ toolbar button, or right-click → *Run Continuously*). "
         "State lives in the kernel between frames. Press the red stop "

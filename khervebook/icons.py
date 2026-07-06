@@ -163,16 +163,39 @@ def _paint_wordmark(p: QPainter, rect: QRectF):
         x += (gw + gap) * ch
 
 
+def _paint_book(p: QPainter, box: QRectF):
+    """Stroke a small open book (two pages meeting at a central spine)
+    inside *box*, in the same black ink as the wordmark."""
+    path = QPainterPath()
+    # Left cover + page, then right cover + page (v grows downward; the
+    # outer top corners sit a little higher than the spine, so the book
+    # reads as open and seen slightly from above).
+    path.moveTo(0.50, 0.16); path.lineTo(0.04, 0.05)
+    path.lineTo(0.04, 0.82); path.lineTo(0.50, 0.93)
+    path.moveTo(0.50, 0.16); path.lineTo(0.96, 0.05)
+    path.lineTo(0.96, 0.82); path.lineTo(0.50, 0.93)
+    path.moveTo(0.50, 0.16); path.lineTo(0.50, 0.93)   # spine
+    # A couple of page lines per side, following each page's slant.
+    path.moveTo(0.42, 0.34); path.lineTo(0.14, 0.28)
+    path.moveTo(0.42, 0.54); path.lineTo(0.14, 0.48)
+    path.moveTo(0.58, 0.34); path.lineTo(0.86, 0.28)
+    path.moveTo(0.58, 0.54); path.lineTo(0.86, 0.48)
+    _stroke(p, path, "#000000", box, weight=0.055)
+
+
 def _paint_kbook(size: int) -> QPixmap:
-    """Draw the KherveBook mark: a single-line 'KBook' wordmark on a
-    rounded slate tile, at every size."""
+    """Draw the KherveBook mark on a rounded slate tile: the single-line
+    'KBook' wordmark above a small open book, at every size."""
     pm = QPixmap(size, size)
     pm.fill(Qt.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
     s = float(size)
     rect = _paint_slate_tile(p, s)
-    _paint_wordmark(p, rect)
+    x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
+    _paint_wordmark(p, QRectF(x, y + h * 0.05, w, h * 0.44))   # upper half
+    bw, bh = w * 0.46, h * 0.34
+    _paint_book(p, QRectF(x + (w - bw) / 2.0, y + h * 0.58, bw, bh))
     p.end()
     return pm
 

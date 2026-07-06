@@ -143,11 +143,12 @@ def _paint_wordmark(p: QPainter, rect: QRectF):
     """Draw 'KBook' on a single baseline inside *rect*: a blue 'K' then
     an orange 'Book', scaled to fill the tile."""
     xh = 0.66                          # x-height as a fraction of cap box
-    items = [(_glyph_K(), _BOOK_BLUE),
-             (_glyph_B(), _BOOK_ORANGE),
-             (_glyph_o(xh), _BOOK_ORANGE),
-             (_glyph_o(xh), _BOOK_ORANGE),
-             (_glyph_k(xh), _BOOK_ORANGE)]
+    ink = "#000000"                    # black letters on the slate tile
+    items = [(_glyph_K(), ink),
+             (_glyph_B(), ink),
+             (_glyph_o(xh), ink),
+             (_glyph_o(xh), ink),
+             (_glyph_k(xh), ink)]
     gap = 0.12
     total = sum(w for (_path, w), _c in items) + gap * (len(items) - 1)
     # Cap-height: as tall as the tile allows, but not so wide it overflows.

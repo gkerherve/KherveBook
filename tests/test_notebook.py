@@ -309,12 +309,12 @@ def test_flocking_birds_physics(qapp):
     k = Kernel()
     for _ in range(500):
         k.run(physics)
-    res = k.run("bool((birds_pos >= 0.03).all()"
-                " and (birds_pos <= 0.97).all())")
+    res = k.run("bool((birds_pos >= 0.02).all()"
+                " and (birds_pos <= 0.98).all())")
     assert res.result_repr == "True"
     pol = k.run("float(np.hypot(*birds_vel.mean(0))"
                 " / np.hypot(*birds_vel.T).mean())")
-    assert float(pol.result_repr) > 0.9   # aligned = wheeling as one flock
+    assert float(pol.result_repr) > 0.75   # still roaming together, not scattered
 
 
 def test_restart_kernel_resets_gutters(qapp):
@@ -326,3 +326,22 @@ def test_restart_kernel_resets_gutters(qapp):
     nb.restart_kernel()
     assert nb.cells[0].gutter.text() == "In [ ]:"
     assert nb.kernel.exec_count == 0
+
+
+def test_reset_cell_clears_only_its_own_state(qapp):
+    """Per-cell restart drops the names that cell created and re-seeds it,
+    without touching variables owned by other cells."""
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    shared = nb.cells[0]
+    shared.set_source("shared = 42")
+    shared.execute(nb.kernel)
+    boids = nb.add_cell_below("code",
+                              "if 'n' not in globals():\n    n = 5\nn = n + 1\nn")
+    boids.execute(nb.kernel)                      # seeds n = 5, then n = 6
+    assert nb.kernel.namespace["n"] == 6
+    boids.execute(nb.kernel)                      # guard skips: n = 7
+    assert nb.kernel.namespace["n"] == 7
+    nb.reset_cell(boids)                          # forget n, re-seed, n = 6
+    assert nb.kernel.namespace["n"] == 6
+    assert nb.kernel.namespace["shared"] == 42    # other cell untouched

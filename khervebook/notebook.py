@@ -89,6 +89,7 @@ class NotebookWidget(QScrollArea):
         cell.run_requested.connect(self._run_and_advance)
         cell.run_clicked.connect(self.run_cell)
         cell.stop_clicked.connect(lambda _cell: self.stop_loop())
+        cell.reset_clicked.connect(self.reset_cell)
         cell.menu_requested.connect(self._show_cell_menu)
         cell.file_dropped.connect(self.open_file_in_cell)
         cell.focused.connect(self._set_current)
@@ -312,6 +313,17 @@ class NotebookWidget(QScrollArea):
         self._set_current(cell)
         cell.execute(self.kernel)
 
+    def reset_cell(self, cell):
+        """Restart a single cell: drop the kernel globals it created and
+        re-run it, without touching the rest of the namespace. Lets a
+        live-loop cell (e.g. the boids) re-seed after an edit without a
+        full Kernel > Restart. A looping cell keeps looping."""
+        if not hasattr(cell, "reset_state"):
+            return
+        self._set_current(cell)
+        cell.reset_state(self.kernel)
+        cell.execute(self.kernel)
+
     # -- continuous run ---------------------------------------------------
     def start_loop(self, cell=None, interval_ms: int = 60):
         """Re-run *cell* (default: current) every *interval_ms* —
@@ -352,6 +364,9 @@ class NotebookWidget(QScrollArea):
         else:
             menu.addAction("Run Continuously",
                            lambda: self.start_loop(cell))
+        if hasattr(cell, "reset_state"):
+            menu.addAction("Restart This Cell",
+                           lambda: self.reset_cell(cell))
         menu.addAction("Expand Cell" if cell.collapsed else "Collapse Cell",
                        lambda: cell.set_collapsed(not cell.collapsed))
         menu.addAction("Edit Title…" if cell.title else "Set Title…",

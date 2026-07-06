@@ -190,6 +190,7 @@ class ExecResult:
     figures: list = field(default_factory=list)  # list of PNG bytes
     live_figures: list = field(default_factory=list)  # live mpl Figures
     error: str = ""                # formatted traceback on failure
+    new_names: set = field(default_factory=set)   # globals this run created
 
     @property
     def ok(self) -> bool:
@@ -284,6 +285,7 @@ class Kernel:
         with a zoom/pan toolbar; otherwise as static PNG bytes."""
         self.exec_count += 1
         self._seed_namespace()
+        names_before = set(self.namespace)   # to report names this run adds
         res = ExecResult()
         out, err = io.StringIO(), io.StringIO()
 
@@ -349,7 +351,17 @@ class Kernel:
                 # Drop it from pyplot's registry. The Figure object lives on
                 # (held by res when interactive) for embedding in a canvas.
                 plt.close(num)
+        res.new_names = set(self.namespace) - names_before
         return res
+
+    def forget(self, names):
+        """Delete *names* from the namespace (per-cell restart).
+
+        Lets a single cell's state be cleared without a full Kernel >
+        Restart, so a live-loop cell re-runs its ``if 'x' not in
+        globals()`` setup on the next run."""
+        for name in names:
+            self.namespace.pop(name, None)
 
     def _call_with_timeout(self, fn):
         """Run *fn* on the calling thread with a timeout guard.

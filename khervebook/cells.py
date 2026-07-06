@@ -879,6 +879,7 @@ class CellWidget(QFrame):
     run_requested = pyqtSignal(object)   # self — run and advance
     run_clicked = pyqtSignal(object)     # self — run in place
     stop_clicked = pyqtSignal(object)    # self — stop continuous run
+    reset_clicked = pyqtSignal(object)   # self — clear this cell's state
     menu_requested = pyqtSignal(object, object)   # self, global pos
     file_dropped = pyqtSignal(str, object)        # path, self
     content_changed = pyqtSignal()       # edited (non-editor cells)
@@ -915,6 +916,18 @@ class CellWidget(QFrame):
         self.stop_btn.hide()
         btns.addWidget(self.stop_btn)
         gcol.addLayout(btns)
+        # A per-cell restart: clears just this cell's variables and re-runs
+        # it, so a live-loop cell re-seeds without a full Kernel > Restart.
+        # Hidden by default; code cells reveal it.
+        self.reset_btn = QToolButton()
+        self.reset_btn.setIcon(icon("mdi.restart", "#e07b39"))
+        self.reset_btn.setIconSize(QSize(20, 20))
+        self.reset_btn.setToolTip(
+            "Restart this cell — reset its variables and re-run")
+        self.reset_btn.setAutoRaise(True)
+        self.reset_btn.clicked.connect(lambda: self.reset_clicked.emit(self))
+        self.reset_btn.hide()
+        gcol.addWidget(self.reset_btn, alignment=Qt.AlignHCenter)
         self.collapse_btn = QToolButton()
         self.collapse_btn.setIcon(icon("mdi.chevron-down"))
         self.collapse_btn.setIconSize(QSize(18, 18))
@@ -1129,6 +1142,8 @@ class CodeCell(CellWidget):
         self.column.addWidget(self.output)
         self._figure_labels = []
         self._plot_widgets = []
+        self._introduced = set()     # kernel globals this cell has created
+        self.reset_btn.show()        # per-cell restart (code cells only)
 
     # -- highlight themes ---------------------------------------------------
     def set_highlight_theme(self, name: str):
@@ -1170,6 +1185,7 @@ class CodeCell(CellWidget):
         interactive = (getattr(kernel, "interactive_figures", False)
                        and not self._looping)
         res = kernel.run(self.source(), interactive=interactive)
+        self._introduced |= res.new_names   # remember for a per-cell restart
         self.gutter.setText(f"In [{kernel.exec_count}]:")
 
         text = res.stdout
@@ -1222,6 +1238,12 @@ class CodeCell(CellWidget):
             w.close_figure()
             w.deleteLater()
         self._plot_widgets = []
+
+    def reset_state(self, kernel):
+        """Forget the kernel globals this cell created, so the next run
+        re-seeds from scratch (per-cell restart)."""
+        kernel.forget(self._introduced)
+        self._introduced = set()
 
 
 class MarkdownCell(CellWidget):

@@ -21,7 +21,11 @@ KhervePDF, KherveDOC, KhervePlot, KherveDraw).
   --noconfirm`, producing `dist/KherveBook/KherveBook.exe` beside its
   runtime folder. The exe icon is `packaging/khervebook.ico`, generated
   from the in-app mark by `python packaging/make_icon.py` (re-run after
-  editing `icons.py`). `dist/`, `build/` are gitignored.
+  editing `icons.py`). Then `python packaging/build_installer.py` wraps
+  that folder into two `dist/` artifacts: a per-user NSIS installer
+  `KherveBook-Setup-<ver>.exe` (needs `makensis`; from
+  `packaging/installer.nsi`) and a copy-and-run `KherveBook-<ver>-
+  portable.zip`. `dist/`, `build/` are gitignored.
 - **Version string** is derived at runtime in `_version.py` from
   `git rev-list --count HEAD` and `git rev-parse --short HEAD`,
   cached with `lru_cache`. Falls back to `_FALLBACK = "0.1.0"`

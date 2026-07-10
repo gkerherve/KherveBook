@@ -1,0 +1,22 @@
+{
+  "title": "KherveBook: A native desktop computational notebook combining Python, Markdown, LaTeX, spreadsheets and vector drawings",
+  "upload_type": "software",
+  "creators": [
+    {
+      "name": "Kerhervé, Gwilherm",
+      "orcid": "0000-0002-6449-1828",
+      "affiliation": "Department of Materials, Imperial College London"
+    }
+  ],
+  "description": "<p>KherveBook is an open-source, Jupyter-inspired computational notebook implemented as a native Qt desktop application with its own in-process Python kernel. A single document mixes six cell types: runnable Python, Markdown, LaTeX (typeset via tectonic), live spreadsheets two-way linked to Python, SVG drawings, and JavaScript/HTML. It ships ~180 built-in scientific examples, an AI assistant, per-notebook Git version history, and lossless Jupyter .ipynb import/export.</p>",
+  "license": "GPL-3.0-or-later",
+  "access_right": "open",
+  "keywords": ["computational notebook", "scientific computing", "Python", "reproducible research", "spreadsheet", "LaTeX", "PyQt5"],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/gkerherve/KherveBook",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    }
+  ]
+}

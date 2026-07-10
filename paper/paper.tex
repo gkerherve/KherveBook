@@ -1,0 +1,69 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[hidelinks]{hyperref}
+\usepackage{parskip}
+\usepackage{booktabs}
+
+\title{KherveBook: A Native Desktop Computational Notebook\\Combining Python, Markdown, LaTeX, Spreadsheets and Drawings}
+\author{Gwilherm Kerhervé\thanks{ORCID: 0000-0002-6449-1828, \texttt{g.kerherve@imperial.ac.uk}}\\
+\small Department of Materials, Imperial College London, London SW7 2AZ, United Kingdom}
+\date{10 July 2026 --- Version 0.1.123}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+KherveBook is an open-source, Jupyter-inspired computational notebook implemented as a genuine native desktop application: every cell is rendered with Qt widgets and Python runs in the application's own in-process kernel, with no browser and no embedded web runtime for core cells. A single scrolling document mixes six cell types --- runnable Python, Markdown, full LaTeX documents, live multi-sheet spreadsheets two-way linked to Python, SVG drawings, and JavaScript/HTML. It ships approximately 180 built-in scientific examples spanning ten materials-characterisation techniques, an AI assistant that can read and edit cells, per-notebook Git version history, and lossless Jupyter \texttt{.ipynb} import/export. KherveBook is written in Python with PyQt5 and released under the GNU General Public License v3.0 at \url{https://github.com/gkerherve/KherveBook}.
+\end{abstract}
+
+\section{Statement of need}
+
+Computational notebooks are the lingua franca of data-driven science, but the dominant implementations --- Jupyter~\cite{jupyter} and, more recently, Marimo~\cite{marimo} --- run in a web browser on top of a client--server architecture. For a desktop scientist this brings friction: a server process to manage, a browser tab as the interface, limited native file-system integration, and cell types restricted to code and text. Experimental scientists in particular often want a spreadsheet next to their code, a quick sketch next to their data, and properly typeset LaTeX in the same document.
+
+KherveBook explores a different point in the design space: the notebook as a native desktop application. There is no browser and no notebook server; cells are Qt widgets and code executes in an in-process kernel with \texttt{numpy}, \texttt{matplotlib}, \texttt{pandas}, \texttt{scipy}, \texttt{sympy} and \texttt{dask} preloaded. This makes it well suited to teaching laboratories, offline instrument PCs, and users who find the Jupyter deployment stack disproportionate to their needs.
+
+\section{Functionality}
+
+\textbf{Six cell types.} Code cells provide \texttt{In [n]:} counters, stdout/stderr capture, Jupyter-style echo of the trailing expression, inline or interactive matplotlib figures, line numbers and syntax highlighting. Markdown cells render formatted notes (double-click to edit). LaTeX cells typeset full documents via the \texttt{tectonic} engine~\cite{tectonic}, falling back to matplotlib mathtext when tectonic is not installed. Sheet cells embed a multi-sheet spreadsheet with \texttt{=} formulas (Python and Excel-style functions, A1 references and ranges). Drawing cells offer pen/line/rectangle/ellipse/text tools, with hand-off to the sibling vector editor KherveScribe. JavaScript/HTML cells host D3, Plotly, canvas or three.js content in an embedded web view.
+
+\textbf{Sheet--Python two-way link.} A spreadsheet cell publishes its grid to code cells as \texttt{sheet1}; code reads it, e.g.\ into a pandas DataFrame, and writes back with \texttt{ks("A1", value)}. Editing a number and re-running updates the plot; cells can also run continuously for live simulations.
+
+\textbf{Scientific example library.} Around 180 built-in examples cover mathematics, physics, chemistry, biology, statistics, finance and signal processing, plus complete example sets for ARPES, XPS, XRD, EDX, EELS, TGA, BET, SIMS, NMR and FTIR. Each references the real community library for the technique (lmfit~\cite{lmfit}, HyperSpy/eXSpy~\cite{hyperspy}, pyGAPS, nmrglue, pymatgen, spectrochempy, \ldots) and falls back to faithful synthetic data so every example runs offline.
+
+\textbf{Reproducibility and interoperability.} Each \texttt{.kbook} document's folder is its own Git repository with auto-commit on save, a painted history graph, branch/diff/restore, and push/pull to GitHub or GitLab. Import/export covers Jupyter/Colab \texttt{.ipynb} (lossless round-trip), \texttt{.ksheet}/\texttt{.kdoc}/\texttt{.ktex}, \texttt{.xlsx}/\texttt{.xlsm}, and images or PDFs as SVG cells. An AI assistant (Claude, ChatGPT, Mistral, Ollama or a local model) reads every cell and can add or rewrite cells on request.
+
+\section{Comparison with existing tools}
+
+\begin{center}
+\begin{tabular}{@{}llll@{}}
+\toprule
+ & Jupyter & Marimo & KherveBook \\
+\midrule
+Interface & Browser & Browser & Native Qt desktop app \\
+Engine & IPython kernel & Reactive runtime & Own in-process kernel \\
+Cells beyond code/text & --- & --- & Sheet, SVG, LaTeX, JS \\
+Built in & Ecosystem & Reactive \texttt{.py} files & AI, Git, $\sim$180 examples \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+KherveBook shares the cell-based notebook idea with Jupyter and Marimo but none of their code. Marimo-style reactive execution is on the roadmap.
+
+\section{Availability}
+
+Source code, a Windows installer, a portable build and documentation are available at \url{https://github.com/gkerherve/KherveBook} under the GPL-3.0 license. KherveBook is part of the Kherve family of open-source scientific tools, which includes KherveFitting~\cite{khervefitting}, KherveTeX and KhervePDF.
+
+\begin{thebibliography}{9}
+\bibitem{jupyter} T.~Kluyver et al., \emph{Jupyter Notebooks --- a publishing format for reproducible computational workflows}, in: Positioning and Power in Academic Publishing, IOS Press (2016) 87--90.
+\bibitem{marimo} A.~Agrawal, M.~Scolnick, \emph{marimo: a reactive notebook for Python}, \url{https://marimo.io}.
+\bibitem{tectonic} P.~K.~G. Williams et al., \emph{Tectonic: a modernized, complete, self-contained TeX/LaTeX engine}, \url{https://tectonic-typesetting.github.io}.
+\bibitem{lmfit} M.~Newville et al., \emph{LMFIT: Non-linear least-square minimization and curve-fitting for Python}, doi:10.5281/zenodo.11813.
+\bibitem{hyperspy} F.~de~la~Peña et al., \emph{HyperSpy: multi-dimensional data analysis toolbox}, doi:10.5281/zenodo.592838.
+\bibitem{khervefitting} G.~Kerhervé, D.~J. Payne, \emph{KherveFitting: An Open Source Software for Fitting X-Ray Photoelectron Spectroscopy Data}, Surf. Interface Anal. (2026), doi:10.1002/sia.70032.
+\end{thebibliography}
+
+\end{document}

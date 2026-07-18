@@ -54,7 +54,10 @@ into a new module and import.
   - `mainwindow.py`  — `MainWindow` shell: menus, Jupyter-style toolbar,
                        cell-type combo, .kbook I/O.
   - `celltoolbar.py` — second toolbar row that swaps with the focused
-                       cell type (markdown/code/latex/sheet tools).
+                       cell type (markdown/note/code/latex/sheet/svg/file
+                       tools). The Note cell's full rich-text + pen toolbar
+                       lives here (not in the cell), driving the focused
+                       NoteCell's methods.
   - `explorer.py`    — dockable file tree (Ctrl+B) rooted at a chosen
                        folder; drag source for cell drops.
   - `ai_providers.py`— AI provider registry (Claude/ChatGPT/Mistral/
@@ -94,8 +97,9 @@ into a new module and import.
                        the base plain-text one).
   - `notecell.py`    — `NoteCell`: a WYSIWYG "Word"-style rich-text page
                        (a QTextEdit you format live — bold/italic/headings/
-                       lists/colour/font) with a transparent **pen/ink
-                       overlay** for freehand annotation. `source` is JSON
+                       lists/colour/font, tools in the CellToolBar) with a
+                       transparent **pen/ink overlay** for freehand
+                       annotation. `source` is JSON
                        `{"kbook_note":1,"html":…,"ink":{ref_w,strokes}}` so
                        text + ink round-trip together.
   - `filepreview.py` — best-effort previews for structured attachment

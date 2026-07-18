@@ -110,13 +110,34 @@ class CellToolBar(QToolBar):
                 cell, method):
             getattr(cell, method)(*args)
 
+    def _note_cell(self):
+        cell = self._notebook.current
+        return cell if (cell is not None and cell.CELL_TYPE == "note") \
+            else None
+
     def _build_note(self):
-        self._add_menu("Style", "Paragraph style", [
-            ("Body text", lambda: self._note("set_heading", 0)),
-            ("Heading 1", lambda: self._note("set_heading", 1)),
-            ("Heading 2", lambda: self._note("set_heading", 2)),
-            ("Heading 3", lambda: self._note("set_heading", 3)),
-        ], icon_name="mdi.format-header-pound")
+        from PyQt5.QtCore import Qt
+        from PyQt5.QtWidgets import QComboBox, QFontComboBox, QSpinBox
+
+        font = QFontComboBox()
+        font.setMaximumWidth(150)
+        font.setToolTip("Font family")
+        font.currentFontChanged.connect(
+            lambda f: self._note("set_font_family", f.family()))
+        self.addWidget(font)
+        size = QSpinBox()
+        size.setRange(6, 96)
+        size.setValue(11)
+        size.setToolTip("Font size")
+        size.valueChanged.connect(lambda v: self._note("set_font_size", v))
+        self.addWidget(size)
+        heading = QComboBox()
+        heading.addItems(["Body", "Heading 1", "Heading 2", "Heading 3"])
+        heading.setToolTip("Paragraph style")
+        heading.activated.connect(lambda i: self._note("set_heading", i))
+        self.addWidget(heading)
+        self.addSeparator()
+
         self._add("Bold", "Bold", lambda: self._note("toggle_bold"),
                   "mdi.format-bold")
         self._add("Italic", "Italic", lambda: self._note("toggle_italic"),
@@ -134,6 +155,11 @@ class CellToolBar(QToolBar):
         self._add("Numbers", "Numbered list",
                   lambda: self._note("numbered_list"),
                   "mdi.format-list-numbered")
+        for side, al in (("left", Qt.AlignLeft), ("center", Qt.AlignCenter),
+                         ("right", Qt.AlignRight)):
+            self._add(side.title(), f"Align {side}",
+                      lambda _=False, a=al: self._note("set_align", a),
+                      f"mdi.format-align-{side}")
         self.addSeparator()
         self._add("Color", "Text colour…", lambda: self._note("pick_color"),
                   "mdi.format-color-text")
@@ -141,8 +167,28 @@ class CellToolBar(QToolBar):
                   lambda: self._note("pick_highlight"),
                   "mdi.format-color-highlight")
         self.addSeparator()
-        self._add("Pen", "Toggle the pen to annotate over the text",
-                  lambda: self._note("set_pen", True), "mdi.draw")
+
+        # Pen / ink: a checkable toggle plus colour, width, undo and clear.
+        cell = self._note_cell()
+        pen = QAction(icon("mdi.draw"), "Pen", self)
+        pen.setToolTip("Pen — write / annotate over the text")
+        pen.setCheckable(True)
+        pen.setChecked(bool(cell and cell.pen_active()))
+        pen.toggled.connect(lambda on: self._note("set_pen", on))
+        self.addAction(pen)
+        self._add("Pen colour", "Pen colour…",
+                  lambda: self._note("pick_ink_color"),
+                  "mdi.format-color-fill")
+        pen_w = QSpinBox()
+        pen_w.setRange(1, 40)
+        pen_w.setValue(3)
+        pen_w.setToolTip("Pen width")
+        pen_w.valueChanged.connect(lambda v: self._note("set_ink_width", v))
+        self.addWidget(pen_w)
+        self._add("Undo stroke", "Undo the last pen stroke",
+                  lambda: self._note("ink_undo"), "mdi.undo")
+        self._add("Clear ink", "Clear all pen strokes",
+                  lambda: self._note("ink_clear"), "mdi.eraser")
 
     # -- file attachment mode -----------------------------------------------
     def _file(self, method):
@@ -185,6 +231,15 @@ class CellToolBar(QToolBar):
         ], icon_name="mdi.shape-outline")
         self._add("Comment", "Comment out — <!-- … --> (Ctrl+/)",
                   self._editor_comment, "mdi.comment-text-outline")
+        self.addSeparator()
+        self._add("Open in KhervePaint", "Draw in the full KhervePaint app "
+                  "and reload on save", self._open_svg_in_paint,
+                  "mdi.draw-pen")
+
+    def _open_svg_in_paint(self):
+        cell = self._notebook.current
+        if cell is not None and hasattr(cell, "open_in_paint"):
+            cell.open_in_paint()
 
     # -- editor helpers ---------------------------------------------------
     def _editor(self):

@@ -1,11 +1,11 @@
 """SVG drawing cell — renders an SVG and lets you draw on it.
 
 A fifth cell type next to code/markdown/latex/sheet. Paste SVG source,
-or drop a .svg file (KherveScribe, the sibling drawing app, saves .svg),
+or drop a .svg file (KhervePaint, the sibling drawing app, saves .svg),
 and the cell renders the drawing. A toolbar adds the usual tools — pen,
 line, rectangle, ellipse, text, colour, stroke width, undo — which
 append real SVG elements to the source so it always stays valid SVG.
-"Open in KherveScribe" hands the drawing to the full drawing app and
+"Open in KhervePaint" hands the drawing to the full drawing app and
 reloads it when you export back to the same file.
 
 Copyright (C) 2026 Gwilherm Kerherve
@@ -337,9 +337,9 @@ class SvgCell(CellWidget):
         row.addWidget(edit)
         scribe = QToolButton()
         scribe.setIcon(icon("mdi.draw-pen"))
-        scribe.setToolTip("Open in KherveScribe (the full drawing app)")
+        scribe.setToolTip("Open in KhervePaint (the full drawing app)")
         scribe.setAutoRaise(True)
-        scribe.clicked.connect(self.open_in_scribe)
+        scribe.clicked.connect(self.open_in_paint)
         row.addWidget(scribe)
         return bar
 
@@ -382,13 +382,13 @@ class SvgCell(CellWidget):
         self.editor.show()
         self.editor.setFocus()
 
-    # -- KherveScribe round-trip -------------------------------------------
-    def open_in_scribe(self):
+    # -- KhervePaint round-trip --------------------------------------------
+    def open_in_paint(self):
         repo = Path(__file__).resolve().parents[2] / "KhervePaint"
-        if not (repo / "khervescribe" / "__main__.py").exists():
+        if not (repo / "khervepaint" / "__main__.py").exists():
             QMessageBox.information(
-                self, "KherveScribe",
-                "KherveScribe was not found next to KherveBook "
+                self, "KhervePaint",
+                "KhervePaint was not found next to KherveBook "
                 f"(looked in {repo}).")
             return
         tmp = Path(tempfile.gettempdir()) / f"khervebook_svg_{id(self)}.svg"
@@ -397,21 +397,21 @@ class SvgCell(CellWidget):
             "Scripts/python.exe" if os.name == "nt" else "bin/python")
         python = str(venv) if venv.exists() else sys.executable
         try:
-            subprocess.Popen([python, "-m", "khervescribe", str(tmp)],
+            subprocess.Popen([python, "-m", "khervepaint", str(tmp)],
                              cwd=str(repo))
         except Exception as exc:
-            QMessageBox.warning(self, "KherveScribe",
-                                f"Could not launch KherveScribe:\n{exc}")
+            QMessageBox.warning(self, "KhervePaint",
+                                f"Could not launch KhervePaint:\n{exc}")
             return
         if self._watcher is None:
             self._watcher = QFileSystemWatcher(self)
             self._watcher.fileChanged.connect(self._on_scribe_saved)
         self._watcher.addPath(str(tmp))
         QMessageBox.information(
-            self, "Editing in KherveScribe",
-            "This drawing is opening in KherveScribe.\n\nEdit it there, "
+            self, "Editing in KhervePaint",
+            "This drawing is opening in KhervePaint.\n\nEdit it there, "
             "then Save (Ctrl+S) — KherveBook reloads it automatically.\n\n"
-            "If it doesn't open on its own (older KherveScribe), use "
+            "If it doesn't open on its own (older KhervePaint), use "
             "File ▸ Open on:\n" + str(tmp))
 
     def _on_scribe_saved(self, path):

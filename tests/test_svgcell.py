@@ -84,7 +84,7 @@ def test_svg_cell_coordinate_round_trip(qapp):
     assert abs(sx - 150) < 3 and abs(sy - 90) < 3
 
 
-def test_svg_cell_open_in_scribe_is_callable(qapp):
+def test_svg_cell_open_in_paint_is_callable(qapp):
     from khervebook.svgcell import SvgCell
     cell = SvgCell()
-    assert hasattr(cell, "open_in_scribe") and callable(cell.open_in_scribe)
+    assert hasattr(cell, "open_in_paint") and callable(cell.open_in_paint)

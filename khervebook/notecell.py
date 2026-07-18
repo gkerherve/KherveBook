@@ -21,15 +21,13 @@ the Free Software Foundation, either version 3 of the License, or
 
 import json
 
-from PyQt5.QtCore import QEvent, QPointF, QSize, Qt, pyqtSignal
+from PyQt5.QtCore import QEvent, QPointF, Qt, pyqtSignal
 from PyQt5.QtGui import (QColor, QFont, QPainter, QPen, QPolygonF,
                          QTextCharFormat, QTextCursor, QTextListFormat)
-from PyQt5.QtWidgets import (QColorDialog, QComboBox, QFontComboBox, QFrame,
-                             QHBoxLayout, QSizePolicy, QSpinBox, QTextEdit,
-                             QToolButton, QWidget)
+from PyQt5.QtWidgets import (QColorDialog, QFrame, QHBoxLayout, QSizePolicy,
+                             QTextEdit, QWidget)
 
 from .cells import CELL_CLASSES, CellWidget
-from .icons import icon
 
 #: Starter content for a brand-new note cell.
 NOTE_STARTER = json.dumps({
@@ -182,7 +180,7 @@ class _RichEdit(QTextEdit):
 
     def _fit(self):
         h = int(self.document().size().height()) + 10
-        self.setFixedHeight(max(48, min(h, self.MAX_HEIGHT)))
+        self.setFixedHeight(max(90, min(h, self.MAX_HEIGHT)))
 
     def focusInEvent(self, event):
         super().focusInEvent(event)
@@ -215,93 +213,12 @@ class NoteCell(CellWidget):
         stack_layout.addWidget(self.rich)
         self.ink = _InkOverlay(self._stack)
         self.ink.changed.connect(self.content_changed.emit)
-        self._pen_btn = None
-        self.column.insertWidget(0, self._build_toolbar())
+        # No in-cell toolbar: the formatting + pen tools live in the main
+        # window's second toolbar row (CellToolBar), which follows the
+        # focused cell. That keeps the cell itself just the writing page,
+        # free to be resized/expanded with the cell grips.
         self.column.addWidget(self._stack)
         self.set_source(source or NOTE_STARTER)
-
-    # -- in-cell toolbar ---------------------------------------------------
-    def _build_toolbar(self) -> QWidget:
-        bar = QWidget()
-        row = QHBoxLayout(bar)
-        row.setContentsMargins(0, 0, 0, 2)
-        row.setSpacing(2)
-
-        self._font_combo = QFontComboBox()
-        self._font_combo.setMaximumWidth(150)
-        self._font_combo.setToolTip("Font family")
-        self._font_combo.currentFontChanged.connect(
-            lambda f: self._merge(lambda fmt: fmt.setFontFamily(f.family())))
-        row.addWidget(self._font_combo)
-        self._size_spin = QSpinBox()
-        self._size_spin.setRange(6, 96)
-        self._size_spin.setValue(11)
-        self._size_spin.setToolTip("Font size")
-        self._size_spin.valueChanged.connect(
-            lambda v: self._merge(lambda fmt: fmt.setFontPointSize(v)))
-        row.addWidget(self._size_spin)
-
-        self._heading_combo = QComboBox()
-        self._heading_combo.addItems(["Body", "Heading 1", "Heading 2",
-                                      "Heading 3"])
-        self._heading_combo.setToolTip("Paragraph style")
-        self._heading_combo.activated.connect(self.set_heading)
-        row.addWidget(self._heading_combo)
-
-        self._tool_btn("mdi.format-bold", "Bold", self.toggle_bold, row)
-        self._tool_btn("mdi.format-italic", "Italic", self.toggle_italic, row)
-        self._tool_btn("mdi.format-underline", "Underline",
-                       self.toggle_underline, row)
-        self._tool_btn("mdi.format-strikethrough-variant", "Strikethrough",
-                       self.toggle_strike, row)
-        self._tool_btn("mdi.format-list-bulleted", "Bulleted list",
-                       self.bullet_list, row)
-        self._tool_btn("mdi.format-list-numbered", "Numbered list",
-                       self.numbered_list, row)
-        for side, al in (("left", Qt.AlignLeft), ("center", Qt.AlignCenter),
-                         ("right", Qt.AlignRight)):
-            self._tool_btn(f"mdi.format-align-{side}", f"Align {side}",
-                           lambda a=al: self.set_align(a), row)
-        self._tool_btn("mdi.format-color-text", "Text colour",
-                       self.pick_color, row)
-        self._tool_btn("mdi.format-color-highlight", "Highlight colour",
-                       self.pick_highlight, row)
-        row.addSpacing(6)
-
-        self._pen_btn = QToolButton()
-        self._pen_btn.setIcon(icon("mdi.draw"))
-        self._pen_btn.setToolTip("Pen — annotate over the text")
-        self._pen_btn.setCheckable(True)
-        self._pen_btn.setAutoRaise(True)
-        self._pen_btn.toggled.connect(self.set_pen)
-        row.addWidget(self._pen_btn)
-        self._ink_color_btn = QToolButton()
-        self._ink_color_btn.setToolTip("Pen colour")
-        self._ink_color_btn.setAutoRaise(True)
-        self._ink_color_btn.clicked.connect(self.pick_ink_color)
-        self._refresh_ink_color()
-        row.addWidget(self._ink_color_btn)
-        self._ink_width = QSpinBox()
-        self._ink_width.setRange(1, 40)
-        self._ink_width.setValue(3)
-        self._ink_width.setToolTip("Pen width")
-        self._ink_width.valueChanged.connect(
-            lambda v: setattr(self.ink, "width_px", v))
-        row.addWidget(self._ink_width)
-        self._tool_btn("mdi.undo", "Undo last pen stroke", self.ink.undo, row)
-        self._tool_btn("mdi.eraser", "Clear all pen strokes",
-                       self.ink.clear, row)
-        row.addStretch(1)
-        return bar
-
-    def _tool_btn(self, icon_name, tip, slot, row):
-        btn = QToolButton()
-        btn.setIcon(icon(icon_name))
-        btn.setToolTip(tip)
-        btn.setAutoRaise(True)
-        btn.clicked.connect(lambda _=False: slot())
-        row.addWidget(btn)
-        return btn
 
     # -- ink overlay sizing ------------------------------------------------
     def resizeEvent(self, event):
@@ -311,23 +228,34 @@ class NoteCell(CellWidget):
     def _sync_ink_geometry(self):
         self.ink.setGeometry(self.rich.geometry())
 
+    # -- pen / ink (driven by the CellToolBar) -----------------------------
     def set_pen(self, on: bool):
         self.ink.set_pen(on)
         self._sync_ink_geometry()
-        if self._pen_btn is not None and self._pen_btn.isChecked() != on:
-            self._pen_btn.setChecked(on)
+
+    def pen_active(self) -> bool:
+        return self.ink.pen_on
 
     def pick_ink_color(self):
         col = QColorDialog.getColor(self.ink.color, self, "Pen colour")
         if col.isValid():
             self.ink.color = col
-            self._refresh_ink_color()
 
-    def _refresh_ink_color(self):
-        self._ink_color_btn.setStyleSheet(
-            f"QToolButton{{background:{self.ink.color.name()};"
-            f"border:1px solid #888;border-radius:3px;min-width:20px;"
-            f"min-height:18px}}")
+    def set_ink_width(self, width: int):
+        self.ink.width_px = width
+
+    def ink_undo(self):
+        self.ink.undo()
+
+    def ink_clear(self):
+        self.ink.clear()
+
+    # -- font (driven by the CellToolBar) ----------------------------------
+    def set_font_family(self, family: str):
+        self._merge(lambda fmt: fmt.setFontFamily(family))
+
+    def set_font_size(self, points: int):
+        self._merge(lambda fmt: fmt.setFontPointSize(points))
 
     # -- rich-text formatting (also called by the CellToolBar) -------------
     def _merge(self, apply_fn):

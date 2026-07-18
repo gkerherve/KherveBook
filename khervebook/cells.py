@@ -46,9 +46,12 @@ class _AutoScroll(QScrollArea):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        # Transparent so cell content sits on the white cell card, not the
-        # grey notebook background painted behind transparent widgets.
-        self.viewport().setStyleSheet("background: transparent;")
+        # See-through so cell content sits on the white cell card. Use
+        # autoFillBackground(False), NOT a "background: transparent"
+        # stylesheet — the latter resolves to a *black* Window palette
+        # colour that propagates into child popups (combo lists, context
+        # menus), rendering them black-on-black.
+        self.viewport().setAutoFillBackground(False)
         self._cap = None
         inner.installEventFilter(self)
         self._refresh()

@@ -48,11 +48,24 @@ def test_drop_svg_file_makes_svg_cell(qapp, tmp_path):
     assert nb.current.view.isVisibleTo(nb)        # rendered on drop
 
 
-def test_svg_cell_has_drawing_toolbar(qapp):
+def test_svg_cell_tool_api(qapp):
+    """The drawing tools live in the CellToolBar and drive the cell's
+    set_tool()/current_tool() API."""
+    from khervebook.svgcell import SvgCell
+    keys = [k for k, _icon, _tip in SvgCell.TOOLS]
+    assert keys == ["select", "pen", "line", "rect", "ellipse", "text"]
+    cell = SvgCell()
+    cell.set_tool("pen")
+    assert cell.current_tool() == "pen"
+
+
+def test_svg_cell_renders_canvas_by_default(qapp):
+    """A new svg cell shows a (blank) canvas straight away so it can be
+    drawn on without first hitting Render."""
     from khervebook.svgcell import SvgCell
     cell = SvgCell()
-    for tool in ("select", "pen", "line", "rect", "ellipse", "text"):
-        assert tool in cell._tool_buttons
+    assert not cell.view.isHidden()
+    assert "<svg" in cell.source()
 
 
 def test_svg_cell_draws_shape_and_syncs_source(qapp):

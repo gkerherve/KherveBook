@@ -26,12 +26,10 @@ from PyQt5.QtCore import (QByteArray, QFileSystemWatcher, QPointF, QRectF,
                           QSize, Qt, pyqtSignal)
 from PyQt5.QtGui import QColor, QPainter, QPen, QPixmap, QPolygonF
 from PyQt5.QtSvg import QSvgRenderer
-from PyQt5.QtWidgets import (QColorDialog, QHBoxLayout, QInputDialog,
-                             QMessageBox, QSizePolicy, QSpinBox, QToolButton,
-                             QWidget)
+from PyQt5.QtWidgets import (QColorDialog, QInputDialog, QMessageBox,
+                             QSizePolicy, QWidget)
 
 from .cells import CELL_CLASSES, CellWidget, XmlHighlighter
-from .icons import icon
 from .style import tokens
 
 #: Starter SVG offered for a brand-new svg cell / the example.
@@ -41,6 +39,12 @@ STARTER_SVG = (
     '        fill="#eaf1fb" stroke="#2176c7" stroke-width="2"/>\n'
     '  <circle cx="90" cy="90" r="45" fill="#50bea0"/>\n'
     '  <text x="170" y="96" font-size="22" fill="#2e3440">Hello SVG</text>\n'
+    '</svg>')
+
+#: A blank white canvas for a brand-new drawing (pick a tool and draw).
+BLANK_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500">\n'
+    '  <rect x="0" y="0" width="800" height="500" fill="#ffffff"/>\n'
     '</svg>')
 
 
@@ -73,6 +77,10 @@ class _SvgDrawSurface(QWidget):
 
     changed = pyqtSignal()           # source modified by a drawing action
     edit_requested = pyqtSignal()    # double-click while the Select tool is on
+    pressed = pyqtSignal()           # mouse pressed (select the cell)
+
+    #: comfortable minimum canvas so there's room to draw.
+    MIN_CANVAS = 260
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -88,7 +96,9 @@ class _SvgDrawSurface(QWidget):
         policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         policy.setHeightForWidth(True)
         self.setSizePolicy(policy)
-        self.setMinimumHeight(80)
+        self.setMinimumHeight(self.MIN_CANVAS)
+        self.setFocusPolicy(Qt.ClickFocus)
+        self.setCursor(Qt.CrossCursor)
 
     # -- source ------------------------------------------------------------
     def set_svg(self, src: str):
@@ -119,7 +129,7 @@ class _SvgDrawSurface(QWidget):
         return True
 
     def heightForWidth(self, w):
-        return max(80, int(w / max(0.2, self._aspect())))
+        return max(self.MIN_CANVAS, int(w / max(0.2, self._aspect())))
 
     def sizeHint(self):
         w = self.width() or 400
@@ -180,6 +190,7 @@ class _SvgDrawSurface(QWidget):
 
     # -- mouse drawing -----------------------------------------------------
     def mousePressEvent(self, event):
+        self.pressed.emit()          # focus/select the cell so its tools show
         if self.tool == "select" or self._renderer is None:
             return
         sx, sy = self._to_svg(event.pos())
@@ -267,18 +278,21 @@ class _SvgDrawSurface(QWidget):
 
 
 class SvgCell(CellWidget):
-    """Renders and draws on an SVG; toolbar tools edit the source live."""
+    """Renders and draws on an SVG. The drawing tools (select/pen/line/
+    rect/ellipse/text, colour, width, undo) live in the main window's
+    second toolbar row (CellToolBar) and drive this cell's methods."""
 
     CELL_TYPE = "svg"
     COMMENT = ("<!-- ", " -->")           # Ctrl+/ comment syntax (XML)
 
-    _TOOLS = (("select", "mdi.cursor-default-outline", "Select / double-click "
-               "the drawing to edit its source"),
-              ("pen", "mdi.draw", "Freehand pen"),
-              ("line", "mdi.vector-line", "Line"),
-              ("rect", "mdi.rectangle-outline", "Rectangle"),
-              ("ellipse", "mdi.ellipse-outline", "Ellipse"),
-              ("text", "mdi.format-text", "Text"))
+    #: (key, icon, tooltip) for the drawing tools, shown in the CellToolBar.
+    TOOLS = (("select", "mdi.cursor-default-outline", "Select / double-click "
+              "the drawing to edit its source"),
+             ("pen", "mdi.draw", "Freehand pen"),
+             ("line", "mdi.vector-line", "Line"),
+             ("rect", "mdi.rectangle-outline", "Rectangle"),
+             ("ellipse", "mdi.ellipse-outline", "Ellipse"),
+             ("text", "mdi.format-text", "Text"))
 
     def __init__(self, source=""):
         super().__init__(source)
@@ -288,84 +302,55 @@ class SvgCell(CellWidget):
         self.view = _SvgDrawSurface()
         self.view.changed.connect(self._on_drawn)
         self.view.edit_requested.connect(self._edit_again)
+        self.view.pressed.connect(lambda: self.focused.emit(self))
         self.view.hide()
-        self._tool_buttons = {}
         self._watcher = None
-        self.column.insertWidget(0, self._build_toolbar())
         self.column.addWidget(self.view)
+        # Show the drawing canvas straight away so there is always
+        # something to draw on (a blank canvas for a new/empty cell).
+        self.execute(None)
 
-    def _build_toolbar(self) -> QWidget:
-        bar = QWidget()
-        row = QHBoxLayout(bar)
-        row.setContentsMargins(0, 0, 0, 2)
-        row.setSpacing(2)
-        for key, icon_name, tip in self._TOOLS:
-            btn = QToolButton()
-            btn.setIcon(icon(icon_name))
-            btn.setToolTip(tip)
-            btn.setCheckable(True)
-            btn.setAutoRaise(True)
-            btn.setChecked(key == "select")
-            btn.clicked.connect(lambda _=False, k=key: self._set_tool(k))
-            row.addWidget(btn)
-            self._tool_buttons[key] = btn
-        self._color_btn = QToolButton()
-        self._color_btn.setToolTip("Stroke / text colour")
-        self._color_btn.setAutoRaise(True)
-        self._color_btn.clicked.connect(self._pick_color)
-        self._refresh_color_btn()
-        row.addWidget(self._color_btn)
-        self._width_spin = QSpinBox()
-        self._width_spin.setRange(1, 40)
-        self._width_spin.setValue(3)
-        self._width_spin.setToolTip("Stroke width")
-        self._width_spin.valueChanged.connect(
-            lambda v: setattr(self.view, "stroke_width", v))
-        row.addWidget(self._width_spin)
-        undo = QToolButton()
-        undo.setIcon(icon("mdi.undo"))
-        undo.setToolTip("Undo last drawn shape")
-        undo.setAutoRaise(True)
-        undo.clicked.connect(self.view.undo_shape)
-        row.addWidget(undo)
-        row.addStretch(1)
-        edit = QToolButton()
-        edit.setIcon(icon("mdi.code-tags"))
-        edit.setToolTip("Edit the SVG source")
-        edit.setAutoRaise(True)
-        edit.clicked.connect(self._edit_again)
-        row.addWidget(edit)
-        scribe = QToolButton()
-        scribe.setIcon(icon("mdi.draw-pen"))
-        scribe.setToolTip("Open in KhervePaint (the full drawing app)")
-        scribe.setAutoRaise(True)
-        scribe.clicked.connect(self.open_in_paint)
-        row.addWidget(scribe)
-        return bar
-
-    def _set_tool(self, key):
+    # -- tool API (called by the CellToolBar) ------------------------------
+    def set_tool(self, key: str):
         self.view.tool = key
-        for k, btn in self._tool_buttons.items():
-            btn.setChecked(k == key)
-        if key != "select" and self.view.isHidden():
-            self.execute(None)              # render so there's a canvas to draw on
+        if self.view.isHidden():
+            self.execute(None)              # render so there's a canvas
+        self.focused.emit(self)
 
-    def _pick_color(self):
+    def current_tool(self) -> str:
+        return self.view.tool
+
+    def pick_color(self):
         col = QColorDialog.getColor(self.view.color, self, "Stroke colour")
         if col.isValid():
             self.view.color = col
-            self._refresh_color_btn()
 
-    def _refresh_color_btn(self):
-        self._color_btn.setStyleSheet(
-            f"QToolButton{{background:{self.view.color.name()};"
-            f"border:1px solid #888;border-radius:3px;min-width:20px;"
-            f"min-height:18px}}")
+    def set_stroke_width(self, width: int):
+        self.view.stroke_width = width
+
+    def undo_shape(self):
+        self.view.undo_shape()
+
+    def insert_svg(self, element: str):
+        """Append a ready-made SVG element (the Shape menu) and re-render."""
+        if self.view.isHidden():
+            self.execute(None)
+        self.view._commit(element)
+
+    def edit_source(self):
+        self._edit_again()
+
+    def focus_editor(self):
+        # Focusing an svg cell shows its canvas, not the raw source editor.
+        if self.view.isHidden() and self.source().strip():
+            self.execute(None)
+        (self.view if not self.view.isHidden() else self.editor).setFocus()
 
     def execute(self, kernel):
         src = self.source().strip()
         if not src:
-            return
+            src = BLANK_SVG                 # a fresh white canvas to draw on
+            self.set_source(src)
         self.editor.hide()
         self.view.set_svg(src)
         self.view.show()

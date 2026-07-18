@@ -208,29 +208,65 @@ class CellToolBar(QToolBar):
         self._add("Copy reference", "Copy the kf(\"name\") code reference",
                   lambda: self._file("copy_reference"), "mdi.code-tags")
 
-    # -- SVG mode -------------------------------------------------------------
+    # -- SVG (drawing) mode ---------------------------------------------------
+    def _svg_cell(self):
+        cell = self._notebook.current
+        return cell if (cell is not None and cell.CELL_TYPE == "svg") \
+            else None
+
+    def _svg(self, method, *args):
+        cell = self._svg_cell()
+        if cell is not None and hasattr(cell, method):
+            getattr(cell, method)(*args)
+
     def _build_svg(self):
-        self._add("Render", "Render the drawing (Shift+Enter)",
-                  self._notebook.run_current, "mdi.eye-outline",
-                  color="#27ae60")
+        from PyQt5.QtWidgets import QActionGroup, QSpinBox
+        from .svgcell import SvgCell
+        cell = self._svg_cell()
+        current = cell.current_tool() if cell else "select"
+        group = QActionGroup(self)
+        group.setExclusive(True)
+        for key, icon_name, tip in SvgCell.TOOLS:
+            act = QAction(icon(icon_name), key.title(), self)
+            act.setToolTip(tip)
+            act.setCheckable(True)
+            act.setChecked(key == current)
+            act.triggered.connect(
+                lambda _=False, k=key: self._svg("set_tool", k))
+            group.addAction(act)
+            self.addAction(act)
         self.addSeparator()
-        self._add_menu("Shape", "Insert an SVG shape", [
-            ("Rectangle", lambda: self._insert(
-                '<rect x="20" y="20" width="120" height="80" rx="6" '
+        self._add("Colour", "Stroke / text colour…",
+                  lambda: self._svg("pick_color"), "mdi.palette")
+        width = QSpinBox()
+        width.setRange(1, 40)
+        width.setValue(3)
+        width.setToolTip("Stroke / line width")
+        width.valueChanged.connect(lambda v: self._svg("set_stroke_width", v))
+        self.addWidget(width)
+        self._add("Undo", "Undo the last drawn shape",
+                  lambda: self._svg("undo_shape"), "mdi.undo")
+        self.addSeparator()
+        self._add_menu("Shape", "Insert a ready-made SVG shape", [
+            ("Rectangle", lambda: self._svg("insert_svg",
+                '<rect x="60" y="60" width="160" height="110" rx="8" '
                 'fill="#50bea0"/>')),
-            ("Circle", lambda: self._insert(
-                '<circle cx="80" cy="80" r="50" fill="#2176c7"/>')),
-            ("Line", lambda: self._insert(
-                '<line x1="10" y1="10" x2="200" y2="120" '
+            ("Circle", lambda: self._svg("insert_svg",
+                '<circle cx="140" cy="120" r="60" fill="#2176c7"/>')),
+            ("Line", lambda: self._svg("insert_svg",
+                '<line x1="40" y1="40" x2="260" y2="180" '
                 'stroke="#333" stroke-width="3"/>')),
-            ("Text", lambda: self._insert(
-                '<text x="20" y="44" font-size="20" fill="#333">label</text>')),
-            ("Curve (path)", lambda: self._insert(
-                '<path d="M10,90 Q100,10 190,90" stroke="#c0392b" '
+            ("Text", lambda: self._svg("insert_svg",
+                '<text x="60" y="90" font-size="24" fill="#333">label</text>')),
+            ("Curve (path)", lambda: self._svg("insert_svg",
+                '<path d="M40,160 Q160,20 280,160" stroke="#c0392b" '
                 'fill="none" stroke-width="3"/>')),
         ], icon_name="mdi.shape-outline")
-        self._add("Comment", "Comment out — <!-- … --> (Ctrl+/)",
-                  self._editor_comment, "mdi.comment-text-outline")
+        self._add("Edit source", "Edit the raw SVG source",
+                  lambda: self._svg("edit_source"), "mdi.code-tags")
+        self._add("Render", "Render / show the drawing (Shift+Enter)",
+                  self._notebook.run_current, "mdi.eye-outline",
+                  color="#27ae60")
         self.addSeparator()
         self._add("Open in KhervePaint", "Draw in the full KhervePaint app "
                   "and reload on save", self._open_svg_in_paint,

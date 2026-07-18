@@ -315,18 +315,32 @@ class FileCell(CellWidget):
                 return lbl
         text = self._as_text(data, ext)
         if text is not None:
-            lines = text.splitlines()[:_PREVIEW_LINES]
-            snippet = "\n".join(lines)[:_PREVIEW_CHARS]
-            if len(text) > len(snippet):
-                snippet += "\n…"
-            lbl = QLabel(snippet or "(empty file)")
-            lbl.setFont(MONO)
-            lbl.setStyleSheet(
-                "border: none; background: palette(base); padding: 4px;")
-            lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
-            lbl.setWordWrap(False)
-            return lbl
+            snippet = self._snippet(text)
+            return self._mono_label(snippet or "(empty file)")
+        # Structured scientific formats (xlsx / ksheet / kfit) get a summary.
+        from . import filepreview
+        summary = filepreview.summarize(att.name, data)
+        if summary:
+            return self._mono_label(summary)
         return self._preview_note("binary file — kept as-is (not previewed)")
+
+    @staticmethod
+    def _snippet(text: str) -> str:
+        lines = text.splitlines()[:_PREVIEW_LINES]
+        snippet = "\n".join(lines)[:_PREVIEW_CHARS]
+        if len(text) > len(snippet):
+            snippet += "\n…"
+        return snippet
+
+    @staticmethod
+    def _mono_label(text: str) -> QLabel:
+        lbl = QLabel(text)
+        lbl.setFont(MONO)
+        lbl.setStyleSheet(
+            "border: none; background: palette(base); padding: 4px;")
+        lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        lbl.setWordWrap(False)
+        return lbl
 
     @staticmethod
     def _preview_note(text):

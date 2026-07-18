@@ -134,6 +134,85 @@ def test_file_cell_text_preview_non_none(qapp, tmp_path):
     assert cell._as_text(b"\x00\x01\x02\xff", ".bin") is None
 
 
+# -- structured-format previews -------------------------------------------
+
+def test_preview_xlsx():
+    import io
+    from openpyxl import Workbook
+    from khervebook import filepreview
+    wb = Workbook()
+    wb.active.title = "Data"
+    wb.active.append(["name", "value"])
+    wb.active.append(["Alpha", 3.14])
+    wb.create_sheet("Notes")
+    b = io.BytesIO()
+    wb.save(b)
+    summary = filepreview.summarize("x.xlsx", b.getvalue())
+    assert summary and "Excel workbook" in summary
+    assert "Data" in summary and "Notes" in summary
+    assert "Alpha" in summary
+
+
+def test_preview_ksheet():
+    import io
+    import numpy as np
+    import h5py
+    from khervebook import filepreview
+    bio = io.BytesIO()
+    with h5py.File(bio, "w") as f:
+        f.attrs["format"] = "ksheet"
+        f.attrs["sheet_count"] = 2
+        g = f.create_group("sheet_0")
+        g.attrs["name"] = "Survey"
+        g.attrs["rows"] = 100
+        g.attrs["cols"] = 5
+        g.create_dataset("cells", data=np.array([b""] * 500))
+        g2 = f.create_group("sheet_1")
+        g2.attrs["name"] = "Fit"
+        g2.attrs["rows"] = 20
+        g2.attrs["cols"] = 3
+        g2.create_dataset("cells", data=np.array([b""] * 60))
+    summary = filepreview.summarize("wb.ksheet", bio.getvalue())
+    assert summary and "KherveSheet workbook" in summary
+    assert "Survey (100×5)" in summary and "Fit (20×3)" in summary
+
+
+def test_preview_kfit():
+    import io
+    import numpy as np
+    import h5py
+    from khervebook import filepreview
+    bio = io.BytesIO()
+    with h5py.File(bio, "w") as f:
+        f.attrs["format"] = "kfitting"
+        cl = f.create_group("core_levels")
+        for i, nm in enumerate(["Survey", "C1s", "O1s"]):
+            g = cl.create_group(f"cl_{i}")
+            g.attrs["name"] = nm
+    summary = filepreview.summarize("p.kfit", bio.getvalue())
+    assert summary and "KherveFitting project" in summary
+    assert "3 core levels" in summary
+    assert "Survey" in summary and "C1s" in summary
+
+
+def test_file_cell_shows_structured_preview(qapp, tmp_path):
+    import io
+    from openpyxl import Workbook
+    from khervebook.filecell import FileCell
+    wb = Workbook()
+    wb.active.append(["a", "b"])
+    p = tmp_path / "book.xlsx"
+    wb.save(str(p))
+    cell = FileCell()
+    cell.attach(str(p))
+    # a preview widget (not the generic binary note) is produced
+    att = cell._items[0]
+    w = cell._preview_widget(att)
+    from PyQt5.QtWidgets import QLabel
+    assert isinstance(w, QLabel)
+    assert "Excel workbook" in w.text()
+
+
 def test_file_cell_resolved_path_and_kf(qapp, tmp_path):
     from khervebook.notebook import NotebookWidget
     small = tmp_path / "notes.txt"

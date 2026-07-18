@@ -98,9 +98,16 @@ into a new module and import.
                        overlay** for freehand annotation. `source` is JSON
                        `{"kbook_note":1,"html":…,"ink":{ref_w,strokes}}` so
                        text + ink round-trip together.
+  - `filepreview.py` — best-effort previews for structured attachment
+                       formats shown in a File cell: `.xlsx` (openpyxl),
+                       `.ksheet` (HDF5 workbook) and `.kfit` (KherveFitting
+                       HDF5 project — core-level names + sample). Optional-
+                       dependency-safe; returns None to fall back to the
+                       "binary, kept as-is" note.
   - `filecell.py`    — `FileCell`: holds **one or more** attached files
                        (each an `_Attachment`), showing a preview per file
-                       (text snippet / image thumbnail; binaries kept but
+                       (text snippet / image thumbnail / structured-format
+                       summary via `filepreview`; other binaries kept but
                        not previewed). **Hybrid**, per file — small files
                        (≤ `EMBED_LIMIT`, 256 KiB) embed base64 in the
                        `.kbook`; larger files are written to a sidecar

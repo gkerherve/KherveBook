@@ -89,6 +89,28 @@ into a new module and import.
                        `LatexCell`; the editor has a find bar (Ctrl+F)
                        and, for prose cells, a right-click Synonyms menu;
                        code cells add a right-click Highlight Theme menu.
+                       `CellWidget.focus_editor()` focuses a cell's primary
+                       editor (note/file override it — their editor isn't
+                       the base plain-text one).
+  - `notecell.py`    — `NoteCell`: a WYSIWYG "Word"-style rich-text page
+                       (a QTextEdit you format live — bold/italic/headings/
+                       lists/colour/font) with a transparent **pen/ink
+                       overlay** for freehand annotation. `source` is JSON
+                       `{"kbook_note":1,"html":…,"ink":{ref_w,strokes}}` so
+                       text + ink round-trip together.
+  - `filecell.py`    — `FileCell`: holds an attached file. **Hybrid**
+                       storage — small files (≤ `EMBED_LIMIT`, 256 KiB)
+                       embed base64 in the `.kbook`; larger files are
+                       written to a sidecar `<stem>_files/` folder beside
+                       the notebook (so the per-document Git repo versions
+                       them) and only a relative path is stored. Code cells
+                       reach an attachment by name via the kernel helper
+                       `kf("data.csv")`, returning an absolute path
+                       (embedded files extracted to a temp file on demand);
+                       `kf()` with no arg returns the notebook's folder.
+                       `NotebookWidget.set_document_path`/`prepare_save`
+                       plumb the folder in; `materialize()` externalises
+                       large attachments on save.
   - `hltheme.py`     — named highlight themes for Python cells (Monokai,
                        Dracula, Solarized, …) + the QSettings-persisted
                        choice; "Auto" follows the app light/dark theme.
@@ -138,9 +160,13 @@ into a new module and import.
 
 ## Document format
 
-`.kbook` is JSON: `{"format": "kbook", "version": 3, "cells":
-[{"type": "code"|"markdown"|"latex"|"sheet"|"svg"|"js", "source": "...",
-optional "title", "collapsed", "column", "width", "height"}]}`. The
+`.kbook` is JSON: `{"format": "kbook", "version": 5, "cells":
+[{"type": "code"|"markdown"|"note"|"latex"|"sheet"|"svg"|"js"|"file",
+"source": "...", optional "title", "collapsed", "column", "width",
+"height"}]}`. A `note` cell's `source` is JSON
+`{"kbook_note":1,"html":…,"ink":…}`; a `file` cell's `source` is JSON
+`{"kbook_file":1,"name","size", "embed"(base64) | "path"(sidecar rel)}`
+— large attachments live in the `<stem>_files/` folder, not the JSON. The
 optional per-cell keys: `title` (heading shown at the top),
 `collapsed` (minimised to its title/summary), `column` (sits beside
 the previous cell in the same row), `width`/`height` (px, from the

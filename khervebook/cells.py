@@ -993,6 +993,12 @@ class CellWidget(QFrame):
             self.column.addWidget(self._find_bar)
         self._find_bar.open()
 
+    def focus_editor(self):
+        """Show and focus this cell's primary editor. Cell types whose
+        editor isn't the base plain-text one (note, file) override this."""
+        self.editor.show()
+        self.editor.setFocus()
+
     def contextMenuEvent(self, event):
         self.menu_requested.emit(self, event.globalPos())
 

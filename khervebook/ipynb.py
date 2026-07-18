@@ -79,16 +79,51 @@ def _cell_to_ipynb(item: dict) -> dict:
     if t == "markdown":
         return {"cell_type": "markdown", "metadata": meta,
                 "source": _split(src)}
-    # latex / sheet: render as markdown, keep the original for round-trip.
+    # Other cell types (latex/sheet/note/svg/js/file) have no Jupyter
+    # equivalent: render a readable markdown display and keep the original
+    # type + source in metadata so a round-trip is lossless.
     kb = meta.setdefault("khervebook", {})
     kb["type"] = t
     kb["source"] = src
-    if t == "latex":
-        body = ("```latex\n" + src + "\n```" if is_document(src)
-                else "$$\n" + src.strip() + "\n$$")
-    else:
-        body = _sheet_markdown(src)
+    body = _display_body(t, src)
     return {"cell_type": "markdown", "metadata": meta, "source": _split(body)}
+
+
+def _note_markdown(src: str) -> str:
+    """A Note cell's HTML as a markdown display block (Jupyter renders it)."""
+    try:
+        doc = json.loads(src)
+        if isinstance(doc, dict) and "html" in doc:
+            return doc["html"]
+    except (ValueError, TypeError):
+        pass
+    return src
+
+
+def _file_markdown(src: str) -> str:
+    try:
+        doc = json.loads(src)
+        name = doc.get("name") if isinstance(doc, dict) else None
+    except (ValueError, TypeError):
+        name = None
+    return f"📎 **Attached file:** `{name}`" if name else "📎 Attached file"
+
+
+def _display_body(t: str, src: str) -> str:
+    if t == "latex":
+        return ("```latex\n" + src + "\n```" if is_document(src)
+                else "$$\n" + src.strip() + "\n$$")
+    if t == "sheet":
+        return _sheet_markdown(src)
+    if t == "note":
+        return _note_markdown(src)
+    if t == "file":
+        return _file_markdown(src)
+    if t == "js":
+        return "```javascript\n" + src + "\n```"
+    if t == "svg":
+        return src if src.lstrip().startswith("<svg") else "```\n" + src + "\n```"
+    return "```\n" + src + "\n```"
 
 
 def to_ipynb(items: list) -> str:
@@ -115,7 +150,8 @@ def from_ipynb(text: str) -> list:
     for cell in nb.get("cells", []):
         meta = cell.get("metadata") or {}
         kb = meta.get("khervebook") or {}
-        if kb.get("type") in ("latex", "sheet") and "source" in kb:
+        if kb.get("type") in ("latex", "sheet", "note", "svg", "js",
+                              "file") and "source" in kb:
             item = {"type": kb["type"], "source": kb["source"]}
         else:
             ct = cell.get("cell_type", "code")

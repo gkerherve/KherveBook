@@ -121,11 +121,21 @@ class MainWindow(QMainWindow):
         from .jscell import JS_STARTER
         self.notebook.add_cell_below("js", JS_STARTER)
 
+    def _add_note_cell(self):
+        from .notecell import NOTE_STARTER
+        self.notebook.add_cell_below("note", NOTE_STARTER)
+
+    def _add_file_cell(self):
+        """Add a File cell and immediately prompt for a file to attach."""
+        cell = self.notebook.add_cell_below("file")
+        cell.choose_file()
+
     def _load_example(self, builder):
         if not self._confirm_discard():
             return
         examples.load_example(self.notebook, builder)
         self.path = None
+        self.notebook.set_document_path(None)
         self.dirty = False
         self._update_title()
 
@@ -176,6 +186,8 @@ class MainWindow(QMainWindow):
                               lambda: self.notebook.add_cell_below("code")))
         c.addAction(self._act("Add &Markdown Cell", "Ctrl+Shift+M",
                               lambda: self.notebook.add_cell_below("markdown")))
+        c.addAction(self._act("Add &Note Cell", "Ctrl+Shift+E",
+                              self._add_note_cell))
         c.addAction(self._act("Add &LaTeX Cell", "Ctrl+Shift+L",
                               lambda: self.notebook.add_cell_below("latex")))
         c.addAction(self._act("Add &Sheet Cell", "Ctrl+Shift+T",
@@ -184,6 +196,8 @@ class MainWindow(QMainWindow):
                               self._add_svg_cell))
         c.addAction(self._act("Add &JavaScript Cell", None,
                               self._add_js_cell))
+        c.addAction(self._act("Attach &File Cell...", None,
+                              self._add_file_cell))
         c.addSeparator()
         c.addAction(self._act("&Run Cell", "Ctrl+Return",
                               self.notebook.run_current))
@@ -294,8 +308,8 @@ class MainWindow(QMainWindow):
 
     #: (label, type-key) pairs for the Jupyter-style cell-type selector.
     CELL_TYPES = [("Code", "code"), ("Markdown", "markdown"),
-                  ("LaTeX", "latex"), ("Sheet", "sheet"), ("SVG", "svg"),
-                  ("JavaScript", "js")]
+                  ("Note", "note"), ("LaTeX", "latex"), ("Sheet", "sheet"),
+                  ("SVG", "svg"), ("JavaScript", "js"), ("File", "file")]
 
     def _build_toolbar(self):
         """Jupyter-style main toolbar: file/cell ops, run, cell type."""
@@ -513,6 +527,7 @@ class MainWindow(QMainWindow):
             return
         self.notebook.load_json('{"cells": []}')
         self.path = None
+        self.notebook.set_document_path(None)
         self.dirty = False
         self._update_title()
 
@@ -555,6 +570,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, APP_NAME, f"Could not open file:\n{exc}")
             return
         self.path = name
+        self.notebook.set_document_path(name)
         self.dirty = False
         self._add_recent(name)
         self.explorer.show_file(name)
@@ -564,6 +580,8 @@ class MainWindow(QMainWindow):
         if self.path is None:
             self.save_as()
             return
+        self.notebook.set_document_path(self.path)
+        self.notebook.prepare_save()      # externalise large attachments
         Path(self.path).write_text(self.notebook.to_json(), encoding="utf-8")
         self.dirty = False
         self._add_recent(self.path)
@@ -896,6 +914,7 @@ class MainWindow(QMainWindow):
         try:
             self.notebook.load_json(
                 Path(self.path).read_text(encoding="utf-8"))
+            self.notebook.set_document_path(self.path)
             self.dirty = False
             self._update_title()
         except Exception as exc:

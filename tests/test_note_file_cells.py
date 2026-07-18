@@ -1,0 +1,139 @@
+"""Note (rich text + pen) and File (attachment) cell tests.
+
+Copyright (C) 2026 Gwilherm Kerherve
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+"""
+
+import json
+from pathlib import Path
+
+
+# -- Note cell -------------------------------------------------------------
+
+def test_note_cell_html_round_trip(qapp):
+    from khervebook.notecell import NoteCell
+    cell = NoteCell()
+    cell.set_source(json.dumps({"kbook_note": 1,
+                                "html": "<h2>Hi</h2><p>body</p>",
+                                "ink": None}))
+    src = cell.source()
+    doc = json.loads(src)
+    assert doc["kbook_note"] == 1
+    assert "Hi" in doc["html"] and "body" in doc["html"]
+
+
+def test_note_cell_ink_round_trip(qapp):
+    from khervebook.notecell import NoteCell
+    ink = {"ref_w": 400.0,
+           "strokes": [{"color": "#c0392b", "width": 3.0,
+                        "pts": [[1.0, 2.0], [3.0, 4.0]]}]}
+    cell = NoteCell()
+    cell.set_source(json.dumps({"kbook_note": 1, "html": "<p>x</p>",
+                                "ink": ink}))
+    doc = json.loads(cell.source())
+    assert doc["ink"]["ref_w"] == 400.0
+    assert len(doc["ink"]["strokes"]) == 1
+    assert doc["ink"]["strokes"][0]["pts"] == [[1.0, 2.0], [3.0, 4.0]]
+
+
+def test_note_cell_formatting_toggles_bold(qapp):
+    from khervebook.notecell import NoteCell
+    from PyQt5.QtGui import QTextCursor, QFont
+    cell = NoteCell()
+    cell.rich.setPlainText("hello world")
+    cur = cell.rich.textCursor()
+    cur.select(QTextCursor.Document)
+    cell.rich.setTextCursor(cur)
+    cell.toggle_bold()
+    assert cell.rich.textCursor().charFormat().fontWeight() == QFont.Bold
+
+
+def test_note_cell_registered_and_round_trips_in_notebook(qapp):
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    note = nb.add_cell("note")
+    note.set_source(json.dumps({"kbook_note": 1, "html": "<p>keep me</p>",
+                                "ink": None}))
+    reloaded = NotebookWidget()
+    reloaded.load_json(nb.to_json())
+    got = [c for c in reloaded.cells if c.CELL_TYPE == "note"][0]
+    assert "keep me" in json.loads(got.source())["html"]
+
+
+# -- File cell -------------------------------------------------------------
+
+def test_file_cell_small_file_embeds(qapp, tmp_path):
+    from khervebook.filecell import FileCell
+    f = tmp_path / "data.csv"
+    f.write_text("a,b\n1,2\n")
+    cell = FileCell()
+    cell.set_context(tmp_path, "Book")
+    assert cell.attach(str(f))
+    cell.materialize()
+    doc = json.loads(cell.source())
+    assert doc["name"] == "data.csv"
+    assert "embed" in doc and "path" not in doc
+
+
+def test_file_cell_large_file_goes_to_sidecar(qapp, tmp_path):
+    from khervebook.filecell import FileCell, EMBED_LIMIT
+    f = tmp_path / "big.bin"
+    f.write_bytes(b"X" * (EMBED_LIMIT + 1024))
+    cell = FileCell()
+    cell.set_context(tmp_path, "Book")
+    cell.attach(str(f))
+    cell.materialize()
+    doc = json.loads(cell.source())
+    assert doc.get("path") == "Book_files/big.bin"
+    assert "embed" not in doc
+    assert (tmp_path / "Book_files" / "big.bin").exists()
+
+
+def test_file_cell_resolved_path_and_kf(qapp, tmp_path):
+    from khervebook.notebook import NotebookWidget
+    small = tmp_path / "notes.txt"
+    small.write_text("hello attach")
+    book = tmp_path / "Book.kbook"
+    nb = NotebookWidget()
+    nb.set_document_path(str(book))
+    fc = nb.add_cell("file")
+    fc.attach(str(small))
+    nb.prepare_save()
+    book.write_text(nb.to_json())
+
+    reopened = NotebookWidget()
+    reopened.load_json(book.read_text())
+    reopened.set_document_path(str(book))
+    res = reopened.kernel.run("open(kf('notes.txt')).read()")
+    assert not res.error
+    assert res.result_repr == "'hello attach'"
+
+
+def test_kf_no_arg_returns_notebook_dir(qapp, tmp_path):
+    from khervebook.notebook import NotebookWidget
+    book = tmp_path / "Book.kbook"
+    nb = NotebookWidget()
+    nb.set_document_path(str(book))
+    res = nb.kernel.run("import os; os.path.realpath(kf())")
+    assert not res.error
+    assert os_samefile(res.result_repr, tmp_path)
+
+
+def os_samefile(result_repr, tmp_path):
+    import ast
+    from pathlib import Path
+    return Path(ast.literal_eval(result_repr)).resolve() == tmp_path.resolve()
+
+
+def test_file_cell_drop_attaches(qapp, tmp_path):
+    from khervebook.notebook import NotebookWidget
+    f = tmp_path / "thing.xyz"          # unrecognised extension
+    f.write_bytes(b"payload")
+    nb = NotebookWidget()
+    fc = nb.add_cell("file")
+    assert nb.open_file_in_cell(str(f), fc)
+    assert fc.file_name == "thing.xyz"

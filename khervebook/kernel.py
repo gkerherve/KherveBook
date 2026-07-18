@@ -212,6 +212,11 @@ class Kernel:
         #: "Interactive plots" toggle) instead of static PNGs. Survives a
         #: kernel restart, so it lives outside reset().
         self.interactive_figures = False
+        #: the notebook's folder on disk, and a name -> path resolver for
+        #: attached files (set by NotebookWidget). Structural, so they
+        #: survive a kernel restart and live outside reset().
+        self.notebook_dir = None
+        self.file_lookup = None
         self.reset()
 
     def reset(self):
@@ -276,6 +281,30 @@ class Kernel:
         g["xl"] = ks_fn
         g["cell"] = ks_fn
         g["ks_set"] = ks_set_fn
+        # kf("name") -> absolute path of a File cell's attachment (embedded
+        # files are extracted to a temp file on demand); kf() with no
+        # argument returns the notebook's folder.
+        g["kf"] = self._make_kf()
+
+    def _make_kf(self):
+        import os
+
+        def kf(name=None):
+            if name is None:
+                d = self.notebook_dir
+                return str(d) if d else os.getcwd()
+            lookup = self.file_lookup
+            if lookup is None:
+                raise NameError(
+                    "no attached files yet — add a File cell first")
+            path = lookup(str(name))
+            if path is None:
+                raise FileNotFoundError(
+                    f"no attached file named {name!r} "
+                    "(check the File cell's name)")
+            return path
+
+        return kf
 
     def run(self, source: str, interactive: bool = False) -> ExecResult:
         """Execute *source*; return captured output and figures.

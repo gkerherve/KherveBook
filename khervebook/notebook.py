@@ -25,9 +25,12 @@ from .undo_commands import (AddCellCmd, ConvertCellCmd, MoveCellCmd,
 from . import sheetcell                  # noqa: F401  (registers "sheet")
 from . import svgcell                    # noqa: F401  (registers "svg")
 from . import jscell                     # noqa: F401  (registers "js")
+from . import notecell                   # noqa: F401  (registers "note")
+from . import filecell                   # noqa: F401  (registers "file")
 
+# v5: "note" (rich text + pen) and "file" (attachments) cell types.
 # v4: cells gained "height" (v3: title/column, v2: collapsed).
-FORMAT_VERSION = 4
+FORMAT_VERSION = 5
 
 #: extension -> cell type for files dropped onto the notebook.
 DROP_TYPES = {
@@ -71,7 +74,12 @@ class NotebookWidget(QScrollArea):
         self._rows = []                     # row container widgets
         self._suspend_layout = False
         self._page_mode = False             # continuous borderless page
+        #: the notebook's own .kbook path once saved (set by MainWindow) —
+        #: File cells resolve their sidecar folder relative to it.
+        self.document_path = None
         self.current = None
+        # Let code cells resolve attached files by name via kf("...").
+        self.kernel.file_lookup = self._resolve_file
         self._clipboard = None              # dict from a cut/copied cell
         self._loop_cell = None              # cell being run continuously
         self._loop_timer = QTimer(self)
@@ -96,6 +104,9 @@ class NotebookWidget(QScrollArea):
         cell.editor.textChanged.connect(self.modified.emit)
         cell.content_changed.connect(self.modified.emit)
         cell.resized.connect(self._on_cell_resized)
+        if isinstance(cell, filecell.FileCell) and self.document_path:
+            p = Path(self.document_path)
+            cell.set_context(p.parent, p.stem)
         return cell
 
     def _attach_cell(self, cell, index: int):
@@ -133,7 +144,7 @@ class NotebookWidget(QScrollArea):
     def _select(self, cell, focus: bool = False):
         self._set_current(cell)
         if focus and cell is not None:
-            cell.editor.setFocus()
+            cell.focus_editor()
 
     def add_cell(self, cell_type: str, source: str = "", index: int = None):
         """Create and place a cell directly (not undoable; used on load,
@@ -393,8 +404,9 @@ class NotebookWidget(QScrollArea):
         menu.addAction("Paste Cell Below", self.paste_cell)
         conv = menu.addMenu("Convert To")
         for label, key in (("Code", "code"), ("Markdown", "markdown"),
-                           ("LaTeX", "latex"), ("Sheet", "sheet"),
-                           ("SVG", "svg"), ("JavaScript", "js")):
+                           ("Note", "note"), ("LaTeX", "latex"),
+                           ("Sheet", "sheet"), ("SVG", "svg"),
+                           ("JavaScript", "js"), ("File", "file")):
             if key != cell.CELL_TYPE:
                 conv.addAction(label,
                                lambda k=key: self.convert_current(k))
@@ -426,8 +438,7 @@ class NotebookWidget(QScrollArea):
         if idx + 1 == len(self.cells):
             self.add_cell("code")
         nxt = self.cells[idx + 1]
-        nxt.editor.show()
-        nxt.editor.setFocus()
+        nxt.focus_editor()
         self.ensureWidgetVisible(nxt)
 
     def run_all(self):
@@ -452,6 +463,14 @@ class NotebookWidget(QScrollArea):
         """
         from . import importers
         p = Path(path)
+        # A file dropped onto a File cell always attaches to it, whatever
+        # its type — that is how the cell holds an arbitrary file.
+        if isinstance(cell, filecell.FileCell) and p.is_file():
+            self._set_current(cell)
+            ok = cell.attach(str(p))
+            if ok:
+                self.modified.emit()
+            return ok
         kind = DROP_TYPES.get(p.suffix.lower())
         if kind is None and importers.is_ktex(str(p)):
             kind = "ktex"                  # .ktex.json double suffix
@@ -528,6 +547,36 @@ class NotebookWidget(QScrollArea):
             if url.isLocalFile():
                 self.open_file_in_cell(url.toLocalFile())
         event.acceptProposedAction()
+
+    # -- attached files (File cells) ---------------------------------------
+    def set_document_path(self, path):
+        """Tell the notebook where its .kbook lives so File cells can find
+        their sidecar folder and code cells can resolve kf('name')."""
+        self.document_path = str(path) if path else None
+        p = Path(path) if path else None
+        doc_dir = p.parent if p else None
+        stem = p.stem if p else "notebook"
+        self.kernel.notebook_dir = doc_dir
+        for cell in self.cells:
+            if isinstance(cell, filecell.FileCell):
+                cell.set_context(doc_dir, stem)
+
+    def prepare_save(self):
+        """Before writing the .kbook, materialise large attachments into the
+        sidecar folder (small ones stay embedded)."""
+        if self.document_path is None:
+            return
+        self.set_document_path(self.document_path)
+        for cell in self.cells:
+            if isinstance(cell, filecell.FileCell):
+                cell.materialize()
+
+    def _resolve_file(self, name: str):
+        """kf('name') -> absolute path of a File cell's attachment, or None."""
+        for cell in self.cells:
+            if isinstance(cell, filecell.FileCell) and cell.file_name == name:
+                return cell.resolved_path()
+        return None
 
     # -- persistence -------------------------------------------------------
     def to_json(self) -> str:

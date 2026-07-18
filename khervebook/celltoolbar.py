@@ -95,10 +95,72 @@ class CellToolBar(QToolBar):
     def set_mode(self, cell_type: str):
         self.clear()
         build = {"markdown": self._build_markdown,
+                 "note": self._build_note,
                  "latex": self._build_latex,
                  "sheet": self._build_sheet,
-                 "svg": self._build_svg}.get(cell_type, self._build_code)
+                 "svg": self._build_svg,
+                 "file": self._build_file}.get(cell_type, self._build_code)
         build()
+
+    # -- note (rich text) mode ----------------------------------------------
+    def _note(self, method, *args):
+        """Call *method* on the focused Note cell, if it is one."""
+        cell = self._notebook.current
+        if cell is not None and cell.CELL_TYPE == "note" and hasattr(
+                cell, method):
+            getattr(cell, method)(*args)
+
+    def _build_note(self):
+        self._add_menu("Style", "Paragraph style", [
+            ("Body text", lambda: self._note("set_heading", 0)),
+            ("Heading 1", lambda: self._note("set_heading", 1)),
+            ("Heading 2", lambda: self._note("set_heading", 2)),
+            ("Heading 3", lambda: self._note("set_heading", 3)),
+        ], icon_name="mdi.format-header-pound")
+        self._add("Bold", "Bold", lambda: self._note("toggle_bold"),
+                  "mdi.format-bold")
+        self._add("Italic", "Italic", lambda: self._note("toggle_italic"),
+                  "mdi.format-italic")
+        self._add("Underline", "Underline",
+                  lambda: self._note("toggle_underline"),
+                  "mdi.format-underline")
+        self._add("Strike", "Strikethrough",
+                  lambda: self._note("toggle_strike"),
+                  "mdi.format-strikethrough-variant")
+        self.addSeparator()
+        self._add("Bullets", "Bulleted list",
+                  lambda: self._note("bullet_list"),
+                  "mdi.format-list-bulleted")
+        self._add("Numbers", "Numbered list",
+                  lambda: self._note("numbered_list"),
+                  "mdi.format-list-numbered")
+        self.addSeparator()
+        self._add("Color", "Text colour…", lambda: self._note("pick_color"),
+                  "mdi.format-color-text")
+        self._add("Highlight", "Highlight colour…",
+                  lambda: self._note("pick_highlight"),
+                  "mdi.format-color-highlight")
+        self.addSeparator()
+        self._add("Pen", "Toggle the pen to annotate over the text",
+                  lambda: self._note("set_pen", True), "mdi.draw")
+
+    # -- file attachment mode -----------------------------------------------
+    def _file(self, method):
+        cell = self._notebook.current
+        if cell is not None and cell.CELL_TYPE == "file" and hasattr(
+                cell, method):
+            getattr(cell, method)()
+
+    def _build_file(self):
+        self._add("Attach / Replace", "Choose the file to hold in the cell",
+                  lambda: self._file("choose_file"), "mdi.paperclip")
+        self.addSeparator()
+        self._add("Open", "Open the attached file",
+                  lambda: self._file("open_file"), "mdi.open-in-new")
+        self._add("Save a copy", "Save the attached file elsewhere",
+                  lambda: self._file("save_copy"), "mdi.content-save-outline")
+        self._add("Copy reference", "Copy the kf(\"name\") code reference",
+                  lambda: self._file("copy_reference"), "mdi.code-tags")
 
     # -- SVG mode -------------------------------------------------------------
     def _build_svg(self):

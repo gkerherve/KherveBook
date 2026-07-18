@@ -111,11 +111,30 @@ def _sheet_cell_summary(cell, start_n: int):
     return "\n".join(lines), len(tables)
 
 
+def _note_summary(cell) -> str:
+    """A Note cell as plain text (its HTML stripped) for the AI prompt."""
+    import json as _json
+    import re as _re
+    try:
+        doc = _json.loads(cell.source())
+        html = doc.get("html", "") if isinstance(doc, dict) else ""
+    except (ValueError, TypeError):
+        html = ""
+    text = _re.sub(r"<[^>]+>", " ", html)
+    text = _re.sub(r"\s+", " ", text).strip()
+    return text or "(an empty rich-text note)"
+
+
 def _notebook_listing(notebook) -> str:
     blocks, total, sheet_n = [], 0, 1
     for i, cell in enumerate(notebook.cells):
         if cell.CELL_TYPE == "svg":
             body = "(an SVG drawing — you cannot read or edit this cell)"
+        elif cell.CELL_TYPE == "file":
+            body = f"(an attached file: {cell.file_name or 'none'} — "\
+                   "reachable from code as kf(\"name\"))"
+        elif cell.CELL_TYPE == "note":
+            body = _note_summary(cell)
         elif cell.CELL_TYPE == "sheet":
             body, n_sheets = _sheet_cell_summary(cell, sheet_n)
             sheet_n += n_sheets

@@ -35,9 +35,9 @@ from pathlib import Path
 
 from PyQt5.QtCore import QSize, Qt, QUrl
 from PyQt5.QtGui import QDesktopServices, QPixmap
-from PyQt5.QtWidgets import (QApplication, QFileDialog, QFrame, QHBoxLayout,
-                             QLabel, QPushButton, QSizePolicy, QToolButton,
-                             QVBoxLayout, QWidget)
+from PyQt5.QtWidgets import (QApplication, QComboBox, QFileDialog, QFrame,
+                             QHBoxLayout, QLabel, QPushButton, QSizePolicy,
+                             QToolButton, QVBoxLayout, QWidget)
 
 from .cells import CELL_CLASSES, CellWidget, MONO
 from .icons import icon
@@ -65,6 +65,9 @@ _ICONS = {
     ".npy": "mdi.database-outline", ".dat": "mdi.file-table-outline",
 }
 
+#: sentinel: this attachment's structured preview hasn't been computed yet.
+_UNSET = object()
+
 _IMAGE_EXT = {".png", ".jpg", ".jpeg", ".gif", ".bmp"}
 _TEXT_EXT = {".txt", ".csv", ".tsv", ".py", ".js", ".md", ".json", ".dat",
              ".log", ".xml", ".yaml", ".yml", ".ini", ".cfg", ".tex",
@@ -90,6 +93,7 @@ class _Attachment:
         self._bytes = data                 # in-memory contents, if loaded
         self.path = path                   # relative sidecar path, if any
         self._temp = None                  # extracted temp file, if any
+        self.preview = _UNSET              # cached structured preview
 
     # -- bytes / resolution ------------------------------------------------
     def current_bytes(self, doc_dir):
@@ -317,12 +321,47 @@ class FileCell(CellWidget):
         if text is not None:
             snippet = self._snippet(text)
             return self._mono_label(snippet or "(empty file)")
-        # Structured scientific formats (xlsx / ksheet / kfit) get a summary.
+        # Structured scientific formats (xlsx / ksheet / kfit): a browsable
+        # preview with a selector for each sheet / core level.
         from . import filepreview
-        summary = filepreview.summarize(att.name, data)
-        if summary:
-            return self._mono_label(summary)
+        if att.preview is _UNSET:
+            att.preview = filepreview.describe(att.name, data)
+        if att.preview:
+            return self._structured_preview(att.preview)
         return self._preview_note("binary file — kept as-is (not previewed)")
+
+    def _structured_preview(self, desc) -> QWidget:
+        box = QWidget()
+        v = QVBoxLayout(box)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(3)
+        header = QLabel(desc.get("header", ""))
+        header.setStyleSheet("border: none; color: #57606a;")
+        v.addWidget(header)
+        parts = desc.get("parts") or []
+        body = self._mono_label("")
+        if not parts:
+            body.setText("(no readable content)")
+        else:
+            if len(parts) > 1:
+                combo = QComboBox()
+                for p in parts:
+                    combo.addItem(p.get("name", "?"))
+                combo.setToolTip("Choose a sheet / core level to read")
+                combo.setStyleSheet(
+                    "QComboBox { border: 1px solid palette(mid); "
+                    "border-radius: 4px; padding: 2px 6px; }")
+                combo.currentIndexChanged.connect(
+                    lambda i: body.setText(parts[i].get("text", "")
+                                           if 0 <= i < len(parts) else ""))
+                row = QHBoxLayout()
+                row.setContentsMargins(0, 0, 0, 0)
+                row.addWidget(combo)
+                row.addStretch(1)
+                v.addLayout(row)
+            body.setText(parts[0].get("text", ""))
+        v.addWidget(body)
+        return box
 
     @staticmethod
     def _snippet(text: str) -> str:

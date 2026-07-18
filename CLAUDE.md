@@ -101,7 +101,12 @@ into a new module and import.
   - `filepreview.py` — best-effort previews for structured attachment
                        formats shown in a File cell: `.xlsx` (openpyxl),
                        `.ksheet` (HDF5 workbook) and `.kfit` (KherveFitting
-                       HDF5 project — core-level names + sample). Optional-
+                       HDF5 + zlib-JSON). `describe()` returns
+                       `{"header","parts":[{"name","text"}]}` — one part per
+                       sheet / core level — so the cell offers a selector to
+                       read each. The kfit core-level list comes from the
+                       project JSON (authoritative; the HDF5 `core_levels`
+                       group may hold only the shown one). Optional-
                        dependency-safe; returns None to fall back to the
                        "binary, kept as-is" note.
   - `filecell.py`    — `FileCell`: holds **one or more** attached files

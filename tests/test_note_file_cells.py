@@ -136,7 +136,7 @@ def test_file_cell_text_preview_non_none(qapp, tmp_path):
 
 # -- structured-format previews -------------------------------------------
 
-def test_preview_xlsx():
+def test_preview_xlsx_parts_per_sheet():
     import io
     from openpyxl import Workbook
     from khervebook import filepreview
@@ -147,13 +147,13 @@ def test_preview_xlsx():
     wb.create_sheet("Notes")
     b = io.BytesIO()
     wb.save(b)
-    summary = filepreview.summarize("x.xlsx", b.getvalue())
-    assert summary and "Excel workbook" in summary
-    assert "Data" in summary and "Notes" in summary
-    assert "Alpha" in summary
+    desc = filepreview.describe("x.xlsx", b.getvalue())
+    assert desc and "Excel workbook" in desc["header"]
+    assert [p["name"] for p in desc["parts"]] == ["Data", "Notes"]
+    assert "Alpha" in desc["parts"][0]["text"]
 
 
-def test_preview_ksheet():
+def test_preview_ksheet_parts_per_sheet():
     import io
     import numpy as np
     import h5py
@@ -172,45 +172,60 @@ def test_preview_ksheet():
         g2.attrs["rows"] = 20
         g2.attrs["cols"] = 3
         g2.create_dataset("cells", data=np.array([b""] * 60))
-    summary = filepreview.summarize("wb.ksheet", bio.getvalue())
-    assert summary and "KherveSheet workbook" in summary
-    assert "Survey (100×5)" in summary and "Fit (20×3)" in summary
+    desc = filepreview.describe("wb.ksheet", bio.getvalue())
+    assert desc and "KherveSheet workbook" in desc["header"]
+    assert [p["name"] for p in desc["parts"]] == ["Survey", "Fit"]
+    assert "100×5" in desc["parts"][0]["text"]
 
 
-def test_preview_kfit():
+def test_preview_kfit_lists_all_levels_from_json():
+    """The core-level list comes from the project JSON (authoritative),
+    so all levels show even when the HDF5 group holds only one."""
     import io
-    import numpy as np
+    import zlib
+    import json as _json
     import h5py
     from khervebook import filepreview
+    levels = {nm: {"B.E.": [100.0, 99.0, 98.0],
+                   "Fitting": {"Peaks": {
+                       "p1": {"Position": 99.2, "FWHM": 0.8, "Area": 1234.0}}}}
+              for nm in ["Survey", "C1s", "Mg1s", "O1s", "N1s"]}
+    project = {"Number of Core levels": 5, "Core levels": levels}
+    blob = zlib.compress(_json.dumps(project).encode())
     bio = io.BytesIO()
     with h5py.File(bio, "w") as f:
         f.attrs["format"] = "kfitting"
         cl = f.create_group("core_levels")
-        for i, nm in enumerate(["Survey", "C1s", "O1s"]):
-            g = cl.create_group(f"cl_{i}")
-            g.attrs["name"] = nm
-    summary = filepreview.summarize("p.kfit", bio.getvalue())
-    assert summary and "KherveFitting project" in summary
-    assert "3 core levels" in summary
-    assert "Survey" in summary and "C1s" in summary
+        g = cl.create_group("cl_0")           # HDF5 holds only the shown one
+        g.attrs["name"] = "Mg1s"
+        import numpy as np
+        f.create_dataset("project_json_gz",
+                         data=np.frombuffer(blob, dtype="uint8"))
+    desc = filepreview.describe("p.kfit", bio.getvalue())
+    assert desc and "5 core levels" in desc["header"]
+    assert [p["name"] for p in desc["parts"]] == \
+        ["Survey", "C1s", "Mg1s", "O1s", "N1s"]
+    assert "1 fitted peak" in desc["parts"][0]["text"]
+    assert "pos 99.20" in desc["parts"][0]["text"]
 
 
 def test_file_cell_shows_structured_preview(qapp, tmp_path):
-    import io
     from openpyxl import Workbook
     from khervebook.filecell import FileCell
     wb = Workbook()
     wb.active.append(["a", "b"])
+    wb.create_sheet("Second")
     p = tmp_path / "book.xlsx"
     wb.save(str(p))
     cell = FileCell()
     cell.attach(str(p))
-    # a preview widget (not the generic binary note) is produced
     att = cell._items[0]
     w = cell._preview_widget(att)
-    from PyQt5.QtWidgets import QLabel
-    assert isinstance(w, QLabel)
-    assert "Excel workbook" in w.text()
+    # a structured preview widget (with a sheet selector) is produced
+    from PyQt5.QtWidgets import QComboBox, QLabel
+    assert w.findChild(QComboBox) is not None
+    assert any("Excel workbook" in lbl.text()
+               for lbl in w.findChildren(QLabel))
 
 
 def test_file_cell_resolved_path_and_kf(qapp, tmp_path):

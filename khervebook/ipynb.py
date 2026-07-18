@@ -101,12 +101,20 @@ def _note_markdown(src: str) -> str:
 
 
 def _file_markdown(src: str) -> str:
+    names = []
     try:
         doc = json.loads(src)
-        name = doc.get("name") if isinstance(doc, dict) else None
+        if isinstance(doc, dict):
+            if "files" in doc:                 # multi-file format
+                names = [f.get("name") for f in doc["files"] if f.get("name")]
+            elif doc.get("name"):              # legacy single-file format
+                names = [doc["name"]]
     except (ValueError, TypeError):
-        name = None
-    return f"📎 **Attached file:** `{name}`" if name else "📎 Attached file"
+        pass
+    if not names:
+        return "📎 Attached files"
+    listed = ", ".join(f"`{n}`" for n in names)
+    return f"📎 **Attached files:** {listed}"
 
 
 def _display_body(t: str, src: str) -> str:

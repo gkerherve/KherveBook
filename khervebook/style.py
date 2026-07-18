@@ -99,6 +99,17 @@ QToolButton:hover {{ background: {t['hover']}; }}
 QToolButton:pressed {{ background: {t['pressed']}; }}
 QToolButton::menu-indicator {{ image: none; }}
 
+QPushButton {{
+    background: {t['chrome']};
+    color: {t['text']};
+    border: 1px solid {t['border']};
+    border-radius: 6px;
+    padding: 4px 12px;
+}}
+QPushButton:hover {{ background: {t['hover']}; border-color: {t['select']}; }}
+QPushButton:pressed {{ background: {t['pressed']}; }}
+QPushButton:disabled {{ color: {t['border']}; }}
+
 QComboBox {{
     background: {t['card']};
     border: 1px solid {t['border']};

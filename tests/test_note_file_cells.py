@@ -74,9 +74,10 @@ def test_file_cell_small_file_embeds(qapp, tmp_path):
     cell.set_context(tmp_path, "Book")
     assert cell.attach(str(f))
     cell.materialize()
-    doc = json.loads(cell.source())
-    assert doc["name"] == "data.csv"
-    assert "embed" in doc and "path" not in doc
+    files = json.loads(cell.source())["files"]
+    assert len(files) == 1
+    assert files[0]["name"] == "data.csv"
+    assert "embed" in files[0] and "path" not in files[0]
 
 
 def test_file_cell_large_file_goes_to_sidecar(qapp, tmp_path):
@@ -87,10 +88,50 @@ def test_file_cell_large_file_goes_to_sidecar(qapp, tmp_path):
     cell.set_context(tmp_path, "Book")
     cell.attach(str(f))
     cell.materialize()
-    doc = json.loads(cell.source())
-    assert doc.get("path") == "Book_files/big.bin"
-    assert "embed" not in doc
+    files = json.loads(cell.source())["files"]
+    assert files[0].get("path") == "Book_files/big.bin"
+    assert "embed" not in files[0]
     assert (tmp_path / "Book_files" / "big.bin").exists()
+
+
+def test_file_cell_holds_multiple_files(qapp, tmp_path):
+    from khervebook.notebook import NotebookWidget
+    (tmp_path / "a.txt").write_text("alpha")
+    (tmp_path / "b.txt").write_text("beta")
+    book = tmp_path / "Book.kbook"
+    nb = NotebookWidget()
+    nb.set_document_path(str(book))
+    fc = nb.add_cell("file")
+    fc.attach(str(tmp_path / "a.txt"))
+    fc.attach(str(tmp_path / "b.txt"))
+    assert fc.file_names == ["a.txt", "b.txt"]
+    nb.prepare_save()
+    book.write_text(nb.to_json())
+
+    reopened = NotebookWidget()
+    reopened.load_json(book.read_text())
+    reopened.set_document_path(str(book))
+    assert reopened._resolve_file("a.txt")
+    assert reopened._resolve_file("b.txt")
+    r = reopened.kernel.run("open(kf('b.txt')).read()")
+    assert not r.error and r.result_repr == "'beta'"
+
+
+def test_file_cell_reads_legacy_single_file_format(qapp):
+    import base64
+    from khervebook.filecell import FileCell
+    legacy = json.dumps({"kbook_file": 1, "name": "old.txt", "size": 3,
+                         "embed": base64.b64encode(b"abc").decode()})
+    cell = FileCell()
+    cell.set_source(legacy)
+    assert cell.file_names == ["old.txt"]
+
+
+def test_file_cell_text_preview_non_none(qapp, tmp_path):
+    from khervebook.filecell import FileCell
+    cell = FileCell()
+    assert cell._as_text(b"a,b\n1,2\n", ".csv") is not None
+    assert cell._as_text(b"\x00\x01\x02\xff", ".bin") is None
 
 
 def test_file_cell_resolved_path_and_kf(qapp, tmp_path):

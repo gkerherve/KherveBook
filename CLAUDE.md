@@ -98,13 +98,16 @@ into a new module and import.
                        overlay** for freehand annotation. `source` is JSON
                        `{"kbook_note":1,"html":…,"ink":{ref_w,strokes}}` so
                        text + ink round-trip together.
-  - `filecell.py`    — `FileCell`: holds an attached file. **Hybrid**
-                       storage — small files (≤ `EMBED_LIMIT`, 256 KiB)
-                       embed base64 in the `.kbook`; larger files are
-                       written to a sidecar `<stem>_files/` folder beside
-                       the notebook (so the per-document Git repo versions
-                       them) and only a relative path is stored. Code cells
-                       reach an attachment by name via the kernel helper
+  - `filecell.py`    — `FileCell`: holds **one or more** attached files
+                       (each an `_Attachment`), showing a preview per file
+                       (text snippet / image thumbnail; binaries kept but
+                       not previewed). **Hybrid**, per file — small files
+                       (≤ `EMBED_LIMIT`, 256 KiB) embed base64 in the
+                       `.kbook`; larger files are written to a sidecar
+                       `<stem>_files/` folder beside the notebook (so the
+                       per-document Git repo versions them) and only a
+                       relative path is stored. Code cells reach an
+                       attachment by name via the kernel helper
                        `kf("data.csv")`, returning an absolute path
                        (embedded files extracted to a temp file on demand);
                        `kf()` with no arg returns the notebook's folder.
@@ -165,8 +168,9 @@ into a new module and import.
 "source": "...", optional "title", "collapsed", "column", "width",
 "height"}]}`. A `note` cell's `source` is JSON
 `{"kbook_note":1,"html":…,"ink":…}`; a `file` cell's `source` is JSON
-`{"kbook_file":1,"name","size", "embed"(base64) | "path"(sidecar rel)}`
-— large attachments live in the `<stem>_files/` folder, not the JSON. The
+`{"kbook_files":1,"files":[{"name","size","embed"(base64)|"path"(sidecar
+rel)},…]}` (the legacy single-file `{"kbook_file":1,…}` still loads) —
+large attachments live in the `<stem>_files/` folder, not the JSON. The
 optional per-cell keys: `title` (heading shown at the top),
 `collapsed` (minimised to its title/summary), `column` (sits beside
 the previous cell in the same row), `width`/`height` (px, from the

@@ -1,7 +1,11 @@
-"""File attachment cell — hold a file inside a notebook and use it from code.
+"""File attachment cell — hold one or more files in a notebook and use
+them from code.
 
-A File cell carries a real file alongside the notebook so a code (or
-JavaScript) cell can open it. Storage is **hybrid**:
+A File cell carries real files alongside the notebook so a code (or
+JavaScript) cell can open them, and shows a preview of each: readable
+files (text, CSV, images) get a snippet or thumbnail; anything else is
+still kept verbatim, just not previewed. Storage is **hybrid**, per
+file:
 
 * Small files (<= ``EMBED_LIMIT``) are embedded base64 in the ``.kbook``
   itself, so the notebook stays a single portable document.
@@ -10,10 +14,10 @@ JavaScript) cell can open it. Storage is **hybrid**:
   so attachments are versioned and pushed with it) and only a relative
   path is stored in the document.
 
-Either way, a code cell reaches the file by name through the kernel
-helper ``kf("data.csv")``, which returns an absolute path on disk —
-embedded files are extracted to a temp file on demand — so
-``open(kf("data.csv"))`` or ``pd.read_csv(kf("data.csv"))`` just works.
+Either way a code cell reaches a file by name through the kernel helper
+``kf("data.csv")``, which returns an absolute path on disk — embedded
+files are extracted to a temp file on demand — so ``open(kf("data.csv"))``
+or ``pd.read_csv(kf("data.csv"))`` just works.
 
 Copyright (C) 2026 Gwilherm Kerherve
 
@@ -30,17 +34,22 @@ import tempfile
 from pathlib import Path
 
 from PyQt5.QtCore import QSize, Qt, QUrl
-from PyQt5.QtGui import QDesktopServices
-from PyQt5.QtWidgets import (QApplication, QFileDialog, QHBoxLayout, QLabel,
-                             QPushButton, QSizePolicy, QVBoxLayout, QWidget)
+from PyQt5.QtGui import QDesktopServices, QPixmap
+from PyQt5.QtWidgets import (QApplication, QFileDialog, QFrame, QHBoxLayout,
+                             QLabel, QPushButton, QSizePolicy, QToolButton,
+                             QVBoxLayout, QWidget)
 
-from .cells import CELL_CLASSES, CellWidget
+from .cells import CELL_CLASSES, CellWidget, MONO
 from .icons import icon
 
 #: Files up to this size are embedded in the .kbook; larger ones go to
 #: the sidecar folder. 256 KiB keeps notebooks small while covering most
 #: scripts, small datasets, configs and images.
 EMBED_LIMIT = 256 * 1024
+
+#: How much of a text file to show in the preview snippet.
+_PREVIEW_LINES = 6
+_PREVIEW_CHARS = 500
 
 #: extension -> Material Design icon for the file chip.
 _ICONS = {
@@ -51,9 +60,15 @@ _ICONS = {
     ".md": "mdi.language-markdown", ".pdf": "mdi.file-pdf-box",
     ".png": "mdi.file-image-outline", ".jpg": "mdi.file-image-outline",
     ".jpeg": "mdi.file-image-outline", ".gif": "mdi.file-image-outline",
+    ".bmp": "mdi.file-image-outline", ".svg": "mdi.file-image-outline",
     ".zip": "mdi.folder-zip-outline", ".h5": "mdi.database-outline",
     ".npy": "mdi.database-outline", ".dat": "mdi.file-table-outline",
 }
+
+_IMAGE_EXT = {".png", ".jpg", ".jpeg", ".gif", ".bmp"}
+_TEXT_EXT = {".txt", ".csv", ".tsv", ".py", ".js", ".md", ".json", ".dat",
+             ".log", ".xml", ".yaml", ".yml", ".ini", ".cfg", ".tex",
+             ".html", ".css", ".c", ".cpp", ".h", ".r", ".m", ".sh"}
 
 
 def _human_size(n: int) -> str:
@@ -65,8 +80,105 @@ def _human_size(n: int) -> str:
     return f"{size:.1f} GB"
 
 
+class _Attachment:
+    """One held file: its name/size plus either in-memory bytes or a
+    relative path into the sidecar folder."""
+
+    def __init__(self, name="", size=0, data=None, path=None):
+        self.name = name
+        self.size = size
+        self._bytes = data                 # in-memory contents, if loaded
+        self.path = path                   # relative sidecar path, if any
+        self._temp = None                  # extracted temp file, if any
+
+    # -- bytes / resolution ------------------------------------------------
+    def current_bytes(self, doc_dir):
+        if self._bytes is not None:
+            return self._bytes
+        if self.path and doc_dir is not None:
+            fp = Path(doc_dir) / self.path
+            if fp.exists():
+                try:
+                    return fp.read_bytes()
+                except OSError:
+                    return None
+        return None
+
+    def resolved_path(self, doc_dir):
+        """Absolute path on disk (extracting an embedded file to a temp
+        file if needed), or None."""
+        if self.path and doc_dir is not None:
+            fp = Path(doc_dir) / self.path
+            if fp.exists():
+                return str(fp)
+        data = self.current_bytes(doc_dir)
+        if data is None:
+            return None
+        if self._temp is None or not Path(self._temp).exists():
+            tmp_dir = Path(tempfile.mkdtemp(prefix="khervebook_files_"))
+            tmp = tmp_dir / self.name
+            tmp.write_bytes(data)
+            self._temp = str(tmp)
+        return self._temp
+
+    def drop_temp(self):
+        if self._temp:
+            shutil.rmtree(Path(self._temp).parent, ignore_errors=True)
+            self._temp = None
+
+    def preload_for_move(self, old_dir):
+        """Pull bytes into memory before the notebook folder changes, so a
+        Save As can rewrite the file into the new sidecar folder."""
+        if self.path and self._bytes is None and old_dir is not None:
+            old = Path(old_dir) / self.path
+            if old.exists():
+                try:
+                    self._bytes = old.read_bytes()
+                    self.path = None
+                except OSError:
+                    pass
+
+    def materialize(self, doc_dir, stem):
+        """Large files -> sidecar folder (path only); small stay embedded."""
+        data = self.current_bytes(doc_dir)
+        if data is None:
+            return
+        if len(data) > EMBED_LIMIT:
+            files_dir = Path(doc_dir) / f"{stem}_files"
+            files_dir.mkdir(parents=True, exist_ok=True)
+            (files_dir / self.name).write_bytes(data)
+            self.path = f"{stem}_files/{self.name}"
+            self._bytes = None             # free memory; read from disk
+        else:
+            self.path = None
+            self._bytes = data
+
+    def to_dict(self, doc_dir):
+        d = {"name": self.name, "size": self.size}
+        if self.path:
+            d["path"] = self.path
+        else:
+            data = self.current_bytes(doc_dir)
+            if data is not None:
+                d["embed"] = base64.b64encode(data).decode("ascii")
+        return d
+
+    @classmethod
+    def from_dict(cls, d):
+        item = cls(name=d.get("name", ""), size=int(d.get("size", 0)),
+                   path=d.get("path"))
+        if "embed" in d:
+            try:
+                item._bytes = base64.b64decode(d["embed"])
+                item.size = item.size or len(item._bytes)
+            except Exception:
+                item._bytes = None
+        return item
+
+
 class FileCell(CellWidget):
-    """A cell that holds an attached file, referenced from code by name."""
+    """A cell that holds one or more attached files, referenced from code
+    by name via ``kf("name")``, each with a small preview."""
 
     CELL_TYPE = "file"
 
@@ -74,64 +186,40 @@ class FileCell(CellWidget):
         super().__init__(source)
         self.gutter.setText("file")
         self.editor.hide()                     # base plain editor unused here
-        self._name = ""
-        self._size = 0
-        self._bytes = None                     # in-memory contents, if loaded
-        self._path = None                      # relative sidecar path, if any
+        self._items = []                       # list[_Attachment]
         self._doc_dir = None                   # notebook folder
         self._stem = "notebook"
-        self._temp = None                      # extracted temp file, if any
         self._card = self._build_card()
         self.column.addWidget(self._card)
         self.setAcceptDrops(True)
         if source:
             self.set_source(source)
-        self._refresh()
+        self._rebuild()
 
-    # -- UI ----------------------------------------------------------------
+    # -- UI shell ----------------------------------------------------------
     def _build_card(self) -> QWidget:
         card = QWidget()
         outer = QVBoxLayout(card)
         outer.setContentsMargins(4, 4, 4, 4)
-        outer.setSpacing(4)
+        outer.setSpacing(6)
 
-        top = QHBoxLayout()
-        top.setSpacing(8)
-        self._icon = QLabel()
-        self._icon.setFixedSize(QSize(40, 40))
-        top.addWidget(self._icon)
-        meta = QVBoxLayout()
-        meta.setSpacing(0)
-        self._name_lbl = QLabel("No file attached")
-        self._name_lbl.setStyleSheet("font-weight: bold; font-size: 13px;")
-        self._name_lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        meta.addWidget(self._name_lbl)
-        self._sub_lbl = QLabel("")
-        self._sub_lbl.setStyleSheet("color: #8a939c;")
-        meta.addWidget(self._sub_lbl)
-        top.addLayout(meta, 1)
-        outer.addLayout(top)
+        header = QHBoxLayout()
+        header.setSpacing(8)
+        self._count_lbl = QLabel("Attachments")
+        self._count_lbl.setStyleSheet("font-weight: bold; font-size: 13px;")
+        header.addWidget(self._count_lbl)
+        header.addStretch(1)
+        add = QPushButton("Add files…")
+        add.setIcon(icon("mdi.paperclip"))
+        add.clicked.connect(self.choose_file)
+        header.addWidget(add)
+        outer.addLayout(header)
 
-        btns = QHBoxLayout()
-        btns.setSpacing(4)
-        self._attach_btn = QPushButton("Attach file…")
-        self._attach_btn.setIcon(icon("mdi.paperclip"))
-        self._attach_btn.clicked.connect(self.choose_file)
-        btns.addWidget(self._attach_btn)
-        self._open_btn = QPushButton("Open")
-        self._open_btn.setIcon(icon("mdi.open-in-new"))
-        self._open_btn.clicked.connect(self.open_file)
-        btns.addWidget(self._open_btn)
-        self._save_btn = QPushButton("Save a copy…")
-        self._save_btn.setIcon(icon("mdi.content-save-outline"))
-        self._save_btn.clicked.connect(self.save_copy)
-        btns.addWidget(self._save_btn)
-        self._copy_btn = QPushButton("Copy code reference")
-        self._copy_btn.setIcon(icon("mdi.code-tags"))
-        self._copy_btn.clicked.connect(self.copy_reference)
-        btns.addWidget(self._copy_btn)
-        btns.addStretch(1)
-        outer.addLayout(btns)
+        self._list = QWidget()
+        self._list_layout = QVBoxLayout(self._list)
+        self._list_layout.setContentsMargins(0, 0, 0, 0)
+        self._list_layout.setSpacing(6)
+        outer.addWidget(self._list)
 
         self._hint = QLabel("")
         self._hint.setStyleSheet("color: #57606a; font-style: italic;")
@@ -140,181 +228,244 @@ class FileCell(CellWidget):
         outer.addWidget(self._hint)
         return card
 
-    def _refresh(self):
-        has = bool(self._name)
-        ext = Path(self._name).suffix.lower()
-        self._icon.setPixmap(
-            icon(_ICONS.get(ext, "mdi.file-outline")).pixmap(40, 40))
-        for b in (self._open_btn, self._save_btn, self._copy_btn):
-            b.setEnabled(has)
-        if not has:
-            self._name_lbl.setText("No file attached")
-            self._sub_lbl.setText("")
-            self._hint.setText("Drag a file here, or click “Attach file…”. "
-                               "The file travels inside the notebook and can "
-                               "be opened from a code cell.")
-            self._attach_btn.setText("Attach file…")
-            return
-        self._attach_btn.setText("Replace…")
-        self._name_lbl.setText(self._name)
-        where = "in the notebook folder" if self._path else "embedded"
-        self._sub_lbl.setText(f"{_human_size(self._size)}  ·  stored {where}")
-        ref = json.dumps(self._name)
-        self._hint.setText(
-            f"Use  kf({ref})  in a code cell for its path — e.g.  "
-            f"open(kf({ref}))  or  pd.read_csv(kf({ref})).")
+    def _rebuild(self):
+        """Repaint the file list from self._items."""
+        while self._list_layout.count():
+            item = self._list_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+        for att in self._items:
+            self._list_layout.addWidget(self._build_row(att))
+        n = len(self._items)
+        self._count_lbl.setText(
+            "No files attached" if n == 0
+            else f"{n} attached file{'s' if n != 1 else ''}")
+        if n == 0:
+            self._hint.setText(
+                "Drag files here, or click “Add files…”. Files travel inside "
+                "the notebook and can be opened from a code cell.")
+        else:
+            self._hint.setText(
+                'Use  kf("name")  in a code cell for a file\'s path — e.g.  '
+                'pd.read_csv(kf("data.csv")).')
+
+    def _build_row(self, att: "_Attachment") -> QWidget:
+        row = QFrame()
+        row.setFrameShape(QFrame.StyledPanel)
+        row.setStyleSheet(
+            "QFrame { border: 1px solid palette(mid); border-radius: 6px; }")
+        lay = QVBoxLayout(row)
+        lay.setContentsMargins(8, 6, 8, 6)
+        lay.setSpacing(4)
+
+        top = QHBoxLayout()
+        top.setSpacing(8)
+        ext = Path(att.name).suffix.lower()
+        ic = QLabel()
+        ic.setPixmap(icon(_ICONS.get(ext, "mdi.file-outline")).pixmap(28, 28))
+        ic.setFixedSize(QSize(30, 30))
+        ic.setStyleSheet("border: none;")
+        top.addWidget(ic)
+        meta = QVBoxLayout()
+        meta.setSpacing(0)
+        name = QLabel(att.name)
+        name.setStyleSheet("border: none; font-weight: bold;")
+        name.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        meta.addWidget(name)
+        where = "in the notebook folder" if att.path else "embedded"
+        sub = QLabel(f"{_human_size(att.size)}  ·  stored {where}")
+        sub.setStyleSheet("border: none; color: #8a939c;")
+        meta.addWidget(sub)
+        top.addLayout(meta, 1)
+        for tip, icon_name, slot in (
+                ("Open", "mdi.open-in-new", lambda: self._open(att)),
+                ("Save a copy…", "mdi.content-save-outline",
+                 lambda: self._save_copy(att)),
+                ("Copy kf() reference", "mdi.code-tags",
+                 lambda: self._copy_ref(att)),
+                ("Remove", "mdi.delete-outline", lambda: self._remove(att))):
+            b = QToolButton()
+            b.setIcon(icon(icon_name))
+            b.setToolTip(tip)
+            b.setAutoRaise(True)
+            b.setStyleSheet("QToolButton { border: none; }")
+            b.clicked.connect(lambda _=False, s=slot: s())
+            top.addWidget(b)
+        lay.addLayout(top)
+
+        preview = self._preview_widget(att)
+        if preview is not None:
+            lay.addWidget(preview)
+        return row
+
+    # -- previews ----------------------------------------------------------
+    def _preview_widget(self, att: "_Attachment"):
+        data = att.current_bytes(self._doc_dir)
+        ext = Path(att.name).suffix.lower()
+        if data is None:
+            return self._preview_note("(stored in the notebook folder)")
+        if ext in _IMAGE_EXT:
+            pix = QPixmap()
+            if pix.loadFromData(data) and not pix.isNull():
+                lbl = QLabel()
+                lbl.setStyleSheet("border: none;")
+                lbl.setPixmap(pix.scaled(
+                    220, 140, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                return lbl
+        text = self._as_text(data, ext)
+        if text is not None:
+            lines = text.splitlines()[:_PREVIEW_LINES]
+            snippet = "\n".join(lines)[:_PREVIEW_CHARS]
+            if len(text) > len(snippet):
+                snippet += "\n…"
+            lbl = QLabel(snippet or "(empty file)")
+            lbl.setFont(MONO)
+            lbl.setStyleSheet(
+                "border: none; background: palette(base); padding: 4px;")
+            lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            lbl.setWordWrap(False)
+            return lbl
+        return self._preview_note("binary file — kept as-is (not previewed)")
+
+    @staticmethod
+    def _preview_note(text):
+        lbl = QLabel(text)
+        lbl.setStyleSheet("border: none; color: #8a939c; font-style: italic;")
+        return lbl
+
+    @staticmethod
+    def _as_text(data: bytes, ext: str):
+        """Decode *data* as text if it looks textual, else None."""
+        probe = data[:4096]
+        if b"\x00" in probe and ext not in _TEXT_EXT:
+            return None
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            if ext not in _TEXT_EXT:
+                return None
+            try:
+                text = data.decode("latin-1")
+            except Exception:
+                return None
+        # Mostly-printable check for extensions we don't already trust.
+        if ext not in _TEXT_EXT:
+            sample = text[:2000]
+            printable = sum(c.isprintable() or c in "\r\n\t" for c in sample)
+            if sample and printable / len(sample) < 0.85:
+                return None
+        return text
 
     # -- attaching ---------------------------------------------------------
     def choose_file(self):
-        name, _ = QFileDialog.getOpenFileName(self, "Attach file", "",
-                                              "All files (*)")
-        if name:
-            self.attach(name)
+        names, _ = QFileDialog.getOpenFileNames(self, "Attach files", "",
+                                                "All files (*)")
+        added = False
+        for name in names:
+            added = self.attach(name) or added
+        return added
 
     def attach(self, path: str):
         """Read *path* into the cell (embedded until the notebook is saved,
-        when large files move to the sidecar folder)."""
+        when large files move to the sidecar folder). Re-attaching a name
+        that already exists replaces it."""
         p = Path(path)
         try:
             data = p.read_bytes()
         except OSError:
             return False
-        self._name = p.name
-        self._size = len(data)
-        self._bytes = data
-        self._path = None
-        self._drop_temp()
-        self._refresh()
+        att = _Attachment(name=p.name, size=len(data), data=data)
+        self._items = [a for a in self._items if a.name != p.name]
+        self._items.append(att)
+        self._rebuild()
         self.content_changed.emit()
         return True
+
+    def _remove(self, att: "_Attachment"):
+        att.drop_temp()
+        self._items = [a for a in self._items if a is not att]
+        self._rebuild()
+        self.content_changed.emit()
 
     # -- context (set by the notebook once its path is known) --------------
     def set_context(self, doc_dir, stem: str):
         doc_dir = Path(doc_dir) if doc_dir else None
-        # Moving to a new folder (Save As): pull the bytes in so the file
-        # gets rewritten into the new sidecar folder on the next save.
-        if (self._path and self._bytes is None and self._doc_dir is not None
-                and doc_dir != self._doc_dir):
-            old = self._doc_dir / self._path
-            if old.exists():
-                try:
-                    self._bytes = old.read_bytes()
-                    self._path = None
-                except OSError:
-                    pass
+        if doc_dir != self._doc_dir:
+            for att in self._items:        # Save As: keep bytes across move
+                att.preload_for_move(self._doc_dir)
         self._doc_dir = doc_dir
         self._stem = stem or "notebook"
-        self._refresh()
-
-    def _files_dir(self):
-        if self._doc_dir is None:
-            return None
-        return self._doc_dir / f"{self._stem}_files"
+        self._rebuild()
 
     def materialize(self):
-        """On save: write a large attachment out to the sidecar folder and
-        keep only its relative path; small files stay embedded."""
-        if not self._name or self._doc_dir is None:
+        """On save: externalise each large attachment to the sidecar folder."""
+        if self._doc_dir is None:
             return
-        data = self._current_bytes()
-        if data is None:
-            return
-        if len(data) > EMBED_LIMIT:
-            files_dir = self._files_dir()
-            files_dir.mkdir(parents=True, exist_ok=True)
-            (files_dir / self._name).write_bytes(data)
-            self._path = f"{self._stem}_files/{self._name}"
-            self._bytes = None                 # free memory; read from disk
-        else:
-            self._path = None
-            self._bytes = data
-        self._refresh()
+        for att in self._items:
+            att.materialize(self._doc_dir, self._stem)
+        self._rebuild()
 
-    # -- resolving to a real path (for the kernel's kf helper) -------------
-    def _current_bytes(self):
-        if self._bytes is not None:
-            return self._bytes
-        if self._path and self._doc_dir is not None:
-            fp = self._doc_dir / self._path
-            if fp.exists():
-                try:
-                    return fp.read_bytes()
-                except OSError:
-                    return None
+    # -- resolving (for the kernel's kf helper) ----------------------------
+    def resolved_path(self, name: str = None):
+        """Absolute path of the attachment *name* (or the first file when
+        *name* is None), or None."""
+        for att in self._items:
+            if name is None or att.name == name:
+                return att.resolved_path(self._doc_dir)
         return None
 
-    def resolved_path(self):
-        """Absolute path to the attached file on disk (extracting an
-        embedded file to a temp location if needed), or None."""
-        if not self._name:
-            return None
-        if self._path and self._doc_dir is not None:
-            fp = self._doc_dir / self._path
-            if fp.exists():
-                return str(fp)
-        data = self._current_bytes()
-        if data is None:
-            return None
-        if self._temp is None or not Path(self._temp).exists():
-            tmp_dir = Path(tempfile.mkdtemp(prefix="khervebook_files_"))
-            tmp = tmp_dir / self._name
-            tmp.write_bytes(data)
-            self._temp = str(tmp)
-        return self._temp
-
-    def _drop_temp(self):
-        if self._temp:
-            try:
-                shutil.rmtree(Path(self._temp).parent, ignore_errors=True)
-            except Exception:
-                pass
-            self._temp = None
+    @property
+    def file_names(self):
+        return [att.name for att in self._items]
 
     @property
-    def file_name(self) -> str:
-        return self._name
+    def file_name(self) -> str:            # first file, for summaries
+        return self._items[0].name if self._items else ""
 
-    # -- actions -----------------------------------------------------------
-    def open_file(self):
-        path = self.resolved_path()
+    # -- per-file actions --------------------------------------------------
+    def _open(self, att):
+        path = att.resolved_path(self._doc_dir)
         if path:
             QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
-    def save_copy(self):
-        if not self._name:
-            return
+    def _save_copy(self, att):
         dest, _ = QFileDialog.getSaveFileName(self, "Save a copy",
-                                              self._name, "All files (*)")
+                                              att.name, "All files (*)")
         if not dest:
             return
-        data = self._current_bytes()
+        data = att.current_bytes(self._doc_dir)
         if data is not None:
             Path(dest).write_bytes(data)
 
+    def _copy_ref(self, att):
+        QApplication.clipboard().setText(f"kf({json.dumps(att.name)})")
+
+    # Kept for the CellToolBar buttons (act on the first / all files).
+    def open_file(self):
+        if self._items:
+            self._open(self._items[0])
+
+    def save_copy(self):
+        if self._items:
+            self._save_copy(self._items[0])
+
     def copy_reference(self):
-        if not self._name:
-            return
-        ref = json.dumps(self._name)
-        QApplication.clipboard().setText(f"kf({ref})")
+        if self._items:
+            self._copy_ref(self._items[0])
 
     # -- drops -------------------------------------------------------------
     def dropEvent(self, event):
         for url in event.mimeData().urls():
             if url.isLocalFile():
                 self.attach(url.toLocalFile())
-                break
         event.acceptProposedAction()
 
     # -- source / persistence ---------------------------------------------
     def source(self) -> str:
-        doc = {"kbook_file": 1, "name": self._name, "size": self._size}
-        if self._path:
-            doc["path"] = self._path
-        else:
-            data = self._current_bytes()
-            if data is not None:
-                doc["embed"] = base64.b64encode(data).decode("ascii")
-        return json.dumps(doc)
+        return json.dumps({"kbook_files": 1,
+                           "files": [a.to_dict(self._doc_dir)
+                                     for a in self._items]})
 
     def set_source(self, text: str):
         text = (text or "").strip()
@@ -326,18 +477,16 @@ class FileCell(CellWidget):
             return
         if not isinstance(doc, dict):
             return
-        self._name = doc.get("name", "")
-        self._size = int(doc.get("size", 0))
-        self._path = doc.get("path")
-        self._bytes = None
-        if "embed" in doc:
-            try:
-                self._bytes = base64.b64decode(doc["embed"])
-                self._size = self._size or len(self._bytes)
-            except Exception:
-                self._bytes = None
-        self._drop_temp()
-        self._refresh()
+        for att in self._items:
+            att.drop_temp()
+        if "files" in doc:                     # current multi-file format
+            self._items = [_Attachment.from_dict(d) for d in doc["files"]
+                           if isinstance(d, dict) and d.get("name")]
+        elif doc.get("name"):                  # legacy single-file format
+            self._items = [_Attachment.from_dict(doc)]
+        else:
+            self._items = []
+        self._rebuild()
 
     def focus_editor(self):
         self._card.setFocus()

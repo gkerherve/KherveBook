@@ -574,8 +574,8 @@ class NotebookWidget(QScrollArea):
     def _resolve_file(self, name: str):
         """kf('name') -> absolute path of a File cell's attachment, or None."""
         for cell in self.cells:
-            if isinstance(cell, filecell.FileCell) and cell.file_name == name:
-                return cell.resolved_path()
+            if isinstance(cell, filecell.FileCell) and name in cell.file_names:
+                return cell.resolved_path(name)
         return None
 
     # -- persistence -------------------------------------------------------

@@ -131,7 +131,8 @@ def _notebook_listing(notebook) -> str:
         if cell.CELL_TYPE == "svg":
             body = "(an SVG drawing — you cannot read or edit this cell)"
         elif cell.CELL_TYPE == "file":
-            body = f"(an attached file: {cell.file_name or 'none'} — "\
+            names = ", ".join(cell.file_names) or "none"
+            body = f"(attached files: {names} — "\
                    "reachable from code as kf(\"name\"))"
         elif cell.CELL_TYPE == "note":
             body = _note_summary(cell)

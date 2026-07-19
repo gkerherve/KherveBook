@@ -304,6 +304,9 @@ class MainWindow(QMainWindow):
         h = m.addMenu("&Help")
         h.addAction(self._act("&User Guide", "F1", self._user_guide))
         h.addSeparator()
+        h.addAction(self._act("Report an &Issue / Feedback...", None,
+                              self._report_issue, "mdi.bug-outline",
+                              "Open the KherveBook issue tracker on GitHub"))
         h.addAction(self._act("&About", None, self._about))
 
     #: (label, type-key) pairs for the Jupyter-style cell-type selector.
@@ -960,6 +963,14 @@ class MainWindow(QMainWindow):
             return
         from .history_dialog import HistoryDialog
         HistoryDialog(Path(self.path).parent, self).exec_()
+
+    #: KherveBook's issue tracker (Help > Report an Issue).
+    ISSUES_URL = "https://github.com/gkerherve/KherveBook/issues"
+
+    def _report_issue(self):
+        from PyQt5.QtCore import QUrl
+        from PyQt5.QtGui import QDesktopServices
+        QDesktopServices.openUrl(QUrl(self.ISSUES_URL))
 
     def _user_guide(self):
         from .userguide import show_user_guide

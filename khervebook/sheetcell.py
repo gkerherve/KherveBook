@@ -36,6 +36,8 @@ from .kernel import Kernel
 
 _REF = re.compile(r"\b([A-Z]{1,2})(\d{1,3})\b")
 _RANGE = re.compile(r"\b([A-Z]{1,2})(\d{1,3})\s*:\s*([A-Z]{1,2})(\d{1,3})\b")
+#: spreadsheet power operator ^ (outside quoted strings) -> Python's **.
+_CARET = re.compile(r"\^(?=(?:[^'\"]*(['\"])[^'\"]*\1)*[^'\"]*$)")
 
 
 def _flat(args):
@@ -454,6 +456,11 @@ class SheetCell(CellWidget):
     @staticmethod
     def _eval(expr, values, blocked, namespace):
         """Evaluate one formula; empty cells read 0, pending cells retry."""
+        # Spreadsheet convention: ^ is exponentiation (as in Excel and
+        # KherveSheet), not Python's bitwise XOR. Rewrite it before eval so
+        # =A1^2 squares A1 rather than XOR-ing it.
+        expr = _CARET.sub("**", str(expr))
+
         def lookup(r, c):
             if (r, c) in blocked:
                 raise KeyError((r, c))
@@ -963,6 +970,7 @@ class SheetCell(CellWidget):
         from . import ksheetio
         doc = ksheetio.read_ksheet(path)
         self.set_source(_json.dumps(doc))
+        self.recalculate()          # recompute formulas with the kernel
         self.content_changed.emit()
 
 

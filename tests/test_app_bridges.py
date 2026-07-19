@@ -76,6 +76,44 @@ def test_sheet_cell_khervesheet_reload(qapp):
     assert data.get("A1") == "hello" and data.get("B2") == "42"
 
 
+def _cell_text(sheet_cell, ref):
+    import re
+    from khervebook.sheetcell import letter_col
+    m = re.match(r"([A-Z]+)(\d+)", ref)
+    c, r = letter_col(m.group(1)), int(m.group(2)) - 1
+    it = sheet_cell.table.item(r, c)
+    return it.text() if it else None
+
+
+def test_sheet_caret_is_power(qapp):
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    cell = nb.add_cell_below(
+        "sheet", json.dumps({"sheets": [{"name": "Sheet1", "rows": 6,
+        "cols": 3, "data": {"A1": "1", "A2": "2", "A3": "3",
+                            "B1": "=A1^2", "B2": "=A2^2", "B3": "=A3^2",
+                            "C1": "=SUM(B1:B3)"}}], "active": "Sheet1"}))
+    cell.execute(nb.kernel)
+    assert [_cell_text(cell, f"B{i}") for i in (1, 2, 3)] == ["1", "4", "9"]
+    assert _cell_text(cell, "C1") == "14"
+
+
+def test_sheet_reload_recomputes_formulas(qapp):
+    import tempfile
+    from pathlib import Path
+    from khervebook import ksheetio
+    from khervebook.notebook import NotebookWidget
+    nb = NotebookWidget()
+    cell = nb.add_cell_below("sheet")
+    tmp = Path(tempfile.mkdtemp()) / "wb.ksheet"
+    ksheetio.write_ksheet(
+        {"sheets": [{"name": "Sheet1", "rows": 6, "cols": 3,
+                     "data": {"A1": "5", "B1": "=A1^2"}}],
+         "active": "Sheet1"}, tmp)
+    cell._reload_from_ksheet(str(tmp))
+    assert _cell_text(cell, "B1") == "25"     # recomputed, not raw "=A1^2"
+
+
 def test_app_bridge_detects_missing_app(qapp, tmp_path):
     from khervebook.appbridge import AppBridge
     from khervebook.notebook import NotebookWidget

@@ -2,9 +2,11 @@
 
 The version is `0.1.{commit_count}+{short_sha}`, where commit_count comes
 from `git rev-list --count HEAD` so it monotonically bumps on every
-commit without anyone having to edit a constant. When the package is
-run outside a git checkout (e.g. an installed copy with no .git
-folder) we fall back to ``_FALLBACK``.
+commit without anyone having to edit a constant. Frozen (PyInstaller)
+builds never ship a `.git` folder, so the build script writes the
+resolved string to a `VERSION` file next to this one and bundles it —
+`get_version()` checks that first. Only a source checkout with neither
+a bundled VERSION file nor .git falls back to ``_FALLBACK``.
 
 Copyright (C) 2026 Gwilherm Kerherve
 
@@ -23,6 +25,11 @@ _FALLBACK = "0.1.0"
 
 @lru_cache(maxsize=1)
 def get_version() -> str:
+    bundled = Path(__file__).resolve().parent / "VERSION"
+    if bundled.is_file():
+        version = bundled.read_text(encoding="utf-8").strip()
+        if version:
+            return version
     root = Path(__file__).resolve().parent.parent
     if not (root / ".git").exists():
         return _FALLBACK

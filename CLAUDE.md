@@ -156,6 +156,15 @@ into a new module and import.
                        library (its per-user `objects` folder) live, so
                        objects saved in KhervePaint appear in KherveBook's
                        SVG "Library" menu. No cross-project import.
+  - `appbridge.py`   — `AppBridge`: opens a cell's content in a sibling
+                       Kherve app (KhervePaint/KhervePY/KherveSheet) on a
+                       temp file and reloads the cell when that app saves,
+                       by polling the file's mtime. Each cell supplies a
+                       writer + a reload callback (SvgCell/CodeCell/
+                       SheetCell `open_in_*`).
+  - `ksheetio.py`    — minimal read/write of KherveSheet's `.ksheet` (HDF5)
+                       core grid, for the sheet-cell round-trip through
+                       KherveSheet (matches its `_save_to_ksheet` schema).
   - `jscell.py`      — `JsCell`: a JavaScript/HTML cell rendered in a
                        QtWebEngine view (D3/Plotly/canvas); falls back to
                        a hint if PyQtWebEngine is absent.

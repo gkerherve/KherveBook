@@ -1254,6 +1254,23 @@ class CodeCell(CellWidget):
         kernel.forget(self._introduced)
         self._introduced = set()
 
+    # -- KhervePY round-trip -----------------------------------------------
+    def open_in_khervepy(self):
+        """Open this cell's code in the sibling KhervePY editor; when saved
+        there, the code cell updates."""
+        if getattr(self, "_py_bridge", None) is None:
+            from .appbridge import AppBridge
+            self._py_bridge = AppBridge(
+                self, "KhervePY", "khervepy", ".py", self._reload_from_py)
+        self._py_bridge.open(
+            lambda p: p.write_text(self.source(), encoding="utf-8"))
+
+    def _reload_from_py(self, path):
+        from pathlib import Path
+        text = Path(path).read_text(encoding="utf-8")
+        self.set_source(text)
+        self.content_changed.emit()
+
 
 class MarkdownCell(CellWidget):
     """Markdown cell: edit source, render on run, double-click to re-edit."""

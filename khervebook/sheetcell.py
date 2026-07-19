@@ -944,5 +944,26 @@ class SheetCell(CellWidget):
         self._rebuild_views(select=("sheet", len(self._tables) - 1))
         self.content_changed.emit()
 
+    # -- KherveSheet round-trip --------------------------------------------
+    def open_in_khervesheet(self):
+        """Open this workbook in the sibling KherveSheet app; when saved
+        there (Ctrl+S), the sheet cell updates."""
+        if getattr(self, "_sheet_bridge", None) is None:
+            from .appbridge import AppBridge
+            self._sheet_bridge = AppBridge(
+                self, "KherveSheet", "khervesheet", ".ksheet",
+                self._reload_from_ksheet)
+        from . import ksheetio
+        self._sheet_bridge.open(
+            lambda p: ksheetio.write_ksheet(self.source(), p))
+
+    def _reload_from_ksheet(self, path):
+        import json as _json
+
+        from . import ksheetio
+        doc = ksheetio.read_ksheet(path)
+        self.set_source(_json.dumps(doc))
+        self.content_changed.emit()
+
 
 CELL_CLASSES["sheet"] = SheetCell

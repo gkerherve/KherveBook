@@ -511,6 +511,15 @@ class CellToolBar(QToolBar):
                        [(name, lambda b=body: self._insert(b))
                         for name, body in PY_SNIPPETS.items()],
                        icon_name="mdi.code-braces")
+        self.addSeparator()
+        self._add("Open in KhervePY", "Edit this code in the full KhervePY "
+                  "editor and reload on save", self._open_code_in_khervepy,
+                  "mdi.language-python")
+
+    def _open_code_in_khervepy(self):
+        cell = self._notebook.current
+        if cell is not None and hasattr(cell, "open_in_khervepy"):
+            cell.open_in_khervepy()
 
     @staticmethod
     def _dedent_line(ln):
@@ -561,6 +570,11 @@ class CellToolBar(QToolBar):
         self._add("Add sheet", "Add another sheet to this workbook cell",
                   lambda: self._sheet_op("add_sheet"),
                   "mdi.table-plus")
+        self.addSeparator()
+        self._add("Open in KherveSheet", "Edit this workbook in the full "
+                  "KherveSheet app and reload on save",
+                  lambda: self._sheet_op("open_in_khervesheet"),
+                  "mdi.google-spreadsheet")
 
     # -- LaTeX mode -----------------------------------------------------------
     def _build_latex(self):

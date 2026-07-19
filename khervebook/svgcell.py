@@ -16,19 +16,13 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
-import os
 import re
-import subprocess
-import sys
-import tempfile
 from pathlib import Path
 
-from PyQt5.QtCore import (QByteArray, QPointF, QRectF, QSize, Qt, QTimer,
-                          pyqtSignal)
+from PyQt5.QtCore import QByteArray, QPointF, QRectF, QSize, Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QPainter, QPen, QPixmap, QPolygonF
 from PyQt5.QtSvg import QSvgRenderer
-from PyQt5.QtWidgets import (QColorDialog, QInputDialog, QMessageBox,
-                             QSizePolicy, QWidget)
+from PyQt5.QtWidgets import QColorDialog, QInputDialog, QSizePolicy, QWidget
 
 from .cells import CELL_CLASSES, CellWidget, XmlHighlighter
 from .style import tokens
@@ -340,10 +334,7 @@ class SvgCell(CellWidget):
         self.view.edit_requested.connect(self._edit_again)
         self.view.pressed.connect(lambda: self.focused.emit(self))
         self.view.hide()
-        self._paint_timer = None       # polls the KhervePaint round-trip file
-        self._paint_tmp = None
-        self._paint_proc = None
-        self._paint_mtime = 0.0
+        self._paint_bridge = None      # KhervePaint round-trip (lazy)
         self.column.addWidget(self.view)
         # Show the drawing canvas straight away so there is always
         # something to draw on (a blank canvas for a new/empty cell).
@@ -466,66 +457,20 @@ class SvgCell(CellWidget):
 
     # -- KhervePaint round-trip --------------------------------------------
     def open_in_paint(self):
-        repo = Path(__file__).resolve().parents[2] / "KhervePaint"
-        if not (repo / "khervepaint" / "__main__.py").exists():
-            QMessageBox.information(
-                self, "KhervePaint",
-                "KhervePaint was not found next to KherveBook "
-                f"(looked in {repo}).")
-            return
-        tmp = Path(tempfile.gettempdir()) / f"khervebook_svg_{id(self)}.svg"
-        tmp.write_text(self.source(), encoding="utf-8")
-        venv = repo / ".venv" / (
-            "Scripts/python.exe" if os.name == "nt" else "bin/python")
-        python = str(venv) if venv.exists() else sys.executable
-        try:
-            self._paint_proc = subprocess.Popen(
-                [python, "-m", "khervepaint", str(tmp)], cwd=str(repo))
-        except Exception as exc:
-            QMessageBox.warning(self, "KhervePaint",
-                                f"Could not launch KhervePaint:\n{exc}")
-            return
-        # Poll the file for changes: a plain QFileSystemWatcher misses the
-        # atomic save-replace many editors do on Windows, so a timer that
-        # checks the modification time is far more reliable.
-        self._paint_tmp = tmp
-        try:
-            self._paint_mtime = tmp.stat().st_mtime
-        except OSError:
-            self._paint_mtime = 0.0
-        if self._paint_timer is None:
-            self._paint_timer = QTimer(self)
-            self._paint_timer.timeout.connect(self._poll_paint_file)
-        self._paint_timer.start(700)
-        QMessageBox.information(
-            self, "Editing in KhervePaint",
-            "This drawing is opening in KhervePaint.\n\nEdit it there, "
-            "then Save (Ctrl+S) — KherveBook reloads it automatically.\n\n"
-            "If it doesn't open on its own (older KhervePaint), use "
-            "File ▸ Open on:\n" + str(tmp))
+        if self._paint_bridge is None:
+            from .appbridge import AppBridge
+            self._paint_bridge = AppBridge(
+                self, "KhervePaint", "khervepaint", ".svg",
+                self._reload_from_paint)
+        self._paint_bridge.open(
+            lambda p: p.write_text(self.source(), encoding="utf-8"))
 
-    def _poll_paint_file(self):
-        """Reload the drawing when KhervePaint saves the shared file; stop
-        polling once KhervePaint has closed (after a final reload)."""
-        tmp = self._paint_tmp
-        if tmp is None or not tmp.exists():
-            return
-        try:
-            mtime = tmp.stat().st_mtime
-        except OSError:
-            return
-        if mtime > self._paint_mtime:
-            self._paint_mtime = mtime
-            try:
-                text = tmp.read_text(encoding="utf-8")
-            except OSError:
-                text = ""
-            if "<svg" in text.lower():
-                self.set_source(text)
-                self.execute(None)
-                self.content_changed.emit()
-        if self._paint_proc is not None and self._paint_proc.poll() is not None:
-            self._paint_timer.stop()       # KhervePaint closed
+    def _reload_from_paint(self, path):
+        text = Path(path).read_text(encoding="utf-8")
+        if "<svg" in text.lower():
+            self.set_source(text)
+            self.execute(None)
+            self.content_changed.emit()
 
 
 CELL_CLASSES["svg"] = SvgCell

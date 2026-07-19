@@ -17,6 +17,7 @@ the Free Software Foundation, either version 3 of the License, or
 """
 
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -93,6 +94,9 @@ class _SvgDrawSurface(QWidget):
         self._cur = None
         self._pen_pts = []
         self._added = []             # appended element strings, for undo
+        self.show_grid = False       # draw a grid overlay
+        self.snap = False            # snap drawing points to the grid
+        self.grid_size = 20.0        # grid spacing, in SVG units
         policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         policy.setHeightForWidth(True)
         self.setSizePolicy(policy)
@@ -147,7 +151,11 @@ class _SvgDrawSurface(QWidget):
         x, y, w, h = self._vb()
         fx = (pos.x() - r.x()) / r.width() if r.width() else 0
         fy = (pos.y() - r.y()) / r.height() if r.height() else 0
-        return x + fx * w, y + fy * h
+        sx, sy = x + fx * w, y + fy * h
+        if self.snap and self.grid_size > 0:
+            sx = round(sx / self.grid_size) * self.grid_size
+            sy = round(sy / self.grid_size) * self.grid_size
+        return sx, sy
 
     def _to_px(self, sx, sy) -> QPointF:
         r = self._fit_rect()
@@ -170,6 +178,8 @@ class _SvgDrawSurface(QWidget):
         else:
             p.drawText(self.rect(), Qt.AlignCenter,
                        "Invalid SVG — edit the source.")
+        if self.show_grid:
+            self._draw_grid(p)
         if self.tool != "select" and (self._start or len(self._pen_pts) > 1):
             pen = QPen(self.color, max(1.0, self.stroke_width * self._scale()),
                        Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
@@ -187,6 +197,32 @@ class _SvgDrawSurface(QWidget):
                 elif self.tool == "ellipse":
                     p.drawEllipse(QRectF(a, b).normalized())
         p.end()
+
+    def _draw_grid(self, p):
+        """Paint a light grid (every grid_size SVG units) over the canvas."""
+        x0, y0, w, h = self._vb()
+        step = self.grid_size
+        if step <= 0 or w <= 0 or h <= 0:
+            return
+        fine = QPen(QColor(0, 0, 0, 40), 0)
+        bold = QPen(QColor(0, 0, 0, 80), 0)      # every 5th line, stronger
+        p.setBrush(Qt.NoBrush)
+        i = 0
+        gx = x0 - (x0 % step)
+        while gx <= x0 + w + 0.001:
+            p.setPen(bold if i % 5 == 0 else fine)
+            a, b = self._to_px(gx, y0), self._to_px(gx, y0 + h)
+            p.drawLine(a, b)
+            gx += step
+            i += 1
+        i = 0
+        gy = y0 - (y0 % step)
+        while gy <= y0 + h + 0.001:
+            p.setPen(bold if i % 5 == 0 else fine)
+            a, b = self._to_px(x0, gy), self._to_px(x0 + w, gy)
+            p.drawLine(a, b)
+            gy += step
+            i += 1
 
     # -- mouse drawing -----------------------------------------------------
     def mousePressEvent(self, event):
@@ -330,6 +366,56 @@ class SvgCell(CellWidget):
 
     def undo_shape(self):
         self.view.undo_shape()
+
+    # -- grid / snap / canvas (called by the CellToolBar) ------------------
+    def set_show_grid(self, on: bool):
+        self.view.show_grid = bool(on)
+        self.view.update()
+
+    def grid_on(self) -> bool:
+        return self.view.show_grid
+
+    def set_snap(self, on: bool):
+        self.view.snap = bool(on)
+
+    def snap_on(self) -> bool:
+        return self.view.snap
+
+    def set_grid_size(self, size: float):
+        self.view.grid_size = max(1.0, float(size))
+        self.view.update()
+
+    def grid_size(self) -> int:
+        return int(self.view.grid_size)
+
+    def canvas_size(self):
+        """(width, height) of the drawing's SVG viewBox, rounded."""
+        _x, _y, w, h = self.view._vb()
+        return int(round(w)), int(round(h))
+
+    def set_canvas_size(self, width=None, height=None):
+        """Resize the drawing area: rewrite the SVG viewBox (and a full-page
+        background rect, if any) to the new width/height."""
+        if self.view.isHidden():
+            self.execute(None)
+        _x, _y, cw, ch = self.view._vb()
+        nw = float(width) if width else cw
+        nh = float(height) if height else ch
+        if nw <= 0 or nh <= 0:
+            return
+        src = self.source()
+        vb = f'viewBox="0 0 {nw:g} {nh:g}"'
+        if re.search(r'viewBox="[^"]*"', src):
+            src = re.sub(r'viewBox="[^"]*"', vb, src, count=1)
+        else:
+            src = re.sub(r'<svg\b', f'<svg {vb}', src, count=1)
+        # Stretch a background rect that covers the old canvas from (0,0).
+        src = re.sub(
+            r'(<rect\b[^>]*\bx="0"[^>]*\by="0"[^>]*\bwidth=")[^"]*("[^>]*\b'
+            r'height=")[^"]*(")',
+            rf'\g<1>{nw:g}\g<2>{nh:g}\g<3>', src, count=1)
+        self.set_source(src)
+        self.execute(None)
 
     def insert_svg(self, element: str):
         """Append a ready-made SVG element (the Shape menu) and re-render."""

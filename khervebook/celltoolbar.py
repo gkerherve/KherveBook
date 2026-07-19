@@ -247,6 +247,47 @@ class CellToolBar(QToolBar):
         self._add("Undo", "Undo the last drawn shape",
                   lambda: self._svg("undo_shape"), "mdi.undo")
         self.addSeparator()
+
+        # Grid, snap-to-grid, grid spacing (unit) and canvas size.
+        grid = QAction(icon("mdi.grid"), "Grid", self)
+        grid.setToolTip("Show a grid over the canvas")
+        grid.setCheckable(True)
+        grid.setChecked(bool(cell and cell.grid_on()))
+        grid.toggled.connect(lambda on: self._svg("set_show_grid", on))
+        self.addAction(grid)
+        snap = QAction(icon("mdi.magnet"), "Snap", self)
+        snap.setToolTip("Snap drawing to the grid")
+        snap.setCheckable(True)
+        snap.setChecked(bool(cell and cell.snap_on()))
+        snap.toggled.connect(lambda on: self._svg("set_snap", on))
+        self.addAction(snap)
+        unit = QSpinBox()
+        unit.setRange(2, 500)
+        unit.setValue(cell.grid_size() if cell else 20)
+        unit.setPrefix("grid ")
+        unit.setSuffix(" px")
+        unit.setToolTip("Grid spacing (the snap unit), in px")
+        unit.valueChanged.connect(lambda v: self._svg("set_grid_size", v))
+        self.addWidget(unit)
+        self.addSeparator()
+        cw, ch = cell.canvas_size() if cell else (800, 500)
+        canvas_w = QSpinBox()
+        canvas_w.setRange(20, 10000)
+        canvas_w.setValue(cw)
+        canvas_w.setPrefix("W ")
+        canvas_w.setToolTip("Canvas width (px)")
+        canvas_w.valueChanged.connect(
+            lambda v: self._svg("set_canvas_size", v, None))
+        self.addWidget(canvas_w)
+        canvas_h = QSpinBox()
+        canvas_h.setRange(20, 10000)
+        canvas_h.setValue(ch)
+        canvas_h.setPrefix("H ")
+        canvas_h.setToolTip("Canvas height (px)")
+        canvas_h.valueChanged.connect(
+            lambda v: self._svg("set_canvas_size", None, v))
+        self.addWidget(canvas_h)
+        self.addSeparator()
         self._add_menu("Shape", "Insert a ready-made SVG shape", [
             ("Rectangle", lambda: self._svg("insert_svg",
                 '<rect x="60" y="60" width="160" height="110" rx="8" '

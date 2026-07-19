@@ -68,6 +68,39 @@ def test_svg_cell_renders_canvas_by_default(qapp):
     assert "<svg" in cell.source()
 
 
+def test_svg_cell_grid_snap_and_unit(qapp):
+    from khervebook.svgcell import SvgCell
+    cell = SvgCell()
+    cell.set_show_grid(True)
+    cell.set_snap(True)
+    cell.set_grid_size(25)
+    assert cell.grid_on() and cell.snap_on() and cell.grid_size() == 25
+
+
+def test_svg_snap_rounds_points_to_grid(qapp):
+    from PyQt5.QtCore import QPoint
+    from khervebook.svgcell import SvgCell
+    cell = SvgCell()
+    cell.execute(None)
+    surf = cell.view
+    surf.resize(800, 500)
+    surf.snap = True
+    surf.grid_size = 25
+    sx, sy = surf._to_svg(QPoint(207, 133))
+    assert sx % 25 == 0 and sy % 25 == 0
+
+
+def test_svg_cell_canvas_resize(qapp):
+    from khervebook.svgcell import SvgCell
+    cell = SvgCell()          # blank canvas 800x500
+    assert cell.canvas_size() == (800, 500)
+    cell.set_canvas_size(width=600)
+    cell.set_canvas_size(height=400)
+    assert cell.canvas_size() == (600, 400)
+    assert 'viewBox="0 0 600 400"' in cell.source()
+    assert 'width="600"' in cell.source() and 'height="400"' in cell.source()
+
+
 def test_svg_cell_draws_shape_and_syncs_source(qapp):
     from khervebook.svgcell import SvgCell, STARTER_SVG
     from PyQt5.QtGui import QColor

@@ -52,6 +52,12 @@ def test_note_cell_formatting_toggles_bold(qapp):
     assert cell.rich.textCursor().charFormat().fontWeight() == QFont.Bold
 
 
+def test_note_cell_has_white_page_background(qapp):
+    from khervebook.notecell import NoteCell
+    cell = NoteCell()
+    assert "#ffffff" in cell.rich.styleSheet()
+
+
 def test_note_cell_registered_and_round_trips_in_notebook(qapp):
     from khervebook.notebook import NotebookWidget
     nb = NotebookWidget()

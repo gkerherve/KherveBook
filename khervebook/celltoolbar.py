@@ -303,6 +303,7 @@ class CellToolBar(QToolBar):
                 '<path d="M40,160 Q160,20 280,160" stroke="#c0392b" '
                 'fill="none" stroke-width="3"/>')),
         ], icon_name="mdi.shape-outline")
+        self._build_library_button()
         self._add("Edit source", "Edit the raw SVG source",
                   lambda: self._svg("edit_source"), "mdi.code-tags")
         self._add("Render", "Render / show the drawing (Shift+Enter)",
@@ -312,6 +313,34 @@ class CellToolBar(QToolBar):
         self._add("Open in KhervePaint", "Draw in the full KhervePaint app "
                   "and reload on save", self._open_svg_in_paint,
                   "mdi.draw-pen")
+
+    def _build_library_button(self):
+        """A dropdown listing KhervePaint's reusable objects, read live from
+        its library folder so objects you save there appear here."""
+        btn = QToolButton()
+        btn.setText("Library")
+        btn.setToolTip("Insert a KhervePaint library object "
+                       "(reads KhervePaint's saved objects)")
+        btn.setIcon(icon("mdi.shape-plus"))
+        btn.setPopupMode(QToolButton.InstantPopup)
+        menu = QMenu(btn)
+        menu.aboutToShow.connect(lambda: self._populate_library(menu))
+        btn.setMenu(menu)
+        self.addWidget(btn)
+
+    def _populate_library(self, menu):
+        from . import paintlibrary
+        menu.clear()
+        objects = paintlibrary.list_objects()
+        if not objects:
+            act = menu.addAction("(no KhervePaint objects yet)")
+            act.setEnabled(False)
+            hint = menu.addAction("Save objects in KhervePaint to see them")
+            hint.setEnabled(False)
+            return
+        for label, path in objects:
+            menu.addAction(
+                label, lambda _=False, p=path: self._svg("insert_object", p))
 
     def _open_svg_in_paint(self):
         cell = self._notebook.current

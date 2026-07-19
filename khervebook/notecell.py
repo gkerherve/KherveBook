@@ -175,7 +175,10 @@ class _RichEdit(QTextEdit):
         self.document().documentLayout().documentSizeChanged.connect(
             lambda _=None: self._fit())
         self.textChanged.connect(self._fit)
-        self.viewport().setStyleSheet("background: transparent;")
+        # A Word-style white page (dark text), regardless of app theme —
+        # user-applied text colours still win via their char format.
+        self.setStyleSheet("QTextEdit { background: #ffffff; "
+                           "color: #1a1a1a; }")
         self._fit()
 
     def _fit(self):

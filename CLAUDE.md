@@ -144,11 +144,18 @@ into a new module and import.
                        QSvgRenderer (KhervePaint saves .svg). Shows a canvas
                        by default (a blank one for a new/empty cell); the
                        drawing tools (select/pen/line/rect/ellipse/text,
-                       colour, width, undo, shape, edit source, render,
-                       Open in KhervePaint) live in the CellToolBar and
-                       drive `set_tool`/`pick_color`/… . `open_in_paint`
-                       hands the drawing to the sibling `khervepaint` app
-                       and reloads on save.
+                       colour, width, undo, grid+snap+unit, canvas W/H,
+                       shape, Library, edit source, render, Open in
+                       KhervePaint) live in the CellToolBar and drive
+                       `set_tool`/`pick_color`/… . `open_in_paint` hands the
+                       drawing to the sibling `khervepaint` app and reloads
+                       on save (polls the shared file so KhervePaint edits
+                       reflect back). `insert_object` drops a KhervePaint
+                       library object into the drawing.
+  - `paintlibrary.py`— reads the sibling KhervePaint app's reusable-object
+                       library (its per-user `objects` folder) live, so
+                       objects saved in KhervePaint appear in KherveBook's
+                       SVG "Library" menu. No cross-project import.
   - `jscell.py`      — `JsCell`: a JavaScript/HTML cell rendered in a
                        QtWebEngine view (D3/Plotly/canvas); falls back to
                        a hint if PyQtWebEngine is absent.

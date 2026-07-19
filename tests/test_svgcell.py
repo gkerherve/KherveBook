@@ -101,6 +101,35 @@ def test_svg_cell_canvas_resize(qapp):
     assert 'width="600"' in cell.source() and 'height="400"' in cell.source()
 
 
+def test_paint_library_lists_and_reads_objects(qapp, tmp_path, monkeypatch):
+    monkeypatch.setenv("KHERVEPAINT_OBJECTS_DIR", str(tmp_path))
+    (tmp_path / "chair.svg").write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">'
+        '<rect x="1" y="1" width="38" height="38" fill="#a55"/></svg>')
+    sub = tmp_path / "Furniture"
+    sub.mkdir()
+    (sub / "lamp.svg").write_text(
+        '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>')
+    from khervebook import paintlibrary
+    labels = [lbl for lbl, _p in paintlibrary.list_objects()]
+    assert "chair" in labels
+    assert "Furniture / lamp" in labels
+    inner = paintlibrary.object_inner_svg(tmp_path / "chair.svg")
+    assert "<rect" in inner and "<svg" not in inner
+
+
+def test_svg_cell_insert_library_object(qapp, tmp_path, monkeypatch):
+    monkeypatch.setenv("KHERVEPAINT_OBJECTS_DIR", str(tmp_path))
+    obj = tmp_path / "star.svg"
+    obj.write_text('<svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8"/>'
+                   '</svg>')
+    from khervebook.svgcell import SvgCell
+    cell = SvgCell()
+    cell.insert_object(obj)
+    assert "<g transform=" in cell.source()
+    assert "<circle" in cell.source()
+
+
 def test_svg_cell_draws_shape_and_syncs_source(qapp):
     from khervebook.svgcell import SvgCell, STARTER_SVG
     from PyQt5.QtGui import QColor

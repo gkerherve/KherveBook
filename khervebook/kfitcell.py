@@ -130,9 +130,12 @@ class KFitCell(CellWidget):
         self._sheet_box.setToolTip("Which sheet of the project to show")
         self._sheet_box.currentIndexChanged.connect(self._on_sheet_changed)
         header.addWidget(self._sheet_box)
-        self._title = QLabel("")
-        self._title.setStyleSheet("color: #57606a;")
-        header.addWidget(self._title, 1)
+        # Not "_title": CellWidget already owns that name for the cell's
+        # own heading, and shadowing it with a widget breaks every later
+        # set_title() — and the refresh that follows it.
+        self._info = QLabel("")
+        self._info.setStyleSheet("color: #57606a;")
+        header.addWidget(self._info, 1)
 
         self._open_btn = QPushButton("Open in KherveFitting")
         self._open_btn.setIcon(icon("mdi.chart-bell-curve"))
@@ -228,7 +231,7 @@ class KFitCell(CellWidget):
         sheet = self.current_sheet()
         self._open_btn.setEnabled(self._att is not None)
         if sheet is None:
-            self._title.setText("")
+            self._info.setText("")
             self._clear_plot()
             self._table.setModel(None)
             self._hint.setText(
@@ -237,7 +240,7 @@ class KFitCell(CellWidget):
             return
         name = self._att.name if self._att else ""
         sample = self._project.sample
-        self._title.setText(f"{name}  ·  {sheet.summary()}"
+        self._info.setText(f"{name}  ·  {sheet.summary()}"
                             + (f"  ·  {sample}" if sample
                                and sample != name else ""))
         curves = self._curves(sheet)

@@ -235,3 +235,37 @@ def test_a_project_that_cannot_be_read_reports_it(qapp, tmp_path):
     cell.attach(str(broken))
     assert cell.current_sheet() is None
     assert cell._hint.text()          # the parse error, not an empty cell
+
+
+# -- the cell must not fight its own base class ----------------------------
+def test_setting_a_cell_title_does_not_break_the_view(qapp, xps_kfit):
+    """The regression: this cell kept its info label in ``self._title``,
+    the name CellWidget already uses for the cell's own heading. The
+    first set_title() replaced the widget with a plain string, and every
+    later refresh died on ``'str' object has no attribute 'setText'``."""
+    cell = KFitCell()
+    cell.attach(str(xps_kfit))
+    cell.set_title("Iron oxide")
+
+    cell._sheet_box.setCurrentIndex(1)          # the crash was here
+    cell._refresh()
+
+    assert cell.to_dict()["title"] == "Iron oxide"
+    assert cell._info.text()                    # still a live widget
+
+
+def test_no_cell_type_shadows_a_base_attribute(qapp):
+    """No subclass may reuse a CellWidget attribute name for something
+    else. That is what broke the KFit cell, and it stays silent until
+    whichever base method owns the name is finally called."""
+    from khervebook.cells import CELL_CLASSES, CellWidget
+
+    base = {name: type(value)
+            for name, value in vars(CellWidget("")).items()}
+    clashes = []
+    for kind, cls in sorted(CELL_CLASSES.items()):
+        for name, value in vars(cls("")).items():
+            if name in base and not isinstance(value, base[name]):
+                clashes.append(f"{kind}.{name}: {base[name].__name__}"
+                               f" -> {type(value).__name__}")
+    assert not clashes, clashes

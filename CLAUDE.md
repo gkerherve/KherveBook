@@ -82,6 +82,14 @@ into a new module and import.
                        hidden); replies add new cells or replace an
                        existing one (```python cell=N) — any type except
                        svg — applied as one undoable macro.
+  - `ai_memory.py`   — the chat's conversation memory: a ~400k-character
+                       window (`ai/memory_chars`, ≈100k tokens) trimmed
+                       newest-first, and JSON persistence under the
+                       user's app-data folder so a conversation survives
+                       a restart. Unbounded history is not "more memory"
+                       — the provider eventually refuses the request —
+                       and old base64 screenshots are dropped before any
+                       text, since one outweighs the whole discussion.
   - `examples.py`    — Examples menu registry (name, category, builder),
                        like KherveSheet's.
   - `sheet_examples.py` — ~50 spreadsheet examples ported from

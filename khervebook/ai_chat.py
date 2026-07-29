@@ -27,7 +27,7 @@ from PyQt5.QtWidgets import (QComboBox, QDialog, QDialogButtonBox,
                              QPlainTextEdit, QPushButton, QSizePolicy,
                              QTextBrowser, QToolButton, QVBoxLayout, QWidget)
 
-from . import ai_providers as prov
+from . import ai_memory, ai_providers as prov
 from .icons import icon
 
 #: Downscale pasted images past this dimension (keeps API payloads small).
@@ -589,7 +589,10 @@ class AIChatDock(QDockWidget):
         self.setObjectName("ai_chat")
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self._notebook = notebook
-        self._history = []          # neutral [{"role", "content"}]
+        # Neutral [{"role", "content"}], reloaded from the last session:
+        # a conversation that worked out an analysis should still be
+        # there tomorrow.
+        self._history = ai_memory.load()
         self._pending_cells = []
         self._pending_images = []   # [{"media_type", "data", "chip"}]
         self._worker = None
@@ -806,6 +809,9 @@ class AIChatDock(QDockWidget):
         self.status.setText(f"Thinking… ({cfg['model']})")
         self.send_btn.setEnabled(False)
         system = build_system_prompt(self._notebook)
+        # Send a bounded window: unbounded, the provider eventually
+        # refuses the request instead of the chat quietly forgetting.
+        self._history = ai_memory.trim(self._history)
         self._worker = AIWorker(cfg, system, self._history, self)
         self._worker.done.connect(self._on_done)
         self._worker.failed.connect(self._on_failed)
@@ -814,6 +820,7 @@ class AIChatDock(QDockWidget):
 
     def _on_done(self, text: str):
         self._history.append({"role": "assistant", "content": text})
+        ai_memory.save(self._history)
         self._append("assistant", text)
         self._pending_cells = extract_cells(text)
         n = len(self._pending_cells)
@@ -898,6 +905,7 @@ class AIChatDock(QDockWidget):
 
     def _clear(self):
         self._history = []
+        ai_memory.forget()
         self._pending_cells = []
         self.insert_btn.hide()
         self.status.setText("")

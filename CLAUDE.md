@@ -47,6 +47,12 @@ into a new module and import.
   - `__main__.py`    — module entry point.
   - `_version.py`    — git-based version string.
   - `app.py`         — `main()`, crash log, Fusion style + theme.
+                       Installs a `sys.excepthook`: PyQt5 calls `qFatal()`
+                       (abort) when an exception escapes a slot, which
+                       kills the app with *nothing* in the crash log —
+                       faulthandler only records native faults. The hook
+                       takes precedence, so the traceback is logged and
+                       shown and the notebook survives.
   - `style.py`       — QSS theme: flat light, white cell cards, blue
                        selected-cell bar (KherveFitting-Qt family look).
   - `icons.py`       — qtawesome MDI icon wrapper (32px toolbar icons,

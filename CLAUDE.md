@@ -153,6 +153,13 @@ into a new module and import.
                        KherveFitting" button (AppBridge, reload on save).
                        Storage is the File cell's hybrid (`_Attachment`):
                        embedded under 256 KiB, sidecar folder above it.
+                       **Refresh** re-reads the file from where it was
+                       loaded (`origin` is persisted), for a re-fit done
+                       elsewhere. Only `.kfit` drops are accepted — the
+                       base cell would otherwise let the notebook convert
+                       this cell away and lose the project. `project()`
+                       exposes the parsed `KFitProject` to `kfit()` and
+                       the AI summary.
   - `kfitio.py`      — reads `.kfit` (HDF5 + zlib-JSON project, with the
                        bulky arrays as HDF5 datasets) into `KFitProject` /
                        `KFitSheet`. Every technique uses the same three
@@ -218,7 +225,12 @@ into a new module and import.
                        trailing-expression echo, figure/image capture
                        (PNG, or live Figures when `interactive_figures`).
                        `ks("A1")` reads a sheet grid; `ks("A1", value)`
-                       writes back into the live sheet.
+                       writes back into the live sheet. `kfit("C1s")`
+                       returns a `KFitSheet` of a KFit cell's project
+                       (`.x`/`.y`/`.peaks`/`.curves()`/`.frame()`); a 2nd
+                       argument picks the cell by position, file name or
+                       title. Resolved by `NotebookWidget._resolve_kfit`
+                       through `kernel.kfit_lookup`, like `kf()`.
   - `welcome.py`     — pre-run example notebook shown on startup.
   - `undo_commands.py` — QUndoCommand classes for cell structure
                        (add/remove/move/convert); they keep the live

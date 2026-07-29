@@ -130,6 +130,31 @@ into a new module and import.
                        `NotebookWidget.set_document_path`/`prepare_save`
                        plumb the folder in; `materialize()` externalises
                        large attachments on save.
+  - `kfitcell.py`    — `KFitCell`: holds one KherveFitting `.kfit` and shows
+                       it as a **Plot** (KherveFitting's own look: black
+                       scatter, grey dashed background, shaded peaks,
+                       blue envelope, green residuals lifted above the
+                       data) or a **Data** table, switched by tabs, with a
+                       drop-down over the project's sheets and an "Open in
+                       KherveFitting" button (AppBridge, reload on save).
+                       Storage is the File cell's hybrid (`_Attachment`):
+                       embedded under 256 KiB, sidecar folder above it.
+  - `kfitio.py`      — reads `.kfit` (HDF5 + zlib-JSON project, with the
+                       bulky arrays as HDF5 datasets) into `KFitProject` /
+                       `KFitSheet`. Every technique uses the same three
+                       keys (`B.E.`, `Raw Data`, `Background`), so the
+                       technique — and hence the axis labels and whether x
+                       runs high→low — is read from the *sheet name*, via
+                       a table ported from KherveFitting's
+                       `Plot_Operations`.
+  - `kfitmodels.py`  — peak lineshapes (GL/SGL, Voigt, Pseudo-Voigt, LA,
+                       LA*G, LF, DS, DS*G, ExpGauss, A*GL/A*SGL, SB),
+                       ported from KherveFitting's `Peak_Functions` and
+                       wired the way its `update_overall_fit_and_residuals`
+                       does, since a `.kfit` stores peak *parameters*, never
+                       the curves. `peak_curve()` returns None for a model
+                       it cannot draw (DL, TLA) so the cell says so rather
+                       than showing a wrong fit.
   - `hltheme.py`     — named highlight themes for Python cells (Monokai,
                        Dracula, Solarized, …) + the QSettings-persisted
                        choice; "Auto" follows the app light/dark theme.
@@ -157,11 +182,13 @@ into a new module and import.
                        objects saved in KhervePaint appear in KherveBook's
                        SVG "Library" menu. No cross-project import.
   - `appbridge.py`   — `AppBridge`: opens a cell's content in a sibling
-                       Kherve app (KhervePaint/KhervePY/KherveSheet) on a
-                       temp file and reloads the cell when that app saves,
-                       by polling the file's mtime. Each cell supplies a
-                       writer + a reload callback (SvgCell/CodeCell/
-                       SheetCell `open_in_*`).
+                       Kherve app (KhervePaint/KhervePY/KherveSheet/
+                       KherveFitting) on a temp file and reloads the cell
+                       when that app saves, by polling the file's mtime.
+                       Each cell supplies a writer + a reload callback
+                       (SvgCell/CodeCell/SheetCell/KFitCell `open_in_*`).
+                       `script=` launches an app that has no `-m` package
+                       entry (KherveFitting is one wxPython script).
   - `ksheetio.py`    — minimal read/write of KherveSheet's `.ksheet` (HDF5)
                        core grid, for the sheet-cell round-trip through
                        KherveSheet (matches its `_save_to_ksheet` schema).
@@ -217,10 +244,13 @@ into a new module and import.
 
 ## Document format
 
-`.kbook` is JSON: `{"format": "kbook", "version": 5, "cells":
-[{"type": "code"|"markdown"|"note"|"latex"|"sheet"|"svg"|"js"|"file",
-"source": "...", optional "title", "collapsed", "column", "width",
-"height"}]}`. A `note` cell's `source` is JSON
+`.kbook` is JSON: `{"format": "kbook", "version": 6, "cells":
+[{"type": "code"|"markdown"|"note"|"latex"|"sheet"|"svg"|"js"|"file"
+|"kfit", "source": "...", optional "title", "collapsed", "column",
+"width", "height"}]}`. A `kfit` cell's `source` is JSON
+`{"kbook_kfit":1,"file":{name,size,embed|path},"sheet":…,"view":
+"plot"|"data"}` — same hybrid storage as a file attachment. A `note`
+cell's `source` is JSON
 `{"kbook_note":1,"html":…,"ink":…}`; a `file` cell's `source` is JSON
 `{"kbook_files":1,"files":[{"name","size","embed"(base64)|"path"(sidecar
 rel)},…]}` (the legacy single-file `{"kbook_file":1,…}` still loads) —

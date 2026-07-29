@@ -27,10 +27,12 @@ from . import svgcell                    # noqa: F401  (registers "svg")
 from . import jscell                     # noqa: F401  (registers "js")
 from . import notecell                   # noqa: F401  (registers "note")
 from . import filecell                   # noqa: F401  (registers "file")
+from . import kfitcell                   # noqa: F401  (registers "kfit")
 
+# v6: "kfit" (a KherveFitting project shown as a plot / data table).
 # v5: "note" (rich text + pen) and "file" (attachments) cell types.
 # v4: cells gained "height" (v3: title/column, v2: collapsed).
-FORMAT_VERSION = 5
+FORMAT_VERSION = 6
 
 #: extension -> cell type for files dropped onto the notebook.
 DROP_TYPES = {
@@ -43,6 +45,7 @@ DROP_TYPES = {
     ".png": "image", ".jpg": "image", ".jpeg": "image",
     ".gif": "image", ".bmp": "image",
     ".pdf": "pdf",                        # rendered page-by-page to SVG
+    ".kfit": "kfit",                      # KherveFitting project
     ".kbook": "kbook",
     ".ksheet": "ksheet",                  # KherveSheet workbook
     ".kdocz": "kdoc",                     # kherveDOC document -> markdown
@@ -94,6 +97,9 @@ class NotebookWidget(QScrollArea):
     def _make_cell(self, cell_type: str, source: str = ""):
         """Create a wired-up cell widget without placing it in the layout."""
         cell = make_cell(cell_type, source)
+        if hasattr(cell, "set_context") and self.document_path:
+            p = Path(self.document_path)
+            cell.set_context(p.parent, p.stem)
         cell.run_requested.connect(self._run_and_advance)
         cell.run_clicked.connect(self.run_cell)
         cell.stop_clicked.connect(lambda _cell: self.stop_loop())
@@ -104,9 +110,6 @@ class NotebookWidget(QScrollArea):
         cell.editor.textChanged.connect(self.modified.emit)
         cell.content_changed.connect(self.modified.emit)
         cell.resized.connect(self._on_cell_resized)
-        if isinstance(cell, filecell.FileCell) and self.document_path:
-            p = Path(self.document_path)
-            cell.set_context(p.parent, p.stem)
         return cell
 
     def _attach_cell(self, cell, index: int):
@@ -406,7 +409,8 @@ class NotebookWidget(QScrollArea):
         for label, key in (("Code", "code"), ("Markdown", "markdown"),
                            ("Note", "note"), ("LaTeX", "latex"),
                            ("Sheet", "sheet"), ("SVG", "svg"),
-                           ("JavaScript", "js"), ("File", "file")):
+                           ("JavaScript", "js"), ("File", "file"),
+                           ("KFit", "kfit")):
             if key != cell.CELL_TYPE:
                 conv.addAction(label,
                                lambda k=key: self.convert_current(k))
@@ -511,6 +515,17 @@ class NotebookWidget(QScrollArea):
             self.undo_stack.endMacro()
             self.modified.emit()
             return True
+        if kind == "kfit":
+            # Binary and routinely megabytes, so it never goes through the
+            # read-as-text path below — the cell holds the file itself.
+            if cell is not None and cell.CELL_TYPE == "kfit":
+                self._set_current(cell)
+            else:
+                cell = self.add_cell_below("kfit", "")
+            ok = cell.attach(str(p))
+            if ok:
+                self.modified.emit()
+            return ok
         try:
             if p.stat().st_size > _MAX_DROP_BYTES:
                 return False
@@ -557,8 +572,11 @@ class NotebookWidget(QScrollArea):
         doc_dir = p.parent if p else None
         stem = p.stem if p else "notebook"
         self.kernel.notebook_dir = doc_dir
+        # Any cell that holds real files (File, KFit) takes the folder —
+        # duck-typed rather than listed, so a new such cell needs no edit
+        # here to get its sidecar working.
         for cell in self.cells:
-            if isinstance(cell, filecell.FileCell):
+            if hasattr(cell, "set_context"):
                 cell.set_context(doc_dir, stem)
 
     def prepare_save(self):
@@ -568,7 +586,7 @@ class NotebookWidget(QScrollArea):
             return
         self.set_document_path(self.document_path)
         for cell in self.cells:
-            if isinstance(cell, filecell.FileCell):
+            if hasattr(cell, "materialize"):
                 cell.materialize()
 
     def _resolve_file(self, name: str):

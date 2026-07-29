@@ -31,12 +31,16 @@ from PyQt5.QtWidgets import QMessageBox
 class AppBridge:
     """Launch a sibling app on a temp file and reload the cell on save."""
 
-    def __init__(self, cell, app_name: str, module: str, ext: str, reload_fn):
+    def __init__(self, cell, app_name: str, module: str, ext: str, reload_fn,
+                 script: str = None):
         self._cell = cell            # a QWidget, for QTimer parent + dialogs
         self._app = app_name         # e.g. "KherveSheet"
         self._module = module        # e.g. "khervesheet"
         self._ext = ext              # e.g. ".ksheet"
         self._reload = reload_fn     # callable(path) -> load the saved file
+        #: Repo-root script for an app with no package entry point —
+        #: KherveFitting is a single wxPython script, not a `-m` module.
+        self._script = script
         self._timer = None
         self._tmp = None
         self._proc = None
@@ -46,8 +50,13 @@ class AppBridge:
         # .../Python/KherveBook/khervebook/appbridge.py -> .../Python/<app>
         return Path(__file__).resolve().parents[2] / self._app
 
+    def _entry(self) -> Path:
+        repo = self._repo()
+        return (repo / self._script) if self._script \
+            else (repo / self._module / "__main__.py")
+
     def available(self) -> bool:
-        return (self._repo() / self._module / "__main__.py").exists()
+        return self._entry().exists()
 
     def open(self, writer) -> bool:
         """Serialise the cell via *writer(path)*, launch the app on it, and
@@ -70,9 +79,10 @@ class AppBridge:
         venv = repo / ".venv" / (
             "Scripts/python.exe" if os.name == "nt" else "bin/python")
         python = str(venv) if venv.exists() else sys.executable
+        launch = ([python, self._script] if self._script
+                  else [python, "-m", self._module])
         try:
-            self._proc = subprocess.Popen(
-                [python, "-m", self._module, str(tmp)], cwd=str(repo))
+            self._proc = subprocess.Popen(launch + [str(tmp)], cwd=str(repo))
         except Exception as exc:
             QMessageBox.warning(self._cell, self._app,
                                 f"Could not launch {self._app}:\n{exc}")

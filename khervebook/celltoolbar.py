@@ -99,8 +99,31 @@ class CellToolBar(QToolBar):
                  "latex": self._build_latex,
                  "sheet": self._build_sheet,
                  "svg": self._build_svg,
-                 "file": self._build_file}.get(cell_type, self._build_code)
+                 "file": self._build_file,
+                 "kfit": self._build_kfit}.get(cell_type, self._build_code)
         build()
+
+    # -- KFit (KherveFitting project) mode ------------------------------------
+    def _kfit(self, method, *args):
+        cell = self._notebook.current
+        if cell is not None and cell.CELL_TYPE == "kfit" and hasattr(
+                cell, method):
+            getattr(cell, method)(*args)
+
+    def _build_kfit(self):
+        self._add("Load .kfit", "Open a KherveFitting project into this cell",
+                  lambda: self._kfit("choose_file"),
+                  "mdi.folder-open-outline")
+        self.addSeparator()
+        self._add("Plot", "Show the selected sheet as a plot",
+                  lambda: self._kfit("show_plot"), "mdi.chart-bell-curve")
+        self._add("Data", "Show the selected sheet as a table of numbers",
+                  lambda: self._kfit("show_data"), "mdi.table")
+        self.addSeparator()
+        self._add("Open in KherveFitting",
+                  "Edit this project in KherveFitting and reload on save",
+                  lambda: self._kfit("open_in_khervefitting"),
+                  "mdi.open-in-new")
 
     # -- note (rich text) mode ----------------------------------------------
     def _note(self, method, *args):

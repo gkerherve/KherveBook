@@ -196,6 +196,21 @@ into a new module and import.
   - `history_dialog.py` — Git → Version history: painted DAG commit
                        graph, per-commit diff, branch switch/create/delete,
                        and "restore this version".
+  - `updater.py`     — self-update from GitHub Releases
+                       (`gkerherve/KherveBook`, the same source the
+                       khervetools.com site reads). Silent startup check
+                       (3 s after launch, off the GUI thread) + Help >
+                       Check for Updates; a What's New dialog renders the
+                       release notes, then the NSIS installer is
+                       downloaded and run with `/S` from a throwaway
+                       PowerShell helper that waits for this process to
+                       exit and reopens the app. Only an *installed* copy
+                       self-updates (the running exe's folder must match
+                       `HKCU\Software\KherveBook\InstallDir`); portable
+                       and source copies get the download link instead.
+                       Set `KHERVEBOOK_UPDATE_TEST_EXE` to an installed
+                       KherveBook.exe to exercise the real update from a
+                       source checkout.
   - `userguide.py`   — the Help > User Guide window (scrollable HTML).
 - `tests/` — pytest suite (offscreen Qt; run `python -m pytest tests/`).
 - `requirements.txt`, `LICENSE` (GPL-3.0).

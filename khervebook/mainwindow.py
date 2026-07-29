@@ -11,12 +11,12 @@ the Free Software Foundation, either version 3 of the License, or
 from datetime import datetime
 from pathlib import Path
 
-from PyQt5.QtCore import QSettings, QSize, Qt, QThread, pyqtSignal
+from PyQt5.QtCore import QSettings, QSize, Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (QAction, QActionGroup, QApplication, QComboBox,
                              QFileDialog, QInputDialog, QMainWindow,
                              QMessageBox, QToolBar)
 
-from . import examples, git_backend, style
+from . import examples, git_backend, style, updater
 
 from . import APP_NAME, __version__
 from .celltoolbar import CellToolBar
@@ -99,6 +99,14 @@ class MainWindow(QMainWindow):
             self._open_at_default_size()
         if state:
             self.restoreState(state)
+        # Kept off the constructor's critical path: the check is a network
+        # round-trip, and nothing about it should delay the first paint.
+        self._updater = updater.Updater(self)
+        if updater.startup_check_enabled():
+            QTimer.singleShot(3000, lambda: self._updater.check(silent=True))
+
+    def _check_updates(self):
+        self._updater.check(silent=False)
 
     def _open_at_default_size(self):
         """Open at 90% of the available screen (capped), centred."""
@@ -303,6 +311,15 @@ class MainWindow(QMainWindow):
 
         h = m.addMenu("&Help")
         h.addAction(self._act("&User Guide", "F1", self._user_guide))
+        h.addSeparator()
+        h.addAction(self._act("Check for &Updates...", None,
+                              self._check_updates, "mdi.cloud-download-outline",
+                              "See whether a newer KherveBook has been "
+                              "released"))
+        auto = QAction("Check for Updates on Startup", self, checkable=True)
+        auto.setChecked(updater.startup_check_enabled())
+        auto.toggled.connect(updater.set_startup_check)
+        h.addAction(auto)
         h.addSeparator()
         h.addAction(self._act("Report an &Issue / Feedback...", None,
                               self._report_issue, "mdi.bug-outline",

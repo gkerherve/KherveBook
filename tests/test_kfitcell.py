@@ -269,3 +269,187 @@ def test_no_cell_type_shadows_a_base_attribute(qapp):
                 clashes.append(f"{kind}.{name}: {base[name].__name__}"
                                f" -> {type(value).__name__}")
     assert not clashes, clashes
+
+
+# -- talking to code cells -------------------------------------------------
+def _notebook_with_kfit(path, count=1):
+    from khervebook.notebook import NotebookWidget
+
+    nb = NotebookWidget()
+    for _ in range(count):
+        nb.add_cell("kfit")
+        nb.cells[-1].attach(str(path))
+    return nb
+
+
+def test_kfit_reaches_a_project_from_a_code_cell(qapp, xps_kfit):
+    nb = _notebook_with_kfit(xps_kfit)
+    res = nb.kernel.run('s = kfit("C1s")\nprint(s.name, len(s.x), '
+                        'len(s.peaks))\nprint(kfit().names)')
+    assert res.stderr.strip() == ""
+    assert "C1s 240 1" in res.stdout
+    assert "['C1s', 'Survey']" in res.stdout
+
+
+def test_kfit_curves_match_what_the_cell_plots(qapp, xps_kfit):
+    """The cell and the kernel must not drift: both read sheet.curves()."""
+    nb = _notebook_with_kfit(xps_kfit)
+    cell = nb.cells[-1]
+    cell._sheet_box.setCurrentText("C1s")
+    from_cell = cell._curves(cell.current_sheet())
+    from_code = kfitio.read_path(xps_kfit).sheet("C1s").curves()
+    assert [n for n, _c in from_cell["peaks"]] == \
+           [n for n, _c in from_code["peaks"]]
+    np.testing.assert_allclose(from_cell["envelope"], from_code["envelope"])
+
+
+def test_kfit_frame_has_a_column_per_curve(qapp, xps_kfit):
+    pytest.importorskip("pandas")
+    nb = _notebook_with_kfit(xps_kfit)
+    res = nb.kernel.run('print(list(kfit("C1s").frame().columns))')
+    assert res.stderr.strip() == ""
+    assert "Background" in res.stdout and "Envelope" in res.stdout
+
+
+def test_a_second_kfit_cell_is_picked_by_position_or_name(qapp, xps_kfit):
+    nb = _notebook_with_kfit(xps_kfit, count=2)
+    res = nb.kernel.run('print(kfit("C1s", 2).name)\n'
+                        f'print(kfit("C1s", "{xps_kfit.name}").name)')
+    assert res.stderr.strip() == ""
+    assert res.stdout.count("C1s") == 2
+
+
+def test_kfit_says_what_is_wrong_rather_than_failing_blankly(qapp, xps_kfit):
+    nb = _notebook_with_kfit(xps_kfit)
+    res = nb.kernel.run('kfit("NoSuchLevel")')
+    assert "no sheet named" in res.error and "C1s" in res.error
+    res = nb.kernel.run('kfit("C1s", 9)')
+    assert "no KherveFitting project yet" in res.error
+
+
+def test_kfit_without_a_kfit_cell_explains_itself(qapp):
+    from khervebook.notebook import NotebookWidget
+
+    res = NotebookWidget().kernel.run('kfit()')
+    assert "add a KFit cell" in res.error
+
+
+# -- refresh ---------------------------------------------------------------
+def test_refresh_picks_up_a_refitted_project(qapp, xps_kfit):
+    cell = KFitCell()
+    cell.attach(str(xps_kfit))
+    assert len(cell.current_sheet().peaks) == 1
+
+    x = np.linspace(280.0, 292.0, 240)
+    background = np.full_like(x, 500.0)
+    y = background + 900 * np.exp(-4 * np.log(2) * ((x - 285.5) / 1.4) ** 2)
+    make_kfit(xps_kfit, [("C1s", x, y, background,
+                          dict([_peak(), _peak("C1s B", position=286.6)]))])
+
+    assert cell.refresh()
+    assert len(cell.current_sheet().peaks) == 2
+
+
+def test_refresh_keeps_the_sheet_you_were_looking_at(qapp, xps_kfit):
+    cell = KFitCell()
+    cell.attach(str(xps_kfit))
+    cell._sheet_box.setCurrentText("Survey")
+    assert cell.refresh()
+    assert cell._sheet_box.currentText() == "Survey"
+
+
+def test_refresh_survives_a_notebook_round_trip(qapp, xps_kfit):
+    """The origin path is persisted, so Refresh still works after reopening."""
+    cell = KFitCell()
+    cell.attach(str(xps_kfit))
+    reopened = KFitCell(cell.source())
+    assert reopened.refresh()
+
+
+def test_refresh_says_so_when_there_is_nothing_to_refresh_from(qapp,
+                                                               xps_kfit):
+    cell = KFitCell()
+    cell.attach(str(xps_kfit))
+    cell._origin = ""
+    assert not cell.refresh()
+    assert "Nothing to refresh from" in cell._hint.text()
+
+
+def test_refresh_reports_a_file_that_has_gone(qapp, xps_kfit, tmp_path):
+    cell = KFitCell()
+    cell.attach(str(xps_kfit))
+    xps_kfit.unlink()
+    assert not cell.refresh()
+    assert "no longer there" in cell._hint.text()
+    assert cell.current_sheet() is not None      # keeps showing its own copy
+
+
+# -- drops -----------------------------------------------------------------
+def _drop(cell, path):
+    from PyQt5.QtCore import QMimeData, QPoint, QUrl, Qt
+    from PyQt5.QtGui import QDropEvent
+
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(path))])
+    event = QDropEvent(QPoint(4, 4), Qt.CopyAction, mime,
+                       Qt.LeftButton, Qt.NoModifier)
+    cell.dropEvent(event)
+    return event
+
+
+def test_dropping_a_kfit_loads_it(qapp, xps_kfit):
+    cell = KFitCell()
+    event = _drop(cell, xps_kfit)
+    assert event.isAccepted()
+    assert cell._project is not None
+    assert cell._origin                       # and Refresh works afterwards
+
+
+def test_dropping_anything_else_is_refused(qapp, xps_kfit, tmp_path):
+    """Falling through to the base cell would let the notebook convert this
+    cell to whatever was dropped, destroying the project it holds."""
+    cell = KFitCell()
+    cell.attach(str(xps_kfit))
+    other = tmp_path / "notes.csv"
+    other.write_text("a,b\n1,2\n", encoding="utf-8")
+
+    event = _drop(cell, other)
+
+    assert not event.isAccepted()
+    assert cell._project is not None          # still the .kfit
+    assert cell.file_name == xps_kfit.name
+    assert "not a .kfit" in cell._hint.text()
+
+
+# -- what the AI is told ---------------------------------------------------
+def test_the_ai_sees_the_project_not_its_base64(qapp, xps_kfit):
+    from khervebook.ai_chat import _notebook_listing
+
+    nb = _notebook_with_kfit(xps_kfit)
+    listing = _notebook_listing(nb)
+    assert "C1s A" in listing and "GL (Area)" in listing
+    assert 'kfit("<sheet>"' in listing
+    # The source is the .kfit itself, base64-encoded — never put it in a prompt.
+    assert "kbook_kfit" not in listing
+    assert nb.cells[-1].source()[:40] not in listing
+
+
+def test_the_ai_may_not_overwrite_a_kfit_cell():
+    from khervebook.ai_chat import _PROTECTED
+
+    assert "kfit" in _PROTECTED and "svg" in _PROTECTED
+
+
+def test_the_ai_cannot_emit_a_kfit_block():
+    from khervebook.ai_chat import extract_cells
+
+    assert extract_cells("```kfit\nanything\n```") == []
+
+
+def test_the_system_prompt_teaches_the_kfit_helper(qapp, xps_kfit):
+    from khervebook.ai_chat import build_system_prompt
+
+    prompt = build_system_prompt(_notebook_with_kfit(xps_kfit))
+    assert 'kfit("C1s")' in prompt
+    assert ".curves()" in prompt and ".descending" in prompt
+    assert "Never emit an svg or kfit cell." in prompt

@@ -58,6 +58,11 @@ _KIND = {"python": "code", "py": "code", "md": "markdown",
          "markdown": "markdown", "tex": "latex", "latex": "latex",
          "sheet": "sheet", "js": "js", "javascript": "js", "html": "js"}
 
+#: Cell types the assistant may never create or overwrite. Their source is
+#: a binary payload (an SVG drawing, an HDF5 KherveFitting project), so a
+#: generated replacement could only ever destroy one.
+_PROTECTED = ("svg", "kfit")
+
 #: How much of each cell to show the model, and a total cap.
 _MAX_CELL_CHARS = 4000
 _MAX_TOTAL_CHARS = 20000
@@ -125,8 +130,24 @@ def _note_summary(cell) -> str:
     return text or "(an empty rich-text note)"
 
 
+def _kfit_summary(cell, n: int) -> str:
+    """A KFit cell as its project's contents, for the AI prompt.
+
+    Never its source: that is the .kfit itself, base64-encoded, which
+    would be megabytes of noise the model cannot use. What it needs is
+    the sheets, their axes and their fitted peaks — and the kfit() call
+    that reaches them.
+    """
+    project = cell.project()
+    if project is None:
+        return "(a KFit cell with no project loaded yet)"
+    return (f"(KherveFitting project {cell.file_name!r}, read from code as "
+            f"kfit(\"<sheet>\", {n}) — or kfit(\"<sheet>\") when it is the "
+            f"only one)\n{project.describe()}")
+
+
 def _notebook_listing(notebook) -> str:
-    blocks, total, sheet_n = [], 0, 1
+    blocks, total, sheet_n, kfit_n = [], 0, 1, 1
     for i, cell in enumerate(notebook.cells):
         if cell.CELL_TYPE == "svg":
             body = "(an SVG drawing — you cannot read or edit this cell)"
@@ -134,6 +155,9 @@ def _notebook_listing(notebook) -> str:
             names = ", ".join(cell.file_names) or "none"
             body = f"(attached files: {names} — "\
                    "reachable from code as kf(\"name\"))"
+        elif cell.CELL_TYPE == "kfit":
+            body = _kfit_summary(cell, kfit_n)
+            kfit_n += 1
         elif cell.CELL_TYPE == "note":
             body = _note_summary(cell)
         elif cell.CELL_TYPE == "sheet":
@@ -159,8 +183,8 @@ notebook. The editable cell types are: code (Python), markdown, latex \
 (one display equation, no $ delimiters), sheet (a small \
 spreadsheet, JSON {{"rows", "cols", "data": {{"A1": "value or \
 =python formula"}}}}) and js (JavaScript/HTML rendered in an embedded \
-Chromium view). There is also an svg "drawing" cell that you \
-must NEVER create or modify.
+Chromium view). There are also svg "drawing" cells and kfit (KherveFitting project) cells that you \
+must NEVER create or modify — you read a kfit cell's data from Python instead (see below).
 
 YOUR PRIMARY SKILL is writing excellent, complete, runnable Python \
 for code cells. Key facts about the kernel:
@@ -183,6 +207,23 @@ sheet name and the columns of every sheet — use it to pick the right \
 variable (e.g. a sheet shown as "sheet5 — name 'Sheet5'" is read as \
 `sheet5`). Do NOT loop ks() cell by cell; ks("A1") / ks("A1", v) is \
 only for reading or writing a SINGLE cell.
+- KFit cells hold a KherveFitting project (.kfit) — XPS, XRD, FTIR, \
+Raman, EELS, TGA, SQUID, EIS and more. Read one from code with \
+`s = kfit("C1s")`, naming a sheet from the listing below; a second \
+argument (`kfit("C1s", 2)`, or the file name) picks the cell when the \
+notebook holds several, and `kfit()` returns the whole project \
+(`.names`, `.sheet(name)`, `.sample`). A sheet gives you `.x` and `.y` \
+(plain lists), `.background`, `.peaks` (the stored fit parameters: \
+Position, Height, FWHM, L/G, Area, Fitting Model), `.x_label`, \
+`.y_label`, `.fit_range` and `.descending` (True when the axis runs \
+high -> low, as binding energy and FTIR do). `s.curves()` re-evaluates \
+the fit and returns {{"x", "y", "background", "peaks": [(name, curve)], \
+"envelope", "skipped"}} with each peak curve measured ABOVE the \
+background, and `s.frame()` gives the same as a pandas DataFrame. \
+Use these rather than trying to open the .kfit yourself — it is an \
+HDF5 container you cannot reach from the cell's source. When you plot \
+one, honour `.descending` (`ax.set_xlim(max(x), min(x))`) and label \
+the axes with `.x_label` / `.y_label`. NEVER emit a kfit cell.
 - js cells are for interactive web visuals Python can't do (D3, \
 Plotly.js, ECharts, three.js, canvas animations). Bare JavaScript is \
 wrapped in a page that shows console.log output; anything with HTML \
@@ -200,7 +241,7 @@ WRITING: reply with each cell you want as ONE fenced block.
 ```python cell=3 — keep the same language unless the user wants the \
 type changed.
 - You may read and write code, markdown, latex, sheet and js cells. \
-Never emit an svg cell.
+Never emit an svg or kfit cell.
 
 Each applied cell is RUN immediately, so the task you are asked to do \
 actually happens — do not just describe it. Every code block must be \
@@ -782,7 +823,8 @@ class AIChatDock(QDockWidget):
             edits = sum(1 for it in self._pending_cells
                         if it.get("target") is not None
                         and 0 <= it["target"] < len(nb.cells)
-                        and nb.cells[it["target"]].CELL_TYPE != "svg")
+                        and nb.cells[it["target"]].CELL_TYPE
+                        not in _PROTECTED)
             adds = n - edits
             bits = []
             if adds:
@@ -812,7 +854,7 @@ class AIChatDock(QDockWidget):
         for item in self._pending_cells:
             t = item.get("target")
             if (t is not None and 0 <= t < len(nb.cells)
-                    and nb.cells[t].CELL_TYPE != "svg"):
+                    and nb.cells[t].CELL_TYPE not in _PROTECTED):
                 replaces.append(item)
             else:
                 appends.append(item)

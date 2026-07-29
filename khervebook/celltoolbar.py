@@ -114,6 +114,9 @@ class CellToolBar(QToolBar):
         self._add("Load .kfit", "Open a KherveFitting project into this cell",
                   lambda: self._kfit("choose_file"),
                   "mdi.folder-open-outline")
+        self._add("Refresh", "Re-read the .kfit from disk — after re-fitting "
+                  "it in KherveFitting", lambda: self._kfit("refresh"),
+                  "mdi.refresh")
         self.addSeparator()
         self._add("Plot", "Show the selected sheet as a plot",
                   lambda: self._kfit("show_plot"), "mdi.chart-bell-curve")

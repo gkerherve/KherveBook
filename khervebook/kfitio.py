@@ -177,6 +177,85 @@ class KFitSheet:
                         f"{'s' if len(self.peaks) != 1 else ''}")
         return "  ·  ".join(bits)
 
+    # -- reconstructed curves ---------------------------------------------
+    def curves(self) -> dict:
+        """Every trace of this sheet, evaluated from the stored fit.
+
+        Returns ``{"x", "y", "background", "mask", "peaks": [(name, curve)],
+        "skipped": [name], "envelope"}``. Peak curves are the height *above*
+        the background and are zeroed outside the fitting range, which is
+        how KherveFitting shades them — beyond that range the fit says
+        nothing, so extending it would invent signal.
+
+        The cell, the ``kfit()`` kernel helper and the AI summary all read
+        this, so what you plot and what you compute cannot drift apart.
+        """
+        import numpy as np
+
+        from . import kfitmodels
+
+        x = np.asarray(self.x, dtype=float)
+        y = np.asarray(self.y, dtype=float)
+        if y.shape != x.shape:
+            y = np.zeros_like(x)
+        background = np.asarray(self.background, dtype=float)
+        if background.shape != x.shape:
+            background = np.zeros_like(x)
+
+        limits = self.fit_range
+        mask = (np.ones_like(x, dtype=bool) if limits is None
+                else (x >= limits[0]) & (x <= limits[1]))
+
+        peaks, skipped = [], []
+        for peak in self.peaks:
+            model = kfitmodels.model_name(peak)
+            if model in kfitmodels.NON_SPECTRAL:
+                continue
+            curve = kfitmodels.peak_curve(x, peak)
+            if curve is None:
+                skipped.append(f"{peak['name']} ({model})")
+                continue
+            peaks.append((peak["name"], np.where(mask, curve, 0.0)))
+
+        envelope = None
+        if peaks:
+            envelope = background + np.sum([c for _n, c in peaks], axis=0)
+        return {"x": x, "y": y, "background": background, "mask": mask,
+                "peaks": peaks, "skipped": skipped, "envelope": envelope}
+
+    def frame(self):
+        """The sheet as a pandas DataFrame — one column per curve."""
+        import pandas as pd
+
+        curves = self.curves()
+        data = {self.x_label: curves["x"], self.y_label: curves["y"]}
+        if self.has_background:
+            data["Background"] = curves["background"]
+        for name, curve in curves["peaks"]:
+            data[name] = curves["background"] + curve
+        if curves["envelope"] is not None:
+            data["Envelope"] = curves["envelope"]
+        return pd.DataFrame(data)
+
+    def describe(self) -> str:
+        """A few lines of plain text about this sheet, for the AI prompt."""
+        lines = [f"{self.name}: {self.summary()}, x = {self.x_label}, "
+                 f"y = {self.y_label}"]
+        for peak in self.peaks:
+            position = peak.get("Position")
+            fwhm = peak.get("FWHM")
+            area = peak.get("Area")
+            bits = [f"pos {position:.2f}"
+                    if isinstance(position, (int, float)) else "",
+                    f"FWHM {fwhm:.2f}" if isinstance(fwhm, (int, float))
+                    else "",
+                    f"area {area:.0f}" if isinstance(area, (int, float))
+                    else "",
+                    str(peak.get("Fitting Model") or "")]
+            lines.append("    " + peak["name"] + " — "
+                         + ", ".join(b for b in bits if b))
+        return "\n".join(lines)
+
 
 class KFitProject:
     """A whole ``.kfit``: its sheets plus where it came from."""
@@ -198,6 +277,17 @@ class KFitProject:
             if s.name == name:
                 return s
         return self.sheets[0] if self.sheets else None
+
+    def describe(self) -> str:
+        """The whole project as plain text, for the AI prompt."""
+        head = (f"KherveFitting project, {len(self.sheets)} sheet"
+                f"{'s' if len(self.sheets) != 1 else ''}"
+                + (f" ({self.sample})" if self.sample else ""))
+        return "\n".join([head] + [s.describe() for s in self.sheets])
+
+    def __repr__(self):
+        return (f"<KFitProject {self.sample or '?'}: "
+                f"{', '.join(self.names)}>")
 
 
 # ---------------------------------------------------------------------------

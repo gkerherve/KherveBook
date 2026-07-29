@@ -81,8 +81,10 @@ class NotebookWidget(QScrollArea):
         #: File cells resolve their sidecar folder relative to it.
         self.document_path = None
         self.current = None
-        # Let code cells resolve attached files by name via kf("...").
+        # Let code cells resolve attached files by name via kf("...") and
+        # KherveFitting projects via kfit("...").
         self.kernel.file_lookup = self._resolve_file
+        self.kernel.kfit_lookup = self._resolve_kfit
         self._clipboard = None              # dict from a cut/copied cell
         self._loop_cell = None              # cell being run continuously
         self._loop_timer = QTimer(self)
@@ -594,6 +596,28 @@ class NotebookWidget(QScrollArea):
         for cell in self.cells:
             if isinstance(cell, filecell.FileCell) and name in cell.file_names:
                 return cell.resolved_path(name)
+        return None
+
+    def _resolve_kfit(self, which=1):
+        """kfit(...) -> a KFit cell's parsed project, or None.
+
+        *which* is a 1-based position among the KFit cells, or the name of
+        the loaded .kfit / the cell's title — so a notebook comparing two
+        projects can say which one it means without counting cells.
+        """
+        cells = [c for c in self.cells if c.CELL_TYPE == "kfit"]
+        if isinstance(which, str):
+            for cell in cells:
+                if which in (cell.file_name, cell.title,
+                             Path(cell.file_name).stem):
+                    return cell.project()
+            return None
+        try:
+            index = int(which)
+        except (TypeError, ValueError):
+            return None
+        if 1 <= index <= len(cells):
+            return cells[index - 1].project()
         return None
 
     # -- persistence -------------------------------------------------------

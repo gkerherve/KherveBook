@@ -217,6 +217,7 @@ class Kernel:
         #: survive a kernel restart and live outside reset().
         self.notebook_dir = None
         self.file_lookup = None
+        self.kfit_lookup = None
         self.reset()
 
     def reset(self):
@@ -285,6 +286,37 @@ class Kernel:
         # files are extracted to a temp file on demand); kf() with no
         # argument returns the notebook's folder.
         g["kf"] = self._make_kf()
+        # kfit("C1s") -> a sheet of a KFit cell's KherveFitting project.
+        g["kfit"] = self._make_kfit()
+
+    def _make_kfit(self):
+        """Build kfit(): the Python <-> KFit cell bridge.
+
+        ``kfit()`` returns the first KFit cell's project, ``kfit("C1s")``
+        one of its sheets, and a second argument picks the cell when the
+        notebook holds several — by 1-based position, file name or title.
+        A sheet carries ``.x`` / ``.y`` / ``.background`` / ``.peaks``,
+        plus ``.curves()`` (the fit re-evaluated) and ``.frame()``.
+        """
+        def kfit(sheet=None, cell=1):
+            lookup = self.kfit_lookup
+            project = lookup(cell) if lookup is not None else None
+            if project is None:
+                raise NameError(
+                    "no KherveFitting project yet — add a KFit cell and "
+                    "load a .kfit into it"
+                    if not isinstance(cell, str) else
+                    f"no KFit cell matching {cell!r}")
+            if sheet is None:
+                return project
+            name = str(sheet)
+            for candidate in project.sheets:
+                if candidate.name == name:
+                    return candidate
+            raise KeyError(f"no sheet named {name!r} in this project "
+                           f"(it has: {', '.join(project.names)})")
+
+        return kfit
 
     def _make_kf(self):
         import os

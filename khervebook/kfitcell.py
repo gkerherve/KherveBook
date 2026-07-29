@@ -29,7 +29,7 @@ from PyQt5.QtCore import QAbstractTableModel, QModelIndex, Qt
 from PyQt5.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QPushButton,
                              QTableView, QTabWidget, QVBoxLayout, QWidget)
 
-from . import filedialog, kfitio, kfitmodels
+from . import filedialog, kfitio
 from .cells import CELL_CLASSES, CellWidget
 from .filecell import _Attachment
 from .icons import icon
@@ -108,6 +108,7 @@ class KFitCell(CellWidget):
         self._doc_dir = None
         self._stem = "notebook"
         self._wanted_sheet = ""            # sheet to restore from the .kbook
+        self._origin = ""                  # where it was loaded from, for Refresh
         self._plot = None
         self._card = self._build_card()
         self.column.addWidget(self._card)
@@ -136,6 +137,13 @@ class KFitCell(CellWidget):
         self._info = QLabel("")
         self._info.setStyleSheet("color: #57606a;")
         header.addWidget(self._info, 1)
+
+        self._refresh_btn = QPushButton("Refresh")
+        self._refresh_btn.setIcon(icon("mdi.refresh"))
+        self._refresh_btn.setToolTip(
+            "Re-read the .kfit from disk — after re-fitting it elsewhere")
+        self._refresh_btn.clicked.connect(self.refresh)
+        header.addWidget(self._refresh_btn)
 
         self._open_btn = QPushButton("Open in KherveFitting")
         self._open_btn.setIcon(icon("mdi.chart-bell-curve"))
@@ -181,10 +189,48 @@ class KFitCell(CellWidget):
         except OSError:
             return False
         self._att = _Attachment(name=p.name, size=len(data), data=data)
+        # Remembered so Refresh can pick up a re-fit: the cell holds a copy
+        # of the bytes, which would otherwise go stale the moment
+        # KherveFitting saves the original again.
+        self._origin = str(p.resolve())
         self._wanted_sheet = ""
         self._reload_project()
         self.content_changed.emit()
         return True
+
+    def refresh(self) -> bool:
+        """Re-read the .kfit from where it was loaded.
+
+        The cell keeps its own copy so the notebook travels intact, so a
+        project re-fitted in KherveFitting since it was loaded needs this
+        to catch up. The shown sheet is kept if the new file still has it.
+        """
+        origin = self._origin
+        if not origin:
+            self._hint.setText(
+                "Nothing to refresh from — this project came from inside "
+                "the notebook, not a file on disk. Use “Load .kfit…”.")
+            return False
+        if not Path(origin).exists():
+            self._hint.setText(f"Cannot refresh: {origin} is no longer there.")
+            return False
+        wanted = self._sheet_box.currentText()
+        if not self.attach(origin):
+            self._hint.setText(f"Cannot refresh: {origin} could not be read.")
+            return False
+        self._wanted_sheet = wanted
+        self._fill_sheets()
+        self._refresh()
+        return True
+
+    # -- what code cells and the AI see ------------------------------------
+    def project(self):
+        """The parsed project, for the ``kfit()`` kernel helper."""
+        return self._project
+
+    @property
+    def file_name(self) -> str:
+        return self._att.name if self._att else ""
 
     def _reload_project(self):
         """Re-parse the held bytes and repaint. Never raises: a project we
@@ -249,36 +295,9 @@ class KFitCell(CellWidget):
         self._hint.setText(self._coverage_note(sheet, curves))
 
     def _curves(self, sheet):
-        """``{"peaks": [(name, curve)], "skipped": [names], "envelope": …}``.
-
-        Peaks are the curve *above* the background and masked to the
-        fitting range, which is how KherveFitting shades them — outside
-        that range the fit says nothing, so drawing it there invents signal.
-        """
-        x = np.asarray(sheet.x, dtype=float)
-        background = np.asarray(sheet.background, dtype=float)
-        if background.shape != x.shape:
-            background = np.zeros_like(x)
-        fit_range = sheet.fit_range
-        mask = (np.ones_like(x, dtype=bool) if fit_range is None
-                else (x >= fit_range[0]) & (x <= fit_range[1]))
-
-        peaks, skipped = [], []
-        for peak in sheet.peaks:
-            model = kfitmodels.model_name(peak)
-            if model in kfitmodels.NON_SPECTRAL:
-                continue
-            curve = kfitmodels.peak_curve(x, peak)
-            if curve is None:
-                skipped.append(f"{peak['name']} ({model})")
-                continue
-            peaks.append((peak["name"], np.where(mask, curve, 0.0)))
-
-        envelope = None
-        if peaks:
-            envelope = background + np.sum([c for _n, c in peaks], axis=0)
-        return {"x": x, "background": background, "mask": mask,
-                "peaks": peaks, "skipped": skipped, "envelope": envelope}
+        """The sheet's traces. Shared with the kfit() kernel helper and the
+        AI summary, so the plot, the table and any code cell agree."""
+        return sheet.curves()
 
     @staticmethod
     def _coverage_note(sheet, curves) -> str:
@@ -437,13 +456,25 @@ class KFitCell(CellWidget):
 
     # -- drops -------------------------------------------------------------
     def dropEvent(self, event):
-        for url in event.mimeData().urls():
-            if url.isLocalFile() and url.toLocalFile().lower().endswith(
-                    ".kfit"):
-                self.attach(url.toLocalFile())
+        """Accept .kfit only.
+
+        Handing anything else to the base cell would let the notebook
+        convert this cell to whatever was dropped, silently destroying the
+        project it holds — so a wrong file is refused and says so.
+        """
+        paths = [u.toLocalFile() for u in event.mimeData().urls()
+                 if u.isLocalFile()]
+        for path in paths:
+            if path.lower().endswith(".kfit"):
+                self.attach(path)
                 event.acceptProposedAction()
                 return
-        super().dropEvent(event)
+        if paths:
+            self._hint.setText(
+                f"A KFit cell holds KherveFitting projects only — "
+                f"{Path(paths[0]).name} is not a .kfit. Drop it on the "
+                f"notebook background instead.")
+        event.ignore()
 
     # -- source / persistence ---------------------------------------------
     def source(self) -> str:
@@ -452,6 +483,8 @@ class KFitCell(CellWidget):
                "view": "data" if self._tabs.currentIndex() == 1 else "plot"}
         if self._att is not None:
             doc["file"] = self._att.to_dict(self._doc_dir)
+        if self._origin:
+            doc["origin"] = self._origin
         return json.dumps(doc)
 
     def set_source(self, text: str):
@@ -469,6 +502,7 @@ class KFitCell(CellWidget):
                      if isinstance(entry, dict) and entry.get("name")
                      else None)
         self._wanted_sheet = str(doc.get("sheet") or "")
+        self._origin = str(doc.get("origin") or "")
         self._tabs.setCurrentIndex(1 if doc.get("view") == "data" else 0)
         self._reload_project()
 

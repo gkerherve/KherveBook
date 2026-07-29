@@ -35,10 +35,11 @@ from pathlib import Path
 
 from PyQt5.QtCore import QSize, Qt, QUrl
 from PyQt5.QtGui import QDesktopServices, QPixmap
-from PyQt5.QtWidgets import (QApplication, QComboBox, QFileDialog, QFrame,
-                             QHBoxLayout, QLabel, QPushButton, QSizePolicy,
-                             QToolButton, QVBoxLayout, QWidget)
+from PyQt5.QtWidgets import (QApplication, QComboBox, QFrame, QHBoxLayout,
+                             QLabel, QPushButton, QSizePolicy, QToolButton,
+                             QVBoxLayout, QWidget)
 
+from . import filedialog
 from .cells import CELL_CLASSES, CellWidget, MONO
 from .icons import icon
 
@@ -412,8 +413,7 @@ class FileCell(CellWidget):
 
     # -- attaching ---------------------------------------------------------
     def choose_file(self):
-        names, _ = QFileDialog.getOpenFileNames(self, "Attach files", "",
-                                                "All files (*)")
+        names = filedialog.open_files(self, "Attach files")
         added = False
         for name in names:
             added = self.attach(name) or added
@@ -483,8 +483,7 @@ class FileCell(CellWidget):
             QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
     def _save_copy(self, att):
-        dest, _ = QFileDialog.getSaveFileName(self, "Save a copy",
-                                              att.name, "All files (*)")
+        dest = filedialog.save_file(self, "Save a copy", att.name)
         if not dest:
             return
         data = att.current_bytes(self._doc_dir)

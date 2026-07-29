@@ -13,10 +13,10 @@ from pathlib import Path
 
 from PyQt5.QtCore import QSettings, QSize, Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (QAction, QActionGroup, QApplication, QComboBox,
-                             QFileDialog, QInputDialog, QMainWindow,
-                             QMessageBox, QToolBar)
+                             QInputDialog, QMainWindow, QMessageBox,
+                             QToolBar)
 
-from . import examples, git_backend, style, updater
+from . import examples, filedialog, git_backend, style, updater
 
 from . import APP_NAME, __version__
 from .celltoolbar import CellToolBar
@@ -577,8 +577,7 @@ class MainWindow(QMainWindow):
     def open_file(self):
         recent = self._recent_files()
         start = str(Path(recent[0]).parent) if recent else ""
-        name, _ = QFileDialog.getOpenFileName(self, "Open notebook",
-                                              start, FILE_FILTER)
+        name = filedialog.open_file(self, "Open notebook", start, FILE_FILTER)
         if name:
             self._open_path(name)
 
@@ -613,8 +612,7 @@ class MainWindow(QMainWindow):
     def save_as(self):
         recent = self._recent_files()
         start = str(Path(recent[0]).parent) if recent else ""
-        name, _ = QFileDialog.getSaveFileName(self, "Save notebook",
-                                              start, FILE_FILTER)
+        name = filedialog.save_file(self, "Save notebook", start, FILE_FILTER)
         if not name:
             return
         if not name.lower().endswith(".kbook"):
@@ -625,7 +623,7 @@ class MainWindow(QMainWindow):
     IPYNB_FILTER = "Jupyter / Colab notebook (*.ipynb);;All files (*)"
 
     def import_ipynb(self):
-        name, _ = QFileDialog.getOpenFileName(
+        name = filedialog.open_file(
             self, "Import Jupyter/Colab notebook", "", self.IPYNB_FILTER)
         if not name or not self._confirm_discard():
             return
@@ -641,7 +639,7 @@ class MainWindow(QMainWindow):
         self._update_title()
 
     def export_ipynb(self):
-        name, _ = QFileDialog.getSaveFileName(
+        name = filedialog.save_file(
             self, "Export as Jupyter/Colab notebook", "", self.IPYNB_FILTER)
         if not name:
             return
@@ -659,7 +657,7 @@ class MainWindow(QMainWindow):
                     "All files (*)")
 
     def insert_image_or_pdf(self):
-        name, _ = QFileDialog.getOpenFileName(
+        name = filedialog.open_file(
             self, "Insert image or PDF", "", self.IMAGE_FILTER)
         if not name:
             return
@@ -671,7 +669,7 @@ class MainWindow(QMainWindow):
                     "All files (*)")
 
     def import_spreadsheet(self):
-        name, _ = QFileDialog.getOpenFileName(
+        name = filedialog.open_file(
             self, "Import spreadsheet", "", self.SHEET_FILTER)
         if not name:
             return

@@ -26,11 +26,10 @@ from pathlib import Path
 import numpy as np
 
 from PyQt5.QtCore import QAbstractTableModel, QModelIndex, Qt
-from PyQt5.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QLabel,
-                             QPushButton, QTableView, QTabWidget, QVBoxLayout,
-                             QWidget)
+from PyQt5.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QPushButton,
+                             QTableView, QTabWidget, QVBoxLayout, QWidget)
 
-from . import kfitio, kfitmodels
+from . import filedialog, kfitio, kfitmodels
 from .cells import CELL_CLASSES, CellWidget
 from .filecell import _Attachment
 from .icons import icon
@@ -167,7 +166,7 @@ class KFitCell(CellWidget):
 
     # -- loading ----------------------------------------------------------
     def choose_file(self):
-        path, _ = QFileDialog.getOpenFileName(
+        path = filedialog.open_file(
             self, "Open a KherveFitting project", "",
             "KherveFitting project (*.kfit);;All files (*)")
         return self.attach(path) if path else False

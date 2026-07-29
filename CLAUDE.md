@@ -58,6 +58,14 @@ into a new module and import.
                        tools). The Note cell's full rich-text + pen toolbar
                        lives here (not in the cell), driving the focused
                        NoteCell's methods.
+  - `filedialog.py`  — the app's only file pickers. Windows' native
+                       dialog runs every installed shell extension inside
+                       our process, so a OneDrive/MEGAsync folder can kill
+                       KherveBook mid-dialog with COM `RPC_E_WRONG_THREAD`
+                       (0x8001010e); on Windows these use Qt's own dialog
+                       instead. `files/native_dialogs` in QSettings brings
+                       the native one back. **Never call
+                       `QFileDialog.get*` directly** — a test enforces it.
   - `explorer.py`    — dockable file tree (Ctrl+B) rooted at a chosen
                        folder; drag source for cell drops.
   - `ai_providers.py`— AI provider registry (Claude/ChatGPT/Mistral/

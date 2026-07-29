@@ -15,10 +15,11 @@ the Free Software Foundation, either version 3 of the License, or
 from pathlib import Path
 
 from PyQt5.QtCore import QDir, QSettings, pyqtSignal
-from PyQt5.QtWidgets import (QDockWidget, QFileDialog, QFileSystemModel,
-                             QHBoxLayout, QLabel, QToolButton, QTreeView,
-                             QVBoxLayout, QWidget)
+from PyQt5.QtWidgets import (QDockWidget, QFileSystemModel, QHBoxLayout,
+                             QLabel, QToolButton, QTreeView, QVBoxLayout,
+                             QWidget)
 
+from . import filedialog
 from .icons import icon
 
 
@@ -87,12 +88,9 @@ class FileExplorer(QDockWidget):
         QSettings("Kherve", "KherveBook").setValue("explorer/root", folder)
 
     def _pick_folder(self):
-        # Qt's own dialog: the native Windows folder picker can die
-        # with COM error 0x8001010e (wrong-thread marshalling).
-        folder = QFileDialog.getExistingDirectory(
+        folder = filedialog.existing_directory(
             self, "Choose the folder to explore",
-            self._model.rootPath() or QDir.homePath(),
-            QFileDialog.ShowDirsOnly | QFileDialog.DontUseNativeDialog)
+            self._model.rootPath() or QDir.homePath())
         if folder:
             self.set_root(folder)
 

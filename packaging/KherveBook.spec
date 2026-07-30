@@ -12,6 +12,7 @@ mark in ``khervebook/icons.py``).
 """
 
 import os
+import subprocess
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
@@ -22,9 +23,32 @@ datas, binaries, hiddenimports = [], [], []
 
 # Bake the resolved version into the frozen build — a PyInstaller bundle
 # never ships .git, so without this khervebook/_version.py would fall
-# back to the placeholder "0.1.0". Write this file with the real
-# git-derived version just before invoking PyInstaller.
+# back to the placeholder "0.1.0".
+#
+# The spec writes the file itself rather than trusting one left behind:
+# it is gitignored, and _version.py prefers it over git, so a stale copy
+# silently stamps the *previous* release's number onto a new build — the
+# installer filename, the NSIS product version and the title bar all
+# agreeing on the wrong thing, which is exactly how it goes unnoticed.
 _version_file = os.path.join(_ROOT, "khervebook", "VERSION")
+
+
+def _git(*args):
+    return subprocess.check_output(
+        ["git", *args], cwd=_ROOT, stderr=subprocess.DEVNULL,
+    ).strip().decode()
+
+
+try:
+    _resolved = f"0.1.{_git('rev-list', '--count', 'HEAD')}+{_git('rev-parse', '--short', 'HEAD')}"
+except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+    _resolved = ""                                # not a checkout; keep any bundled file
+
+if _resolved:
+    with open(_version_file, "w", encoding="utf-8") as _fh:
+        _fh.write(_resolved + "\n")
+    print(f"spec: baking version {_resolved}")
+
 if os.path.isfile(_version_file):
     datas.append((_version_file, "khervebook"))
 

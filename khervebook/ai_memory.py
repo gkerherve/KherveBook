@@ -113,8 +113,17 @@ def trim(history, limit=None) -> list:
 #  Persistence
 # ---------------------------------------------------------------------------
 def path() -> Path:
-    folder = QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)
-    return Path(folder or ".") / "ai_conversation.json"
+    """Where the conversation lives.
+
+    GenericDataLocation plus an explicit app folder, not AppDataLocation:
+    that one already folds in the application name, so it resolves
+    somewhere different depending on whether QApplication has been named
+    yet — and to the bare profile folder, shared with every sibling
+    Kherve app, when it has not.
+    """
+    folder = QStandardPaths.writableLocation(
+        QStandardPaths.GenericDataLocation)
+    return Path(folder or ".") / "KherveBook" / "ai_conversation.json"
 
 
 def save(history):

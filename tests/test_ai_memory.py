@@ -15,6 +15,11 @@ import pytest
 from khervebook import ai_memory
 
 
+#: Captured before any test redirects it — the autouse store fixture is
+#: set up before a fixture the test requests, so it cannot be read there.
+_REAL_PATH = ai_memory.path
+
+
 @pytest.fixture(autouse=True)
 def _own_store(tmp_path, monkeypatch):
     """Keep the tests off the developer's real saved conversation."""
@@ -179,3 +184,13 @@ def test_the_dock_restores_and_stores_the_conversation(qapp, _own_store):
     dock._clear()
     assert dock._history == []
     assert ai_memory.load() == []
+
+
+def test_the_store_is_app_specific_and_name_independent(qapp):
+    """AppDataLocation folds in the application name, so it resolves
+    somewhere different depending on whether QApplication has been named
+    yet — and to the bare profile folder, shared with every sibling
+    Kherve app, when it has not."""
+    where = _REAL_PATH()
+    assert where.parent.name == "KherveBook"
+    assert where.name == "ai_conversation.json"

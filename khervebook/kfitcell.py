@@ -8,9 +8,10 @@ drop-down picks which sheet — core level, XRD scan, TGA segment, EIS
 sweep — is shown; the format keeps every technique in the same three
 keys, so the cell plots them all.
 
-Storage matches the File cell: small projects embed base64 in the
-``.kbook``, larger ones are written to the ``<stem>_files/`` sidecar
-folder beside it (and so are versioned by the notebook's own Git repo).
+Storage matches the File cell: saving the notebook writes the project
+into the ``<stem>_files/`` sidecar folder beside it (and so it is
+versioned by the notebook's own Git repo) and the document keeps only
+the relative path.
 
 Copyright (C) 2026 Gwilherm Kerherve
 
@@ -449,10 +450,10 @@ class KFitCell(CellWidget):
         if self._project is None:
             self._reload_project()      # a sidecar path is resolvable now
 
-    def materialize(self):
-        """On save: write a large project out to the sidecar folder."""
+    def materialize(self, claimed=None):
+        """On save: write the project out to the sidecar folder."""
         if self._doc_dir is not None and self._att is not None:
-            self._att.materialize(self._doc_dir, self._stem)
+            self._att.materialize(self._doc_dir, self._stem, claimed)
 
     # -- drops -------------------------------------------------------------
     def dropEvent(self, event):

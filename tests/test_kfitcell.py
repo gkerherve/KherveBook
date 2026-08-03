@@ -204,22 +204,17 @@ def test_cell_round_trips_through_the_kbook_source(qapp, xps_kfit):
     assert restored._att.name == "sample.kfit"
 
 
-def test_a_large_project_moves_to_the_sidecar_folder(qapp, xps_kfit,
-                                                     tmp_path):
-    """Anything over the embed limit is written beside the notebook so the
-    .kbook stays small and Git versions the project itself."""
-    from khervebook import filecell
-
+def test_the_project_moves_to_the_sidecar_folder(qapp, xps_kfit, tmp_path):
+    """The project is written beside the notebook so the .kbook stays
+    small and Git versions the project itself."""
     cell = KFitCell()
     cell.attach(str(xps_kfit))
     cell.set_context(tmp_path, "notes")
     cell.materialize()
     doc = json.loads(cell.source())
-    if xps_kfit.stat().st_size > filecell.EMBED_LIMIT:
-        assert doc["file"]["path"] == "notes_files/sample.kfit"
-        assert (tmp_path / "notes_files" / "sample.kfit").exists()
-    else:
-        assert "embed" in doc["file"]
+    assert doc["file"]["path"] == "notes_files/sample.kfit"
+    assert "embed" not in doc["file"]
+    assert (tmp_path / "notes_files" / "sample.kfit").exists()
 
 
 def test_an_empty_cell_says_what_to_do(qapp):

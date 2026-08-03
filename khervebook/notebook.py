@@ -582,14 +582,17 @@ class NotebookWidget(QScrollArea):
                 cell.set_context(doc_dir, stem)
 
     def prepare_save(self):
-        """Before writing the .kbook, materialise large attachments into the
-        sidecar folder (small ones stay embedded)."""
+        """Before writing the .kbook, write every attached file into the
+        sidecar folder so the document itself holds no file bytes."""
         if self.document_path is None:
             return
         self.set_document_path(self.document_path)
+        # Sidecar paths taken so far, so two cells holding a file of the
+        # same name don't overwrite one another.
+        claimed = set()
         for cell in self.cells:
             if hasattr(cell, "materialize"):
-                cell.materialize()
+                cell.materialize(claimed)
 
     def _resolve_file(self, name: str):
         """kf('name') -> absolute path of a File cell's attachment, or None."""

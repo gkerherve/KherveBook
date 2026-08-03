@@ -4,20 +4,21 @@ them from code.
 A File cell carries real files alongside the notebook so a code (or
 JavaScript) cell can open them, and shows a preview of each: readable
 files (text, CSV, images) get a snippet or thumbnail; anything else is
-still kept verbatim, just not previewed. Storage is **hybrid**, per
-file:
+still kept verbatim, just not previewed.
 
-* Small files (<= ``EMBED_LIMIT``) are embedded base64 in the ``.kbook``
-  itself, so the notebook stays a single portable document.
-* Larger files are written to a sidecar ``<stem>_files/`` folder beside
-  the ``.kbook`` (which is already the notebook's per-document Git repo,
-  so attachments are versioned and pushed with it) and only a relative
-  path is stored in the document.
+**Attachments are kept as real files, not inside the document.** Saving
+the notebook writes every attached file into a sidecar ``<stem>_files/``
+folder beside the ``.kbook`` (which is already the notebook's
+per-document Git repo, so attachments are versioned and pushed with it)
+and the document stores only a relative path. A file dropped into a
+notebook that has never been saved has nowhere to live yet, so it is
+held in memory — and base64 in the JSON, as older documents did — until
+the first save moves it out.
 
-Either way a code cell reaches a file by name through the kernel helper
-``kf("data.csv")``, which returns an absolute path on disk — embedded
-files are extracted to a temp file on demand — so ``open(kf("data.csv"))``
-or ``pd.read_csv(kf("data.csv"))`` just works.
+A code cell reaches a file by name through the kernel helper
+``kf("data.csv")``, which returns an absolute path on disk — a not-yet
+saved file is extracted to a temp file on demand — so
+``open(kf("data.csv"))`` or ``pd.read_csv(kf("data.csv"))`` just works.
 
 Copyright (C) 2026 Gwilherm Kerherve
 
@@ -42,11 +43,6 @@ from PyQt5.QtWidgets import (QApplication, QComboBox, QFrame, QHBoxLayout,
 from . import filedialog
 from .cells import CELL_CLASSES, CellWidget, MONO
 from .icons import icon
-
-#: Files up to this size are embedded in the .kbook; larger ones go to
-#: the sidecar folder. 256 KiB keeps notebooks small while covering most
-#: scripts, small datasets, configs and images.
-EMBED_LIMIT = 256 * 1024
 
 #: How much of a text file to show in the preview snippet.
 _PREVIEW_LINES = 6
@@ -143,26 +139,46 @@ class _Attachment:
                 except OSError:
                     pass
 
-    def materialize(self, doc_dir, stem):
-        """Large files -> sidecar folder (path only); small stay embedded."""
+    def _claim(self, stem, claimed):
+        """Relative path this file takes in the sidecar folder.
+
+        Two cells can hold different files of the same name; the second
+        one gets a suffixed file on disk so it is not overwritten. The
+        display name — and so ``kf("name")`` — is unaffected.
+        """
+        folder = f"{stem}_files"
+        rel = f"{folder}/{self.name}"
+        base, ext = Path(self.name).stem, Path(self.name).suffix
+        n = 2
+        while claimed is not None and rel in claimed:
+            rel = f"{folder}/{base}-{n}{ext}"
+            n += 1
+        if claimed is not None:
+            claimed.add(rel)
+        return rel
+
+    def materialize(self, doc_dir, stem, claimed=None):
+        """On save: write the file into the notebook's sidecar folder and
+        keep only its relative path, so the .kbook holds no file bytes."""
+        rel = self._claim(stem, claimed)
+        target = Path(doc_dir) / rel
+        if self._bytes is None and self.path == rel and target.exists():
+            return                         # already there — don't re-read it
         data = self.current_bytes(doc_dir)
         if data is None:
             return
-        if len(data) > EMBED_LIMIT:
-            files_dir = Path(doc_dir) / f"{stem}_files"
-            files_dir.mkdir(parents=True, exist_ok=True)
-            (files_dir / self.name).write_bytes(data)
-            self.path = f"{stem}_files/{self.name}"
-            self._bytes = None             # free memory; read from disk
-        else:
-            self.path = None
-            self._bytes = data
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        self.path = rel
+        self._bytes = None                 # free memory; read from disk
 
     def to_dict(self, doc_dir):
         d = {"name": self.name, "size": self.size}
         if self.path:
             d["path"] = self.path
         else:
+            # No sidecar folder yet (an unsaved notebook, a copied cell):
+            # carry the bytes so nothing is lost before the first save.
             data = self.current_bytes(doc_dir)
             if data is not None:
                 d["embed"] = base64.b64encode(data).decode("ascii")
@@ -248,8 +264,9 @@ class FileCell(CellWidget):
             else f"{n} attached file{'s' if n != 1 else ''}")
         if n == 0:
             self._hint.setText(
-                "Drag files here, or click “Add files…”. Files travel inside "
-                "the notebook and can be opened from a code cell.")
+                "Drag files here, or click “Add files…”. Saving the notebook "
+                f"copies them into its {self._stem}_files folder, where a "
+                "code cell can open them.")
         else:
             self._hint.setText(
                 'Use  kf("name")  in a code cell for a file\'s path — e.g.  '
@@ -278,8 +295,9 @@ class FileCell(CellWidget):
         name.setStyleSheet("border: none; font-weight: bold;")
         name.setTextInteractionFlags(Qt.TextSelectableByMouse)
         meta.addWidget(name)
-        where = "in the notebook folder" if att.path else "embedded"
-        sub = QLabel(f"{_human_size(att.size)}  ·  stored {where}")
+        where = (f"stored in {self._stem}_files" if att.path
+                 else "kept in memory until the notebook is saved")
+        sub = QLabel(f"{_human_size(att.size)}  ·  {where}")
         sub.setStyleSheet("border: none; color: #8a939c;")
         meta.addWidget(sub)
         top.addLayout(meta, 1)
@@ -309,7 +327,9 @@ class FileCell(CellWidget):
         data = att.current_bytes(self._doc_dir)
         ext = Path(att.name).suffix.lower()
         if data is None:
-            return self._preview_note("(stored in the notebook folder)")
+            return self._preview_note(
+                f"(not found — expected {att.path or att.name} beside the "
+                f"notebook)")
         if ext in _IMAGE_EXT:
             pix = QPixmap()
             if pix.loadFromData(data) and not pix.isNull():
@@ -420,8 +440,8 @@ class FileCell(CellWidget):
         return added
 
     def attach(self, path: str):
-        """Read *path* into the cell (embedded until the notebook is saved,
-        when large files move to the sidecar folder). Re-attaching a name
+        """Read *path* into the cell (held in memory until the notebook is
+        saved, when it moves to the sidecar folder). Re-attaching a name
         that already exists replaces it."""
         p = Path(path)
         try:
@@ -451,12 +471,12 @@ class FileCell(CellWidget):
         self._stem = stem or "notebook"
         self._rebuild()
 
-    def materialize(self):
-        """On save: externalise each large attachment to the sidecar folder."""
+    def materialize(self, claimed=None):
+        """On save: write every attachment out to the sidecar folder."""
         if self._doc_dir is None:
             return
         for att in self._items:
-            att.materialize(self._doc_dir, self._stem)
+            att.materialize(self._doc_dir, self._stem, claimed)
         self._rebuild()
 
     # -- resolving (for the kernel's kf helper) ----------------------------

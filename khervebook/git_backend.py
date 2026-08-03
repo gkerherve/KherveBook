@@ -113,9 +113,10 @@ def commit_all(repo_dir: Path, message: str | None = None,
                file_stem: str | None = None) -> str | None:
     """Stage files in *repo_dir* and create a commit.
 
-    When *file_stem* is given only files whose name starts with that
-    stem are staged (e.g. ``"Book1"`` stages ``Book1.kbook``).  Otherwise
-    every tracked + new file is staged.
+    When *file_stem* is given only that notebook's files are staged
+    (e.g. ``"Book1"`` stages ``Book1.kbook`` and everything under its
+    ``Book1_files/`` attachment folder).  Otherwise every tracked + new
+    file is staged.
 
     Returns the new commit's hex OID, or None if nothing changed / git unavailable.
     """
@@ -130,10 +131,18 @@ def commit_all(repo_dir: Path, message: str | None = None,
     if file_stem:
         repo_root = Path(repo.workdir)
         for p in repo_root.iterdir():
-            if p.name.startswith(file_stem) and p.is_file():
-                # Path relative to repo root for index.add.
-                rel = str(p.relative_to(repo_root)).replace("\\", "/")
-                index.add(rel)
+            if not p.name.startswith(file_stem):
+                continue
+            # Path relative to repo root for index.add.
+            if p.is_file():
+                index.add(str(p.relative_to(repo_root)).replace("\\", "/"))
+            elif p.is_dir():
+                # <stem>_files/: the notebook's attachments live there, so
+                # they are versioned with the document that refers to them.
+                for f in sorted(p.rglob("*")):
+                    if f.is_file():
+                        index.add(
+                            str(f.relative_to(repo_root)).replace("\\", "/"))
     else:
         index.add_all()
     index.write()
@@ -552,10 +561,11 @@ def _commit_touches_stem(commit, stem: str) -> bool:
     except Exception:
         return False
     for delta in diff.deltas:
-        old = delta.old_file.path.split("/")[-1]
-        new = delta.new_file.path.split("/")[-1]
-        if old.startswith(stem) or new.startswith(stem):
-            return True
+        # Repo-relative paths, so this matches both "Book.kbook" and an
+        # attachment under "Book_files/".
+        for path in (delta.old_file.path, delta.new_file.path):
+            if path.startswith(stem) or path.split("/")[-1].startswith(stem):
+                return True
     return False
 
 

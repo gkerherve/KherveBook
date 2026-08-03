@@ -139,19 +139,24 @@ into a new module and import.
                        (each an `_Attachment`), showing a preview per file
                        (text snippet / image thumbnail / structured-format
                        summary via `filepreview`; other binaries kept but
-                       not previewed). **Hybrid**, per file — small files
-                       (≤ `EMBED_LIMIT`, 256 KiB) embed base64 in the
-                       `.kbook`; larger files are written to a sidecar
-                       `<stem>_files/` folder beside the notebook (so the
-                       per-document Git repo versions them) and only a
-                       relative path is stored. Code cells reach an
-                       attachment by name via the kernel helper
-                       `kf("data.csv")`, returning an absolute path
-                       (embedded files extracted to a temp file on demand);
-                       `kf()` with no arg returns the notebook's folder.
+                       not previewed). **Attachments are real files beside
+                       the notebook, not bytes inside it**: saving writes
+                       each one into the sidecar `<stem>_files/` folder
+                       (so the per-document Git repo versions them) and
+                       the `.kbook` keeps only a relative path. Base64 in
+                       the JSON is the fallback only while the notebook
+                       has no path yet (never saved, or a copied cell);
+                       old embedded documents still load and move out on
+                       the next save. Code cells reach an attachment by
+                       name via the kernel helper `kf("data.csv")`,
+                       returning an absolute path (a not-yet-saved file is
+                       extracted to a temp file on demand); `kf()` with no
+                       arg returns the notebook's folder.
                        `NotebookWidget.set_document_path`/`prepare_save`
                        plumb the folder in; `materialize()` externalises
-                       large attachments on save.
+                       the attachments on save, passing a shared `claimed`
+                       set so two cells holding a same-named file don't
+                       overwrite each other (`data.csv`, `data-2.csv`).
   - `kfitcell.py`    — `KFitCell`: holds one KherveFitting `.kfit` and shows
                        it as a **Plot** (KherveFitting's own look: black
                        scatter, grey dashed background, shaded peaks,
@@ -159,8 +164,8 @@ into a new module and import.
                        data) or a **Data** table, switched by tabs, with a
                        drop-down over the project's sheets and an "Open in
                        KherveFitting" button (AppBridge, reload on save).
-                       Storage is the File cell's hybrid (`_Attachment`):
-                       embedded under 256 KiB, sidecar folder above it.
+                       Storage is the File cell's (`_Attachment`): the
+                       project is written to the sidecar folder on save.
                        **Refresh** re-reads the file from where it was
                        loaded (`origin` is persisted), for a re-fit done
                        elsewhere. Only `.kfit` drops are accepted — the
@@ -283,12 +288,14 @@ into a new module and import.
 |"kfit", "source": "...", optional "title", "collapsed", "column",
 "width", "height"}]}`. A `kfit` cell's `source` is JSON
 `{"kbook_kfit":1,"file":{name,size,embed|path},"sheet":…,"view":
-"plot"|"data"}` — same hybrid storage as a file attachment. A `note`
+"plot"|"data"}` — same storage as a file attachment. A `note`
 cell's `source` is JSON
 `{"kbook_note":1,"html":…,"ink":…}`; a `file` cell's `source` is JSON
 `{"kbook_files":1,"files":[{"name","size","embed"(base64)|"path"(sidecar
 rel)},…]}` (the legacy single-file `{"kbook_file":1,…}` still loads) —
-large attachments live in the `<stem>_files/` folder, not the JSON. The
+a saved notebook always writes `path`: attachments live in the
+`<stem>_files/` folder, never in the JSON. `embed` is only the
+never-saved fallback, and still reads for old documents. The
 optional per-cell keys: `title` (heading shown at the top),
 `collapsed` (minimised to its title/summary), `column` (sits beside
 the previous cell in the same row), `width`/`height` (px, from the

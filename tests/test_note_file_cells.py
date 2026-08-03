@@ -72,7 +72,9 @@ def test_note_cell_registered_and_round_trips_in_notebook(qapp):
 
 # -- File cell -------------------------------------------------------------
 
-def test_file_cell_small_file_embeds(qapp, tmp_path):
+def test_file_cell_stores_the_file_beside_the_notebook(qapp, tmp_path):
+    """Whatever its size, an attachment is a real file in the sidecar
+    folder — the .kbook keeps a path, never the bytes."""
     from khervebook.filecell import FileCell
     f = tmp_path / "data.csv"
     f.write_text("a,b\n1,2\n")
@@ -83,21 +85,37 @@ def test_file_cell_small_file_embeds(qapp, tmp_path):
     files = json.loads(cell.source())["files"]
     assert len(files) == 1
     assert files[0]["name"] == "data.csv"
+    assert files[0].get("path") == "Book_files/data.csv"
+    assert "embed" not in files[0]
+    assert (tmp_path / "Book_files" / "data.csv").read_text() == "a,b\n1,2\n"
+
+
+def test_file_cell_keeps_bytes_until_the_notebook_has_a_path(qapp, tmp_path):
+    """A file dropped into an unsaved notebook has no folder to live in
+    yet, so it travels in the JSON until the first save."""
+    from khervebook.filecell import FileCell
+    f = tmp_path / "data.csv"
+    f.write_text("a,b\n1,2\n")
+    cell = FileCell()
+    cell.attach(str(f))
+    cell.materialize()                       # no document path yet: no-op
+    files = json.loads(cell.source())["files"]
     assert "embed" in files[0] and "path" not in files[0]
 
 
-def test_file_cell_large_file_goes_to_sidecar(qapp, tmp_path):
-    from khervebook.filecell import FileCell, EMBED_LIMIT
-    f = tmp_path / "big.bin"
-    f.write_bytes(b"X" * (EMBED_LIMIT + 1024))
-    cell = FileCell()
-    cell.set_context(tmp_path, "Book")
-    cell.attach(str(f))
-    cell.materialize()
-    files = json.loads(cell.source())["files"]
-    assert files[0].get("path") == "Book_files/big.bin"
-    assert "embed" not in files[0]
-    assert (tmp_path / "Book_files" / "big.bin").exists()
+def test_same_named_files_in_two_cells_do_not_overwrite(qapp, tmp_path):
+    from khervebook.notebook import NotebookWidget
+    (tmp_path / "one").mkdir()
+    (tmp_path / "two").mkdir()
+    (tmp_path / "one" / "data.csv").write_text("first")
+    (tmp_path / "two" / "data.csv").write_text("second")
+    nb = NotebookWidget()
+    nb.set_document_path(str(tmp_path / "Book.kbook"))
+    nb.add_cell("file").attach(str(tmp_path / "one" / "data.csv"))
+    nb.add_cell("file").attach(str(tmp_path / "two" / "data.csv"))
+    nb.prepare_save()
+    assert (tmp_path / "Book_files" / "data.csv").read_text() == "first"
+    assert (tmp_path / "Book_files" / "data-2.csv").read_text() == "second"
 
 
 def test_file_cell_holds_multiple_files(qapp, tmp_path):

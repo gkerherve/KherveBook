@@ -173,6 +173,49 @@ into a new module and import.
                        this cell away and lose the project. `project()`
                        exposes the parsed `KFitProject` to `kfit()` and
                        the AI summary.
+  - `ktexcell.py`    — `KTexCell` ("ktex"): a KherveTeX document shown as
+                       its typeset pages (grey desk, drop-shadowed pages,
+                       Page n / N navigation, title bar with the document
+                       title). Holds one `.ktexz` (or `.tex`) stored like a
+                       File attachment — straight into `<stem>_files/` when
+                       the notebook has a path, a private temp copy (and
+                       base64 in the JSON) until then. Pages come from
+                       KherveTeX's cached `<stem>.pdf` when it is current,
+                       else tectonic compiles `<stem>.tex` (or a LaTeX
+                       translation of the model), on a QThread held in a
+                       module set. "Edit in KherveTeX" launches it detached
+                       on the file; a QFileSystemWatcher on the document,
+                       its .tex/.pdf and folder (re-armed after every event,
+                       since editors save by replacing) refreshes the pages.
+                       `.ktexz` drops land here (not as a latex cell).
+  - `ktexdoc.py`     — the Qt-free half: minimal `.ktexz` writer (kdocz zip:
+                       manifest.json + document.json with KherveTeX's
+                       default meta), `title_of`, `pdf_source`, tectonic
+                       `compile_tex`, PyMuPDF `render_pages`, and
+                       `find_khervetex` (QSettings `apps/khervetex` from
+                       "Locate KherveTeX…" → /Applications or
+                       ~/Applications KherveTeX.app → %ProgramFiles% /
+                       %LOCALAPPDATA%\Programs KherveTeX.exe → a source
+                       checkout's kherveDOC.py with its .venv python, else
+                       any Python with PySide6). **Never import
+                       `khervedoc`**: KherveTeX is PySide6, which cannot
+                       share a process with PyQt5.
+  - `molcell.py`     — `MolCell` ("mol"): KherveMol's own `Viewer3D` and
+                       `Editor2D` embedded (3D / 2D toggle; the viewer's
+                       building rows hidden behind a Tools button), a
+                       name / SMILES / formula entry (`entries.build`,
+                       `compounds.by_formula`), and "Open in KherveMol"
+                       (AppBridge on a `.kmol`, reload on save). The
+                       molecule lives **inside** the .kbook as KherveMol's
+                       `.kmol` JSON. Without KherveMol the cell says so and
+                       keeps the stored JSON verbatim.
+  - `siblings.py`    — finds sibling Kherve apps: `import_package` puts an
+                       embedded package's checkout on sys.path (env var,
+                       e.g. `KHERVEMOL_PATH` → PyInstaller bundle →
+                       `../<Repo>` → ~/Documents/PycharmProjects/<Repo>),
+                       appended so it never shadows our own modules; plus
+                       venv / PySide6-capable Python lookups. The spec
+                       bundles `khervemol` from the same place.
   - `kfitio.py`      — reads `.kfit` (HDF5 + zlib-JSON project, with the
                        bulky arrays as HDF5 datasets) into `KFitProject` /
                        `KFitSheet`. Every technique uses the same three
@@ -285,12 +328,15 @@ into a new module and import.
 
 `.kbook` is JSON: `{"format": "kbook", "version": 6, "cells":
 [{"type": "code"|"markdown"|"note"|"latex"|"sheet"|"svg"|"js"|"file"
-|"kfit", "source": "...", optional "title", "collapsed", "column",
+|"kfit"|"ktex"|"mol", "source": "...", optional "title", "collapsed", "column",
 "width", "height"}]}`. A `kfit` cell's `source` is JSON
 `{"kbook_kfit":1,"file":{name,size,embed|path},"sheet":…,"view":
 "plot"|"data"}` — same storage as a file attachment. A `note`
 cell's `source` is JSON
-`{"kbook_note":1,"html":…,"ink":…}`; a `file` cell's `source` is JSON
+`{"kbook_note":1,"html":…,"ink":…}`; a `ktex` cell's `source` is
+`{"kbook_ktex":1,"file":{name,size,embed|path},"origin","page"}`; a
+`mol` cell's is `{"kbook_mol":1,"kmol":<KherveMol .kmol JSON>,"view":
+"3d"|"2d","query"}` (format version 7); a `file` cell's `source` is JSON
 `{"kbook_files":1,"files":[{"name","size","embed"(base64)|"path"(sidecar
 rel)},…]}` (the legacy single-file `{"kbook_file":1,…}` still loads) —
 a saved notebook always writes `path`: attachments live in the

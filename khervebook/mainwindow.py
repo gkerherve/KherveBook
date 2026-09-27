@@ -330,7 +330,8 @@ class MainWindow(QMainWindow):
     CELL_TYPES = [("Code", "code"), ("Markdown", "markdown"),
                   ("Note", "note"), ("LaTeX", "latex"), ("Sheet", "sheet"),
                   ("SVG", "svg"), ("JavaScript", "js"), ("File", "file"),
-                  ("KFit", "kfit")]
+                  ("KFit", "kfit"), ("KherveTeX Doc", "ktex"),
+                  ("Molecule", "mol")]
 
     def _build_toolbar(self):
         """Jupyter-style main toolbar: file/cell ops, run, cell type."""

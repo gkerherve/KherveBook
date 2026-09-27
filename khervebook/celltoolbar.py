@@ -100,7 +100,9 @@ class CellToolBar(QToolBar):
                  "sheet": self._build_sheet,
                  "svg": self._build_svg,
                  "file": self._build_file,
-                 "kfit": self._build_kfit}.get(cell_type, self._build_code)
+                 "kfit": self._build_kfit,
+                 "ktex": self._build_ktex,
+                 "mol": self._build_mol}.get(cell_type, self._build_code)
         build()
 
     # -- KFit (KherveFitting project) mode ------------------------------------
@@ -126,6 +128,47 @@ class CellToolBar(QToolBar):
         self._add("Open in KherveFitting",
                   "Edit this project in KherveFitting and reload on save",
                   lambda: self._kfit("open_in_khervefitting"),
+                  "mdi.open-in-new")
+
+    # -- KherveTeX document / KherveMol molecule modes -----------------------
+    def _call(self, cell_type, method, *args):
+        cell = self._notebook.current
+        if cell is not None and cell.CELL_TYPE == cell_type and hasattr(
+                cell, method):
+            getattr(cell, method)(*args)
+
+    def _build_ktex(self):
+        self._add("New Document", "Create a new KherveTeX document in this "
+                  "cell", lambda: self._call("ktex", "new_document"),
+                  "mdi.file-plus-outline")
+        self._add("Insert .ktexz / .tex…", "Show an existing KherveTeX "
+                  "document or .tex file in this cell",
+                  lambda: self._call("ktex", "choose_file"),
+                  "mdi.folder-open-outline")
+        self._add("Refresh", "Re-read the document and its pages",
+                  lambda: self._call("ktex", "refresh", True), "mdi.refresh")
+        self.addSeparator()
+        self._add("Edit in KherveTeX", "Open the document in KherveTeX; "
+                  "saving there updates the cell",
+                  lambda: self._call("ktex", "edit_in_khervetex"),
+                  "mdi.open-in-new")
+        self._add("Locate KherveTeX…", "Choose which KherveTeX to launch",
+                  lambda: self._call("ktex", "locate_khervetex"),
+                  "mdi.magnify")
+
+    def _build_mol(self):
+        self._add("3D", "Ball-and-stick 3D view",
+                  lambda: self._call("mol", "show_view", 0), "mdi.cube-outline")
+        self._add("2D Sketch", "Skeletal 2D sketch",
+                  lambda: self._call("mol", "show_view", 1),
+                  "mdi.vector-polyline")
+        self._add("Build 3D from Sketch", "Turn the 2D sketch into a 3D "
+                  "model (needs RDKit)",
+                  lambda: self._call("mol", "build_from_sketch"),
+                  "mdi.rotate-3d-variant")
+        self.addSeparator()
+        self._add("Open in KherveMol", "Edit in KherveMol and reload on save",
+                  lambda: self._call("mol", "open_in_khervemol"),
                   "mdi.open-in-new")
 
     # -- note (rich text) mode ----------------------------------------------

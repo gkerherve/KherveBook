@@ -117,6 +117,31 @@ def _file_markdown(src: str) -> str:
     return f"📎 **Attached files:** {listed}"
 
 
+def _ktex_markdown(src: str) -> str:
+    try:
+        doc = json.loads(src)
+        name = (doc.get("file") or {}).get("name", "")
+    except (ValueError, TypeError, AttributeError):
+        name = ""
+    return f"📄 **KherveTeX document:** `{name}`" if name \
+        else "📄 KherveTeX document"
+
+
+def _mol_markdown(src: str) -> str:
+    try:
+        mol = json.loads(src)["kmol"]["mol3d"]
+        counts = {}
+        for a in mol.get("atoms", []):
+            counts[a[0]] = counts.get(a[0], 0) + 1
+        order = sorted(counts, key=lambda e: (e != "C", e != "H", e))
+        formula = "".join(e + (str(counts[e]) if counts[e] > 1 else "")
+                          for e in order)
+        label = mol.get("label") or mol.get("name") or "Molecule"
+        return f"⚛ **Molecule:** {label} ({formula})"
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return "⚛ Molecule"
+
+
 def _display_body(t: str, src: str) -> str:
     if t == "latex":
         return ("```latex\n" + src + "\n```" if is_document(src)
@@ -129,6 +154,10 @@ def _display_body(t: str, src: str) -> str:
         return _file_markdown(src)
     if t == "js":
         return "```javascript\n" + src + "\n```"
+    if t == "ktex":
+        return _ktex_markdown(src)
+    if t == "mol":
+        return _mol_markdown(src)
     if t == "svg":
         return src if src.lstrip().startswith("<svg") else "```\n" + src + "\n```"
     return "```\n" + src + "\n```"
@@ -159,7 +188,7 @@ def from_ipynb(text: str) -> list:
         meta = cell.get("metadata") or {}
         kb = meta.get("khervebook") or {}
         if kb.get("type") in ("latex", "sheet", "note", "svg", "js",
-                              "file") and "source" in kb:
+                              "file", "ktex", "mol") and "source" in kb:
             item = {"type": kb["type"], "source": kb["source"]}
         else:
             ct = cell.get("cell_type", "code")

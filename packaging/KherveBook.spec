@@ -66,9 +66,26 @@ for _pkg in ("qtawesome", "lmfit", "dask", "fitz", "pygit2"):
     except Exception:
         pass   # optional dependency not installed — skip it
 
+# KherveMol is embedded (the molecule cell hosts its viewer), so its
+# package ships inside the bundle. It is a sibling checkout, not a pip
+# package: found the same way khervebook/siblings.py finds it at run time.
+# Missing at build time -> the cell says KherveMol is unavailable.
+_pathex = [_ROOT]
+import sys as _sys
+_sys.path.insert(0, _ROOT)
+from khervebook import siblings as _siblings            # noqa: E402
+_khervemol = _siblings.checkout("KherveMol", "khervemol", "KHERVEMOL_PATH")
+if _khervemol is not None:
+    _pathex.append(str(_khervemol))
+    _sys.path.append(str(_khervemol))
+    hiddenimports += collect_submodules("khervemol")
+    print(f"spec: bundling KherveMol from {_khervemol}")
+else:
+    print("spec: KherveMol not found - molecule cells will be unavailable")
+
 a = Analysis(
     [os.path.join(_ROOT, "KherveBook.py")],
-    pathex=[_ROOT],
+    pathex=_pathex,
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,

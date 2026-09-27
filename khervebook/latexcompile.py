@@ -46,7 +46,10 @@ def find_tectonic():
     for c in (Path.home() / "bin" / "tectonic.exe",
               Path.home() / "bin" / "tectonic",
               Path.home() / ".cargo" / "bin" / "tectonic.exe",
-              Path.home() / "scoop" / "shims" / "tectonic.exe"):
+              Path.home() / "scoop" / "shims" / "tectonic.exe",
+              # A macOS app started from Finder gets no shell PATH.
+              Path("/opt/homebrew/bin/tectonic"),
+              Path("/usr/local/bin/tectonic")):
         if c.exists():
             return str(c)
     return None

@@ -28,11 +28,14 @@ from . import jscell                     # noqa: F401  (registers "js")
 from . import notecell                   # noqa: F401  (registers "note")
 from . import filecell                   # noqa: F401  (registers "file")
 from . import kfitcell                   # noqa: F401  (registers "kfit")
+from . import ktexcell                   # noqa: F401  (registers "ktex")
+from . import molcell                    # noqa: F401  (registers "mol")
 
+# v7: "ktex" (a KherveTeX document shown as pages) and "mol" (KherveMol).
 # v6: "kfit" (a KherveFitting project shown as a plot / data table).
 # v5: "note" (rich text + pen) and "file" (attachments) cell types.
 # v4: cells gained "height" (v3: title/column, v2: collapsed).
-FORMAT_VERSION = 6
+FORMAT_VERSION = 7
 
 #: extension -> cell type for files dropped onto the notebook.
 DROP_TYPES = {
@@ -49,7 +52,9 @@ DROP_TYPES = {
     ".kbook": "kbook",
     ".ksheet": "ksheet",                  # KherveSheet workbook
     ".kdocz": "kdoc",                     # kherveDOC document -> markdown
-    ".ktex": "ktex", ".ktexz": "ktex",    # KherveTeX document -> latex
+    ".ktex": "ktex",                      # KherveTeX JSON -> latex
+    ".ktexz": "ktexdoc",                  # KherveTeX document -> its pages
+    ".kmol": "kmol",                      # KherveMol molecule
     ".ipynb": "ipynb",                    # Jupyter / Colab notebook
 }
 _MAX_DROP_BYTES = 2_000_000
@@ -412,7 +417,9 @@ class NotebookWidget(QScrollArea):
                            ("Note", "note"), ("LaTeX", "latex"),
                            ("Sheet", "sheet"), ("SVG", "svg"),
                            ("JavaScript", "js"), ("File", "file"),
-                           ("KFit", "kfit")):
+                           ("KFit", "kfit"),
+                           ("KherveTeX Document", "ktex"),
+                           ("Molecule", "mol")):
             if key != cell.CELL_TYPE:
                 conv.addAction(label,
                                lambda k=key: self.convert_current(k))
@@ -515,6 +522,29 @@ class NotebookWidget(QScrollArea):
                 if item["type"] in ("markdown", "latex", "svg", "sheet"):
                     new.execute(self.kernel)
             self.undo_stack.endMacro()
+            self.modified.emit()
+            return True
+        if kind == "ktexdoc":
+            # The document stays a document: its own cell, shown as pages
+            # and edited in KherveTeX — not flattened into LaTeX source.
+            if cell is not None and cell.CELL_TYPE == "ktex":
+                self._set_current(cell)
+            else:
+                cell = self.add_cell_below("ktex", "")
+            ok = cell.attach(str(p))
+            if ok:
+                self.modified.emit()
+            return ok
+        if kind == "kmol":
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                return False
+            if cell is None or cell.CELL_TYPE != "mol":
+                cell = self.add_cell_below("mol", "")
+            else:
+                self._set_current(cell)
+            cell.load_kmol(data)
             self.modified.emit()
             return True
         if kind == "kfit":

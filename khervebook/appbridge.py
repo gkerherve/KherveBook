@@ -32,7 +32,7 @@ class AppBridge:
     """Launch a sibling app on a temp file and reload the cell on save."""
 
     def __init__(self, cell, app_name: str, module: str, ext: str, reload_fn,
-                 script: str = None):
+                 script: str = None, repo=None):
         self._cell = cell            # a QWidget, for QTimer parent + dialogs
         self._app = app_name         # e.g. "KherveSheet"
         self._module = module        # e.g. "khervesheet"
@@ -41,12 +41,17 @@ class AppBridge:
         #: Repo-root script for an app with no package entry point —
         #: KherveFitting is a single wxPython script, not a `-m` module.
         self._script = script
+        #: The app's checkout when it is not beside KherveBook (found by
+        #: `siblings`, e.g. ~/Documents/PycharmProjects/KherveMol).
+        self._repo_override = Path(repo) if repo else None
         self._timer = None
         self._tmp = None
         self._proc = None
         self._mtime = 0.0
 
     def _repo(self) -> Path:
+        if self._repo_override is not None:
+            return self._repo_override
         # .../Python/KherveBook/khervebook/appbridge.py -> .../Python/<app>
         return Path(__file__).resolve().parents[2] / self._app
 

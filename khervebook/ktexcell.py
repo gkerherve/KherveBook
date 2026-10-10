@@ -29,7 +29,8 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from PyQt5.QtCore import QFileSystemWatcher, QSettings, QThread, Qt, QTimer, pyqtSignal
+from PyQt5.QtCore import (QFileSystemWatcher, QSettings, QThread, Qt,
+                          QTimer, pyqtSignal)
 from PyQt5.QtGui import QColor, QPixmap
 from PyQt5.QtWidgets import (QFrame, QGraphicsDropShadowEffect, QHBoxLayout,
                              QLabel, QPushButton, QScrollArea,
@@ -62,14 +63,13 @@ class _RenderWorker(QThread):
     done = pyqtSignal(int, list, str)       # token, png pages, where from
     failed = pyqtSignal(int, str)           # token, log
 
-    def __init__(self, token, path):
+    def __init__(self, token, path, pdf_for):
         super().__init__()
-        self._token, self._path = token, path
+        self._token, self._path, self._pdf_for = token, path, pdf_for
 
     def run(self):
         try:
-            kind, _src = ktexdoc.pdf_source(self._path)
-            pdf, log = ktexdoc.document_pdf(self._path)
+            kind, pdf, log = self._pdf_for(self._path)
             if pdf is None:
                 self.failed.emit(self._token, log or "no PDF was produced")
                 return
@@ -162,13 +162,56 @@ class _PageView(QScrollArea):
 
 
 class KTexCell(CellWidget):
-    """A cell showing one KherveTeX document as typeset pages."""
+    """A cell showing one KherveTeX document as typeset pages.
+
+    The class attributes and the few hook methods below are all that is
+    KherveTeX-specific, so another app's paged document (KherveSlide's
+    decks, `slidecell`) is a small subclass."""
 
     CELL_TYPE = "ktex"
+    SOURCE_KEY = "kbook_ktex"
+    APP = "KherveTeX"
+    DOC_NOUN = "KherveTeX document"
+    ICON = "mdi.file-document-outline"
+    EXTS_TEXT = ".ktexz / .tex"
+    FILE_FILTER = "KherveTeX documents (*.ktexz *.kdocz *.tex);;All files (*)"
+    LOCATE_FILTER = ("KherveTeX (KherveTeX.app KherveTeX.exe kherveDOC.py "
+                     "*.app *.exe *.py);;All files (*)")
+    LOCATE_KEY = LOCATE_KEY
+    CAN_CREATE = True
+    #: where the pages came from, for the hint under them
+    HOW = {"pdf": "from KherveTeX's compiled PDF",
+           "tex": "typeset from the document's .tex",
+           "model": "typeset from the document"}
+
+    # -- hooks ----------------------------------------------------------------
+    def accepts(self, path) -> bool:
+        return ktexdoc.is_ktexz(path) or str(path).lower().endswith(".tex")
+
+    def doc_title(self, path) -> str:
+        return ktexdoc.title_of(path)
+
+    @staticmethod
+    def pdf_source(path):
+        return ktexdoc.pdf_source(path)
+
+    @classmethod
+    def pdf_for(cls, path):
+        """(kind, pdf bytes or None, log) — runs on the worker thread."""
+        kind, _src = cls.pdf_source(path)
+        pdf, log = ktexdoc.document_pdf(path)
+        return kind, pdf, log
+
+    def app_command(self):
+        return self.khervetex_command()
+
+    @staticmethod
+    def command_for(path):
+        return ktexdoc.command_for(path)
 
     def __init__(self, source=""):
         super().__init__(source)
-        self.gutter.setText("ktex")
+        self.gutter.setText(self.CELL_TYPE)
         self.editor.hide()
         self._att = None                 # the document, as an _Attachment
         self._origin = ""                # where it was inserted from
@@ -209,7 +252,7 @@ class KTexCell(CellWidget):
         head.setContentsMargins(10, 6, 6, 6)
         head.setSpacing(6)
         mark = QLabel()
-        mark.setPixmap(icon("mdi.file-document-outline", "#2c5d8f")
+        mark.setPixmap(icon(self.ICON, "#2c5d8f")
                        .pixmap(26, 26))
         head.addWidget(mark)
         names = QVBoxLayout()
@@ -249,17 +292,18 @@ class KTexCell(CellWidget):
         sep.setFrameShape(QFrame.VLine)
         sep.setStyleSheet("color: #d0d5db;")
         head.addWidget(sep)
-        tool("", "mdi.file-plus-outline", "New KherveTeX document",
-             self.new_document)
+        if self.CAN_CREATE:
+            tool("", "mdi.file-plus-outline", f"New {self.DOC_NOUN}",
+                 self.new_document)
         tool("", "mdi.folder-open-outline",
-             "Insert an existing .ktexz or .tex document", self.choose_file)
+             f"Insert an existing {self.EXTS_TEXT} file", self.choose_file)
         tool("", "mdi.refresh", "Re-read the document and its pages",
              lambda: self.refresh(force=True))
-        self._edit_btn = QPushButton("Edit in KherveTeX")
+        self._edit_btn = QPushButton(f"Edit in {self.APP}")
         self._edit_btn.setIcon(icon("mdi.pencil-outline"))
         self._edit_btn.setToolTip(
-            "Open this document in KherveTeX — saving there updates the cell")
-        self._edit_btn.clicked.connect(self.edit_in_khervetex)
+            f"Open this in {self.APP} — saving there updates the cell")
+        self._edit_btn.clicked.connect(self.edit_in_app)
         head.addWidget(self._edit_btn)
         outer.addWidget(bar)
 
@@ -274,9 +318,9 @@ class KTexCell(CellWidget):
         self._hint.setWordWrap(True)
         self._hint.setStyleSheet("color: #8a939c; font-style: italic;")
         foot.addWidget(self._hint, 1)
-        self._locate_btn = QPushButton("Locate KherveTeX…")
+        self._locate_btn = QPushButton(f"Locate {self.APP}…")
         self._locate_btn.setIcon(icon("mdi.magnify"))
-        self._locate_btn.clicked.connect(self.locate_khervetex)
+        self._locate_btn.clicked.connect(self.locate_app)
         self._locate_btn.hide()
         foot.addWidget(self._locate_btn)
         outer.addLayout(foot)
@@ -291,11 +335,13 @@ class KTexCell(CellWidget):
     def _update_header(self):
         path = self.document_path()
         if path is None:
-            self._doc_title.setText("KherveTeX document")
-            self._doc_file.setText("No document yet — create a new one or "
-                                   "insert an existing .ktexz / .tex")
+            self._doc_title.setText(self.DOC_NOUN)
+            self._doc_file.setText(
+                ("No document yet — create a new one or insert an existing "
+                 if self.CAN_CREATE else "Nothing yet — insert or drop a ")
+                + self.EXTS_TEXT)
         else:
-            self._doc_title.setText(ktexdoc.title_of(path))
+            self._doc_title.setText(self.doc_title(path))
             where = (f"{self._stem}_files" if self._att and self._att.path
                      else "kept with the notebook until it is saved")
             self._doc_file.setText(f"{self._att.name}  ·  {where}")
@@ -335,11 +381,11 @@ class KTexCell(CellWidget):
             return
         self._signature = signature
         self._token += 1
-        kind, _src = ktexdoc.pdf_source(path)
+        kind, _src = self.pdf_source(path)
         self._hint.setText("Loading pages…" if kind == "pdf" else
                            "Typesetting with tectonic…  (the first run "
                            "downloads LaTeX packages)")
-        worker = _RenderWorker(self._token, path)
+        worker = _RenderWorker(self._token, path, self.pdf_for)
         _WORKERS.add(worker)
         worker.done.connect(self._on_pages)
         worker.failed.connect(self._on_failed)
@@ -363,9 +409,7 @@ class KTexCell(CellWidget):
         self._update_header()
         QTimer.singleShot(0, lambda: self._view.go_to(keep))
         n = len(pixmaps)
-        how = {"pdf": "from KherveTeX's compiled PDF",
-               "tex": "typeset from the document's .tex",
-               "model": "typeset from the document"}.get(kind, "")
+        how = self.HOW.get(kind, "")
         self._hint.setText(f"{n} page{'s' if n != 1 else ''} {how}.")
         self.content_changed.emit()
 
@@ -416,7 +460,7 @@ class KTexCell(CellWidget):
 
     def title_text(self) -> str:
         path = self.document_path()
-        return ktexdoc.title_of(path) if path else ""
+        return self.doc_title(path) if path else ""
 
     def _unique_name(self, name):
         """A name no other file in the sidecar folder already has."""
@@ -481,16 +525,15 @@ class KTexCell(CellWidget):
         return True
 
     def choose_file(self):
-        path = filedialog.open_file(
-            self, "Insert a KherveTeX document", "",
-            "KherveTeX documents (*.ktexz *.kdocz *.tex);;All files (*)")
+        path = filedialog.open_file(self, f"Insert a {self.DOC_NOUN}", "",
+                                    self.FILE_FILTER)
         return self.attach(path) if path else False
 
     def attach(self, path) -> bool:
         p = Path(path)
-        if not (ktexdoc.is_ktexz(p) or p.suffix.lower() == ".tex"):
-            self._hint.setText(f"{p.name} is not a KherveTeX document "
-                               "(.ktexz) or a .tex file.")
+        if not self.accepts(p):
+            self._hint.setText(f"{p.name} is not a {self.DOC_NOUN} "
+                               f"({self.EXTS_TEXT}).")
             return False
         try:
             data = p.read_bytes()
@@ -500,48 +543,50 @@ class KTexCell(CellWidget):
         self._set_document(data, p.name, siblings_from=p)
         return True
 
-    # -- KherveTeX hand-off ------------------------------------------------
+    # -- hand-off to the app ------------------------------------------------
     def khervetex_command(self):
-        return ktexdoc.find_khervetex(str(_settings().value(LOCATE_KEY, "")
-                                          or ""))
+        return ktexdoc.find_khervetex(str(_settings().value(
+            self.LOCATE_KEY, "") or ""))
 
-    def edit_in_khervetex(self):
+    def edit_in_app(self):
         path = self.document_path()
         if path is None:
             return False
-        cmd = self.khervetex_command()
+        cmd = self.app_command()
         if cmd is None:
             self._locate_btn.show()
             self._hint.setText(
-                "KherveTeX was not found — install it, or point KherveBook "
-                "at it with “Locate KherveTeX…” (the app, its .exe, or a "
-                "source checkout's kherveDOC.py).")
+                f"{self.APP} was not found — install it, or point KherveBook "
+                f"at it with “Locate {self.APP}…” (the app, its .exe, or a "
+                "source checkout's launcher script).")
             return False
         try:
             ktexdoc.launch_detached(cmd, path)
         except Exception as exc:
             self._locate_btn.show()
-            self._hint.setText(f"Could not start KherveTeX: {exc}")
+            self._hint.setText(f"Could not start {self.APP}: {exc}")
             return False
         self._edit_path = path
         self._rewatch()
-        self._hint.setText("Opened in KherveTeX. Save there (Ctrl+S) and "
+        self._hint.setText(f"Opened in {self.APP}. Save there (Ctrl+S) and "
                            "this cell updates by itself.")
         return True
 
-    def locate_khervetex(self):
-        path = filedialog.open_file(
-            self, "Locate KherveTeX", "",
-            "KherveTeX (KherveTeX.app KherveTeX.exe kherveDOC.py *.app *.exe "
-            "*.py);;All files (*)")
+    def locate_app(self):
+        path = filedialog.open_file(self, f"Locate {self.APP}", "",
+                                    self.LOCATE_FILTER)
         if not path:
             return False
-        if ktexdoc.command_for(path) is None:
+        if self.command_for(path) is None:
             self._hint.setText(f"{Path(path).name} cannot be launched.")
             return False
-        _settings().setValue(LOCATE_KEY, path)
+        _settings().setValue(self.LOCATE_KEY, path)
         self._locate_btn.hide()
-        return self.edit_in_khervetex()
+        return self.edit_in_app()
+
+    # KherveTeX's names, kept for the cell toolbar and older callers.
+    edit_in_khervetex = edit_in_app
+    locate_khervetex = locate_app
 
     # -- watching ----------------------------------------------------------
     def _watch_targets(self):
@@ -645,20 +690,20 @@ class KTexCell(CellWidget):
         paths = [u.toLocalFile() for u in event.mimeData().urls()
                  if u.isLocalFile()]
         for path in paths:
-            if ktexdoc.is_ktexz(path) or path.lower().endswith(".tex"):
+            if self.accepts(path):
                 self.attach(path)
                 event.acceptProposedAction()
                 return
         if paths:
-            self._hint.setText("A KherveTeX cell holds one .ktexz or .tex "
-                               "document — drop other files on the notebook "
+            self._hint.setText(f"This cell holds one {self.EXTS_TEXT} "
+                               "file — drop other files on the notebook "
                                "background.")
         event.ignore()
 
     # -- persistence ---------------------------------------------------------
     def source(self) -> str:
         self._sync_from_disk()
-        doc = {"kbook_ktex": 1, "page": self._view.current_page()
+        doc = {self.SOURCE_KEY: 1, "page": self._view.current_page()
                if self._view.pages else self._wanted_page}
         if self._att is not None:
             doc["file"] = self._att.to_dict(self._doc_dir)
@@ -692,10 +737,10 @@ class KTexCell(CellWidget):
 
     def ai_summary(self) -> str:
         if self._att is None:
-            return "(an empty KherveTeX document cell)"
-        return (f"(KherveTeX document {self._att.name!r}, titled "
+            return f"(an empty {self.DOC_NOUN} cell)"
+        return (f"({self.DOC_NOUN} {self._att.name!r}, titled "
                 f"{self.title_text()!r}, {self.page_count()} page(s) — "
-                "edited in KherveTeX, not from here)")
+                f"edited in {self.APP}, not from here)")
 
     def focus_editor(self):
         self._card.setFocus()

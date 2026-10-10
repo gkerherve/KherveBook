@@ -155,6 +155,56 @@ class MainWindow(QMainWindow):
         self.dirty = False
         self._update_title()
 
+    def _rebuild_template_menu(self):
+        from . import templates
+        menu = self.template_menu
+        menu.clear()
+        groups = {}
+        for name, cat, builder in templates.TEMPLATES:
+            if cat not in groups:
+                groups[cat] = menu.addMenu(cat)
+            groups[cat].addAction(self._act(
+                name, None, lambda _=False, b=builder:
+                self._new_from_template(templates.template_json(b))))
+        mine = templates.user_templates()
+        if mine:
+            menu.addSeparator()
+            own = menu.addMenu("My Templates")
+            for name, path in mine:
+                own.addAction(self._act(
+                    name, None, lambda _=False, p=path:
+                    self._new_from_template(p.read_text(encoding="utf-8"))))
+
+    def _new_from_template(self, kbook_json):
+        """A new, unsaved notebook from a template."""
+        if not self._confirm_discard():
+            return
+        try:
+            self.notebook.load_json(kbook_json)
+        except Exception as exc:
+            QMessageBox.critical(self, APP_NAME,
+                                 f"Could not open the template:\n{exc}")
+            return
+        for cell in self.notebook.cells:
+            if cell.CELL_TYPE == "markdown":
+                cell.execute(self.notebook.kernel)
+        self.path = None
+        self.notebook.set_document_path(None)
+        self.dirty = False
+        self._update_title()
+
+    def save_as_template(self):
+        from . import templates
+        name, ok = QInputDialog.getText(
+            self, "Save as Template", "Template name (it appears under "
+            "File ▸ New from Template ▸ My Templates):",
+            text=Path(self.path).stem if self.path else "")
+        if not ok or not name.strip():
+            return
+        path = templates.save_user_template(name.strip(),
+                                            self.notebook.to_json())
+        self.statusBar().showMessage(f"Saved template {path.stem}", 5000)
+
     def _load_welcome(self):
         """Open with a pre-run example so a new user sees what the
         app does instead of an empty window."""
@@ -171,9 +221,14 @@ class MainWindow(QMainWindow):
         f = m.addMenu("&File")
         f.addAction(self._act("&New", "Ctrl+N", self.new_file))
         f.addAction(self._act("New &Window", "Ctrl+Shift+N", self.new_window))
+        self.template_menu = f.addMenu("New from &Template")
+        self.template_menu.aboutToShow.connect(self._rebuild_template_menu)
+        self._rebuild_template_menu()
         f.addAction(self._act("&Open...", "Ctrl+O", self.open_file))
         f.addAction(self._act("&Save", "Ctrl+S", self.save_file))
         f.addAction(self._act("Save &As...", "Ctrl+Shift+S", self.save_as))
+        f.addAction(self._act("Save as Te&mplate...", None,
+                              self.save_as_template))
         self.recent_menu = f.addMenu("Open &Recent")
         self.recent_menu.aboutToShow.connect(self._rebuild_recent_menu)
         self._rebuild_recent_menu()

@@ -241,6 +241,14 @@ into a new module and import.
   - `labmath.py`     — the Qt-free half: kinds, `normalise`, defaults,
                        `molar_mass`, `stats`, `reaction_compute`,
                        `to_markdown` (used by .ipynb export and the AI).
+  - `templates.py`   — File ▸ New from Template: built-in lab notebooks
+                       (XPS session, TGA, XRD, calibration log, synthesis,
+                       solution prep, thin film, maintenance, risk
+                       assessment, literature note) as cell lists of
+                       headings + Lab records + `klab()` code, dated today;
+                       plus "Save as Template…" into the per-user
+                       AppData `templates/` folder ("My Templates"),
+                       sample register dropped.
   - `siblings.py`    — finds sibling Kherve apps: `import_package` puts an
                        embedded package's checkout on sys.path (env var,
                        e.g. `KHERVEMOL_PATH` → PyInstaller bundle →

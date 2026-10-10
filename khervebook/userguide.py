@@ -152,7 +152,47 @@ cells.</li>
 </ul>
 ''')}
 
-{_section("8. Saving &amp; undo", f'''
+{_section("8. Lab notebook: samples, lab records, templates", f'''
+<p><b>Samples.</b> {_kbd("Ctrl+Shift+K")} (View &rarr; Samples) opens the
+notebook's sample register. Each sample gets an ID such as <code>S-0001</code>
+that is never reused, plus composition, batch, location, date, status
+(in use / consumed / discarded) and the samples it was <i>made from</i>, which
+builds a lineage tree. Write <code>@S-0001</code> in a Markdown cell and it
+becomes a link to the sample; the panel lists every cell that names it. In
+code, <code>ksample("S-0001")</code> returns that sample and
+<code>ksample()</code> a table of all of them.</p>
+<p><b>Lab records.</b> Cell &rarr; Add Lab Record adds a structured record:
+<b>Measurements</b> (a table with mean &plusmn; sd of each numeric column;
+paste straight from a spreadsheet), <b>Protocol Steps</b> (ticking a step
+stamps who did it and when), <b>Instrument Run</b>, <b>Reaction</b> (molar
+mass from the formula, mmol from mass or volume &times; density, equivalents
+against the limiting reactant, theoretical and actual yield) and
+<b>Safety</b> (GHS pictograms, PPE, risk). Code reads one with
+<code>klab()</code>, <code>klab(2)</code> or <code>klab("its title")</code>
+&mdash; tables come back as DataFrames.</p>
+<p><b>Templates.</b> File &rarr; New from Template starts an XPS session,
+TGA, XRD, calibration log, synthesis, solution preparation, thin-film
+deposition, maintenance, risk assessment or literature note. File &rarr;
+Save as Template keeps your own notebooks under <i>My Templates</i>.</p>
+''')}
+
+{_section("9. References and the other Kherve apps", '''
+<p><b>References.</b> Cell &rarr; Add References Cell holds the notebook's
+bibliography: paste a DOI, pick from a <b>KherveRef</b> library on this
+computer, or drop a <code>.bib</code>. Cite in Markdown with
+<code>[@key]</code> or <code>[@a; @b]</code>; citations are numbered (or
+author&ndash;year) and link to the entry, and each entry shows whether it is
+cited yet. Export .bib hands the list to LaTeX; <code>kref()</code> reads it
+from code.</p>
+<p><b>KherveSlide decks</b> (<code>.kslide</code>) show as their slides and
+<b>KherveCAD designs</b> (<code>.kcad</code>) as rendered isometric, front
+and top views; <b>KherveNote</b> notes (<code>.knote</code>) import as cells
+with the speech transcript. Drop the file on the notebook, or use the Cell
+and File menus. "Edit in &hellip;" opens the file in its app, and every save
+there updates the cell.</p>
+''')}
+
+{_section("10. Saving &amp; undo", f'''
 <p>Documents save as <b>.kbook</b> &mdash; a plain-JSON file that round-trips
 every cell, its type, title, layout, width/height, and a sheet's data. You can
 also <b>export to Jupyter .ipynb</b> (a lossless round-trip).</p>
@@ -161,7 +201,7 @@ structure &mdash; add, delete, move, convert, cut and paste. While you are
 typing in a cell, the same keys undo text edits inside that editor first.</p>
 ''')}
 
-{_section("9. Keyboard shortcuts", f'''
+{_section("11. Keyboard shortcuts", f'''
 <table cellpadding='4' style='border-collapse:collapse'>
 <tr><td>{_kbd("Shift+Enter")}</td><td>Run cell, advance</td>
     <td>{_kbd("Ctrl+Enter")}</td><td>Run cell in place</td></tr>
@@ -179,6 +219,8 @@ typing in a cell, the same keys undo text edits inside that editor first.</p>
     <td>{_kbd("Ctrl+B")}</td><td>Toggle explorer</td></tr>
 <tr><td>{_kbd("Ctrl+Shift+P")}</td><td>Page mode</td>
     <td>{_kbd("Ctrl+S")}</td><td>Save</td></tr>
+<tr><td>{_kbd("Ctrl+Shift+K")}</td><td>Samples panel</td>
+    <td>{_kbd("Ctrl+Shift+A")}</td><td>AI assistant</td></tr>
 </table>
 ''')}
 

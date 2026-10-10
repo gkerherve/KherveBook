@@ -104,7 +104,8 @@ class CellToolBar(QToolBar):
                  "ktex": self._build_ktex,
                  "mol": self._build_mol,
                  "lab": self._build_lab,
-                 "ref": self._build_ref}.get(cell_type, self._build_code)
+                 "ref": self._build_ref,
+                 "slide": self._build_slide}.get(cell_type, self._build_code)
         build()
 
     # -- KFit (KherveFitting project) mode ------------------------------------
@@ -113,6 +114,20 @@ class CellToolBar(QToolBar):
         if cell is not None and cell.CELL_TYPE == "kfit" and hasattr(
                 cell, method):
             getattr(cell, method)(*args)
+
+    def _build_slide(self):
+        self._add("Insert .kslide…", "Show a KherveSlide deck in this cell",
+                  lambda: self._call("slide", "choose_file"),
+                  "mdi.folder-open-outline")
+        self._add("Refresh", "Re-read the deck and its slides",
+                  lambda: self._call("slide", "refresh", True), "mdi.refresh")
+        self.addSeparator()
+        self._add("Edit in KherveSlide", "Open the deck in KherveSlide; "
+                  "saving there updates the cell",
+                  lambda: self._call("slide", "edit_in_app"),
+                  "mdi.open-in-new")
+        self._add("Locate KherveSlide…", "Choose which KherveSlide to launch",
+                  lambda: self._call("slide", "locate_app"), "mdi.magnify")
 
     def _build_ref(self):
         self._add("Add DOI", "Look up the DOI typed in the cell",

@@ -188,6 +188,16 @@ into a new module and import.
                        its .tex/.pdf and folder (re-armed after every event,
                        since editors save by replacing) refreshes the pages.
                        `.ktexz` drops land here (not as a latex cell).
+  - `slidecell.py`   — `SlideCell` ("slide"): a KherveSlide `.kslide` deck
+                       shown as its slides — a `KTexCell` subclass that only
+                       swaps the class hooks (APP, accepts, title,
+                       `pdf_source`/`pdf_for`, `app_command`). KherveSlide
+                       (PySide6, never imported) writes `<stem>.tex`
+                       (Beamer) beside the deck on every save; slides come
+                       from a current `<stem>.pdf`, else tectonic on that
+                       .tex; with neither, the cell asks for one save in
+                       KherveSlide. KTexCell keeps its KherveTeX names
+                       (`edit_in_khervetex`) as aliases of the generic ones.
   - `ktexdoc.py`     — the Qt-free half: minimal `.ktexz` writer (kdocz zip:
                        manifest.json + document.json with KherveTeX's
                        default meta), `title_of`, `pdf_source`, tectonic
@@ -391,7 +401,7 @@ into a new module and import.
 
 `.kbook` is JSON: `{"format": "kbook", "version": 6, "cells":
 [{"type": "code"|"markdown"|"note"|"latex"|"sheet"|"svg"|"js"|"file"
-|"kfit"|"ktex"|"mol"|"lab"|"ref", "source": "...", optional "title", "collapsed", "column",
+|"kfit"|"ktex"|"mol"|"lab"|"ref"|"slide", "source": "...", optional "title", "collapsed", "column",
 "width", "height"}]}`. A `kfit` cell's `source` is JSON
 `{"kbook_kfit":1,"file":{name,size,embed|path},"sheet":…,"view":
 "plot"|"data"}` — same storage as a file attachment. A `note`
@@ -401,7 +411,8 @@ cell's `source` is JSON
 a `lab` cell's `source` is
 `{"kbook_lab":1,"kind":"measurements"|"steps"|"run"|"reaction"|"safety",
 "data":{…}}` (shapes in `labmath.default_data`); a `ktex` cell's is
-`{"kbook_ktex":1,"file":{name,size,embed|path},"origin","page"}`; a
+`{"kbook_ktex":1,"file":{name,size,embed|path},"origin","page"}` (a
+`slide` cell's is the same with `"kbook_slide"`); a
 `mol` cell's is `{"kbook_mol":1,"kmol":<KherveMol .kmol JSON>,"view":
 "3d"|"2d","query"}` (format version 7); a `file` cell's `source` is JSON
 `{"kbook_files":1,"files":[{"name","size","embed"(base64)|"path"(sidecar

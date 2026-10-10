@@ -33,8 +33,9 @@ from . import ktexcell                   # noqa: F401  (registers "ktex")
 from . import molcell                    # noqa: F401  (registers "mol")
 from . import labcell                    # noqa: F401  (registers "lab")
 from . import refcell                    # noqa: F401  (registers "ref")
+from . import slidecell                  # noqa: F401  (registers "slide")
 
-# v8: "ref" (references, KherveRef) and "lab" cells (structured lab records) and a top-level "samples" register (IDs, lineage) — see samples.py.
+# v8: "slide" (KherveSlide deck), "ref" (references, KherveRef) and "lab" cells (structured lab records) and a top-level "samples" register (IDs, lineage) — see samples.py.
 # v7: "ktex" (a KherveTeX document shown as pages) and "mol" (KherveMol).
 # v6: "kfit" (a KherveFitting project shown as a plot / data table).
 # v5: "note" (rich text + pen) and "file" (attachments) cell types.
@@ -60,6 +61,7 @@ DROP_TYPES = {
     ".ktexz": "ktexdoc",                  # KherveTeX document -> its pages
     ".kmol": "kmol",                      # KherveMol molecule
     ".ipynb": "ipynb",                    # Jupyter / Colab notebook
+    ".kslide": "kslide",                  # KherveSlide deck -> its slides
     ".bib": "bib",                        # BibTeX -> References cell
     ".kref": "kref",                      # KherveRef library -> References
 }
@@ -445,7 +447,8 @@ class NotebookWidget(QScrollArea):
                            ("KFit", "kfit"),
                            ("KherveTeX Document", "ktex"),
                            ("Molecule", "mol"), ("Lab Record", "lab"),
-                           ("References", "ref")):
+                           ("References", "ref"),
+                           ("KherveSlide Deck", "slide")):
             if key != cell.CELL_TYPE:
                 conv.addAction(label,
                                lambda k=key: self.convert_current(k))
@@ -550,13 +553,14 @@ class NotebookWidget(QScrollArea):
             self.undo_stack.endMacro()
             self.modified.emit()
             return True
-        if kind == "ktexdoc":
+        if kind in ("ktexdoc", "kslide"):
             # The document stays a document: its own cell, shown as pages
-            # and edited in KherveTeX — not flattened into LaTeX source.
-            if cell is not None and cell.CELL_TYPE == "ktex":
+            # and edited in its app — not flattened into LaTeX source.
+            want = "ktex" if kind == "ktexdoc" else "slide"
+            if cell is not None and cell.CELL_TYPE == want:
                 self._set_current(cell)
             else:
-                cell = self.add_cell_below("ktex", "")
+                cell = self.add_cell_below(want, "")
             ok = cell.attach(str(p))
             if ok:
                 self.modified.emit()

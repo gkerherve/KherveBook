@@ -185,6 +185,13 @@ def _display_body(t: str, src: str) -> str:
         return _lab_markdown(src)
     if t == "ref":
         return _ref_markdown(src)
+    if t == "slide":
+        try:
+            name = (json.loads(src).get("file") or {}).get("name", "")
+        except (ValueError, TypeError, AttributeError):
+            name = ""
+        return f"🖥 **KherveSlide deck:** `{name}`" if name \
+            else "🖥 KherveSlide deck"
     if t == "svg":
         return src if src.lstrip().startswith("<svg") else "```\n" + src + "\n```"
     return "```\n" + src + "\n```"
@@ -227,7 +234,8 @@ def from_ipynb(text: str) -> list:
         meta = cell.get("metadata") or {}
         kb = meta.get("khervebook") or {}
         if kb.get("type") in ("latex", "sheet", "note", "svg", "js",
-                              "file", "ktex", "mol", "lab", "ref") and \
+                              "file", "ktex", "mol", "lab", "ref",
+                              "slide") and \
                 "source" in kb:
             item = {"type": kb["type"], "source": kb["source"]}
         else:

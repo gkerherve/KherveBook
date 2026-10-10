@@ -105,7 +105,8 @@ class CellToolBar(QToolBar):
                  "mol": self._build_mol,
                  "lab": self._build_lab,
                  "ref": self._build_ref,
-                 "slide": self._build_slide}.get(cell_type, self._build_code)
+                 "slide": self._build_slide,
+                 "cad": self._build_cad}.get(cell_type, self._build_code)
         build()
 
     # -- KFit (KherveFitting project) mode ------------------------------------
@@ -128,6 +129,19 @@ class CellToolBar(QToolBar):
                   "mdi.open-in-new")
         self._add("Locate KherveSlide…", "Choose which KherveSlide to launch",
                   lambda: self._call("slide", "locate_app"), "mdi.magnify")
+
+    def _build_cad(self):
+        self._add("Insert .kcad…", "Show a KherveCAD design in this cell",
+                  lambda: self._call("cad", "choose_file"),
+                  "mdi.folder-open-outline")
+        self._add("Re-render", "Render the views again",
+                  lambda: self._call("cad", "refresh", True), "mdi.refresh")
+        self.addSeparator()
+        self._add("Open in KherveCAD", "Edit in KherveCAD; saving there "
+                  "re-renders the cell",
+                  lambda: self._call("cad", "edit_in_app"), "mdi.open-in-new")
+        self._add("Locate KherveCAD…", "Choose which KherveCAD to launch",
+                  lambda: self._call("cad", "locate_app"), "mdi.magnify")
 
     def _build_ref(self):
         self._add("Add DOI", "Look up the DOI typed in the cell",

@@ -61,7 +61,8 @@ _KIND = {"python": "code", "py": "code", "md": "markdown",
 #: Cell types the assistant may never create or overwrite. Their source is
 #: a binary payload (an SVG drawing, an HDF5 KherveFitting project), so a
 #: generated replacement could only ever destroy one.
-_PROTECTED = ("svg", "kfit", "ktex", "mol", "lab", "ref", "slide")
+_PROTECTED = ("svg", "kfit", "ktex", "mol", "lab", "ref", "slide",
+              "cad")
 
 #: How much of each cell to show the model, and a total cap.
 _MAX_CELL_CHARS = 4000
@@ -158,7 +159,8 @@ def _notebook_listing(notebook) -> str:
         elif cell.CELL_TYPE == "kfit":
             body = _kfit_summary(cell, kfit_n)
             kfit_n += 1
-        elif cell.CELL_TYPE in ("ktex", "mol", "lab", "ref", "slide"):
+        elif cell.CELL_TYPE in ("ktex", "mol", "lab", "ref", "slide",
+                                "cad"):
             # Their source is a whole document / molecule as JSON, not
             # text the model could usefully read or rewrite.
             body = cell.ai_summary()

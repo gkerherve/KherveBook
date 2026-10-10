@@ -58,22 +58,22 @@ def _settings():
 
 
 class _RenderWorker(QThread):
-    """Compile (when needed) and rasterise the document off the UI thread."""
+    """Run a cell's page job — compile and rasterise — off the UI thread.
+    The job returns ``(kind, [png bytes] or None, log)``."""
 
     done = pyqtSignal(int, list, str)       # token, png pages, where from
     failed = pyqtSignal(int, str)           # token, log
 
-    def __init__(self, token, path, pdf_for):
+    def __init__(self, token, job):
         super().__init__()
-        self._token, self._path, self._pdf_for = token, path, pdf_for
+        self._token, self._job = token, job
 
     def run(self):
         try:
-            kind, pdf, log = self._pdf_for(self._path)
-            if pdf is None:
-                self.failed.emit(self._token, log or "no PDF was produced")
+            kind, pages, log = self._job()
+            if pages is None:
+                self.failed.emit(self._token, log or "no pages were made")
                 return
-            pages = ktexdoc.render_pages(pdf, _DPI)
         except Exception as exc:
             self.failed.emit(self._token, str(exc))
             return
@@ -179,6 +179,7 @@ class KTexCell(CellWidget):
                      "*.app *.exe *.py);;All files (*)")
     LOCATE_KEY = LOCATE_KEY
     CAN_CREATE = True
+    PAGE_WORD = "Page"
     #: where the pages came from, for the hint under them
     HOW = {"pdf": "from KherveTeX's compiled PDF",
            "tex": "typeset from the document's .tex",
@@ -201,6 +202,24 @@ class KTexCell(CellWidget):
         kind, _src = cls.pdf_source(path)
         pdf, log = ktexdoc.document_pdf(path)
         return kind, pdf, log
+
+    def pages_job(self, path):
+        """Called on the UI thread; returns the callable the worker runs.
+        Here: the document's PDF (cached or compiled), as PNG pages."""
+        pdf_for = self.pdf_for
+
+        def job():
+            kind, pdf, log = pdf_for(path)
+            if pdf is None:
+                return kind, None, log or "no PDF was produced"
+            return kind, ktexdoc.render_pages(pdf, _DPI), log
+        return job
+
+    def busy_text(self, path) -> str:
+        kind, _src = self.pdf_source(path)
+        return ("Loading pages…" if kind == "pdf" else
+                "Typesetting with tectonic…  (the first run downloads "
+                "LaTeX packages)")
 
     def app_command(self):
         return self.khervetex_command()
@@ -350,7 +369,8 @@ class KTexCell(CellWidget):
 
     def _show_page_number(self, index):
         n = len(self._view.pages)
-        self._page_label.setText(f"Page {index + 1} / {n}" if n else "")
+        self._page_label.setText(f"{self.PAGE_WORD} {index + 1} / {n}"
+                                 if n else "")
         self._prev_btn.setEnabled(n > 0 and index > 0)
         self._next_btn.setEnabled(n > 0 and index < n - 1)
 
@@ -381,11 +401,13 @@ class KTexCell(CellWidget):
             return
         self._signature = signature
         self._token += 1
-        kind, _src = self.pdf_source(path)
-        self._hint.setText("Loading pages…" if kind == "pdf" else
-                           "Typesetting with tectonic…  (the first run "
-                           "downloads LaTeX packages)")
-        worker = _RenderWorker(self._token, path, self.pdf_for)
+        self._hint.setText(self.busy_text(path))
+        try:
+            job = self.pages_job(path)
+        except Exception as exc:
+            self._on_failed(self._token, str(exc))
+            return
+        worker = _RenderWorker(self._token, job)
         _WORKERS.add(worker)
         worker.done.connect(self._on_pages)
         worker.failed.connect(self._on_failed)
@@ -410,7 +432,8 @@ class KTexCell(CellWidget):
         QTimer.singleShot(0, lambda: self._view.go_to(keep))
         n = len(pixmaps)
         how = self.HOW.get(kind, "")
-        self._hint.setText(f"{n} page{'s' if n != 1 else ''} {how}.")
+        word = self.PAGE_WORD.lower() + ("s" if n != 1 else "")
+        self._hint.setText(f"{n} {word} {how}.")
         self.content_changed.emit()
 
     def _on_failed(self, token, log):

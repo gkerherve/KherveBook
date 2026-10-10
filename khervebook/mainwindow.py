@@ -272,6 +272,9 @@ class MainWindow(QMainWindow):
         c.addAction(self._act("Add KherveSlide &Deck...", None,
                               lambda: self.notebook.add_cell_below(
                                   "slide").choose_file()))
+        c.addAction(self._act("Add KherveC&AD Design...", None,
+                              lambda: self.notebook.add_cell_below(
+                                  "cad").choose_file()))
         c.addAction(self._act("Add Re&ferences Cell", None,
                               lambda: self.notebook.add_cell_below("ref")))
         lab = c.addMenu("Add Lab &Record")
@@ -409,7 +412,8 @@ class MainWindow(QMainWindow):
                   ("SVG", "svg"), ("JavaScript", "js"), ("File", "file"),
                   ("KFit", "kfit"), ("KherveTeX Doc", "ktex"),
                   ("Molecule", "mol"), ("Lab", "lab"),
-                  ("References", "ref"), ("Slides", "slide")]
+                  ("References", "ref"), ("Slides", "slide"),
+                  ("CAD", "cad")]
 
     def _build_toolbar(self):
         """Jupyter-style main toolbar: file/cell ops, run, cell type."""

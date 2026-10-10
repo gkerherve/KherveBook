@@ -48,12 +48,13 @@ def test_user_templates_round_trip(qapp, tmp_path):
     from khervebook.notebook import NotebookWidget
     nb = NotebookWidget()
     nb.cells[0].set_source("print('hello')")
-    nb.edit_samples(lambda r: r.add(name="A"))
+    nb.add_cell("samples", "").new_sample()
     path = templates.save_user_template("My: XPS/run", nb.to_json(),
                                         tmp_path)
     assert path.name == "My_ XPS_run.kbook"
     assert templates.user_templates(tmp_path) == [("My_ XPS_run", path)]
     doc = json.loads(path.read_text(encoding="utf-8"))
-    assert "samples" not in doc                    # samples are not kept
+    smp = [c for c in doc["cells"] if c["type"] == "samples"][0]
+    assert json.loads(smp["source"])["items"] == []   # samples not kept
     assert doc["cells"][0]["source"] == "print('hello')"
     assert templates.user_templates(tmp_path / "missing") == []

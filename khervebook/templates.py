@@ -58,14 +58,20 @@ def _rows(n, width):
 
 def _header(title, aim):
     today = datetime.date.today().isoformat()
-    return _md(f"# {title}\n\n**Date:** {today}  \n**Samples:** @S-…  \n"
-               f"**Aim:** {aim}")
+    return _md(f"# {title}\n\n**Date:** {today}  \n**Aim:** {aim}")
+
+
+def _samples():
+    """An empty Samples cell: add the samples, cite them as @S-0001."""
+    return {"type": "samples", "title": "Samples",
+            "source": json.dumps({"kbook_samples": 1, "items": []})}
 
 
 # -- built-in templates -------------------------------------------------------
 def xps_session():
     return [
         _header("XPS session", "chemical state of the surface"),
+        _samples(),
         _lab("run", "Acquisition", instrument="", method="Survey + "
              "high-resolution core levels",
              params="Source = Al Kα monochromatic\nPass energy (survey) = "
@@ -85,6 +91,7 @@ def xps_session():
 def organic_synthesis():
     return [
         _header("Organic synthesis", "target compound and route"),
+        _samples(),
         _lab("safety", "Risk assessment", ppe=["Lab coat", "Safety glasses",
                                                "Gloves", "Fume hood"]),
         _lab("reaction", "Reaction"),
@@ -103,6 +110,7 @@ def organic_synthesis():
 def tga_run():
     return [
         _header("TGA run", "mass loss and decomposition steps"),
+        _samples(),
         _lab("run", "Run", method="Ramp 10 °C/min to 800 °C",
              params="Atmosphere = N2, 50 mL/min\nPan = alumina\n"
                     "Initial mass (mg) = "),
@@ -118,6 +126,7 @@ def tga_run():
 def xrd_measurement():
     return [
         _header("XRD measurement", "phase identification"),
+        _samples(),
         _lab("run", "Scan", method="θ–2θ, 10–80°",
              params="Radiation = Cu Kα (1.5406 Å)\nStep = 0.02°\n"
                     "Time per step (s) = \nSlits = "),
@@ -179,6 +188,7 @@ def calibration_log():
 def thin_film_deposition():
     return [
         _header("Thin-film deposition", "film growth"),
+        _samples(),
         _lab("safety", "Hazards"),
         _lab("run", "Deposition", method="",
              params="Base pressure (mbar) = \nWorking pressure (mbar) = \n"
@@ -270,13 +280,21 @@ def user_templates(folder=None):
 
 
 def save_user_template(name: str, kbook_json: str, folder=None) -> Path:
-    """Write the notebook as a template. Its sample register is dropped —
-    a template describes the work, not the samples of one occasion."""
+    """Write the notebook as a template. Samples cells are kept but
+    emptied — a template describes the work, not one occasion's samples."""
     folder = Path(folder) if folder else user_dir()
     folder.mkdir(parents=True, exist_ok=True)
     safe = re.sub(r'[\\/:*?"<>|]+', "_", name).strip() or "Template"
     doc = json.loads(kbook_json)
     doc.pop("samples", None)
+    for cell in doc.get("cells") or []:
+        if cell.get("type") == "samples":
+            try:
+                reg = json.loads(cell.get("source") or "{}")
+            except ValueError:
+                reg = {}
+            reg["items"] = []
+            cell["source"] = json.dumps(reg)
     path = folder / f"{safe}.kbook"
     path.write_text(json.dumps(doc, indent=1), encoding="utf-8")
     return path

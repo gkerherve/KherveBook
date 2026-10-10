@@ -153,14 +153,16 @@ cells.</li>
 ''')}
 
 {_section("8. Lab notebook: samples, lab records, templates", f'''
-<p><b>Samples.</b> {_kbd("Ctrl+Shift+K")} (View &rarr; Samples) opens the
-notebook's sample register. Each sample gets an ID such as <code>S-0001</code>
-that is never reused, plus composition, batch, location, date, status
-(in use / consumed / discarded) and the samples it was <i>made from</i>, which
-builds a lineage tree. Write <code>@S-0001</code> in a Markdown cell and it
-becomes a link to the sample; the panel lists every cell that names it. In
-code, <code>ksample("S-0001")</code> returns that sample and
-<code>ksample()</code> a table of all of them.</p>
+<p><b>Samples.</b> Cell &rarr; Add Samples Cell ({_kbd("Ctrl+Shift+K")})
+adds a table of the samples. <b>New</b> gives each one an ID such as
+<code>S-0001</code> that is never reused; type its name, composition, batch,
+location, date, status (in use / consumed / discarded) and notes straight in
+the table. <b>New from selected</b> records what a sample was <i>made
+from</i> (hover an ID to see its lineage). Write <code>@S-0001</code> in a
+Markdown cell and it becomes a link to the row; the <i>Used in</i> column
+lists every cell that names the sample. In code,
+<code>ksample("S-0001")</code> returns that sample and <code>ksample()</code>
+a table of all of them.</p>
 <p><b>Lab records.</b> Cell &rarr; Add Lab Record adds a structured record:
 <b>Measurements</b> (a table with mean &plusmn; sd of each numeric column;
 paste straight from a spreadsheet), <b>Protocol Steps</b> (ticking a step
@@ -219,7 +221,7 @@ typing in a cell, the same keys undo text edits inside that editor first.</p>
     <td>{_kbd("Ctrl+B")}</td><td>Toggle explorer</td></tr>
 <tr><td>{_kbd("Ctrl+Shift+P")}</td><td>Page mode</td>
     <td>{_kbd("Ctrl+S")}</td><td>Save</td></tr>
-<tr><td>{_kbd("Ctrl+Shift+K")}</td><td>Samples panel</td>
+<tr><td>{_kbd("Ctrl+Shift+K")}</td><td>Add samples cell</td>
     <td>{_kbd("Ctrl+Shift+A")}</td><td>AI assistant</td></tr>
 </table>
 ''')}

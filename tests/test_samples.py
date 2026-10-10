@@ -66,100 +66,121 @@ def test_link_mentions_skips_code_and_unknown_ids():
     assert out[5] == "mail me@S-0001"
 
 
-def test_notebook_round_trip_and_usage(qapp):
-    from khervebook.notebook import NotebookWidget, FORMAT_VERSION
+def _nb_with_samples(qapp, *names):
+    """A notebook whose first cell is a Samples cell holding *names*."""
+    from khervebook.notebook import NotebookWidget
     nb = NotebookWidget()
-    nb.edit_samples(lambda r: r.add(name="Film A").id, "New sample")
-    nb.cells[0].set_source('s = ksample("S-0001")\ns.name')
+    cell = nb.add_cell("samples", "", index=0)
+    for name in names:
+        sid = cell.new_sample()
+        cell.reg.update(sid, name=name)
+        cell._commit()
+    return nb, cell
+
+
+def test_cell_ids_usage_and_ksample(qapp):
+    nb, cell = _nb_with_samples(qapp, "Film A", "Film B")
+    assert cell.reg.ids() == ["S-0001", "S-0002"]
+    code = nb.cells[1]
+    code.set_source('s = ksample("S-0001")\ns.name')
     md = nb.add_cell("markdown", "Measured @S-0001 today.")
     nb.add_cell("markdown", "nothing here")
+    # the Samples cell's own JSON is not a "use"
+    assert nb.sample_usage("S-0001") == [code, md]
+    code.execute(nb.kernel)
+    assert code.output.text() == "'Film A'"
+    nb._refresh_sample_usage()
+    assert cell.grid.item(0, cell.grid.columnCount() - 1).text() == \
+        "cell 2, cell 3"
+    assert cell.grid.item(1, cell.grid.columnCount() - 1).text() == "—"
 
-    assert nb.sample_usage("S-0001") == [nb.cells[0], md]
-    nb.cells[0].execute(nb.kernel)
-    assert nb.cells[0].output.text() == "'Film A'"
 
+def test_ids_continue_across_cells(qapp):
+    nb, first = _nb_with_samples(qapp, "A", "B")
+    second = nb.add_cell("samples", "")
+    assert second.new_sample() == "S-0003"
+    assert nb.samples.ids() == ["S-0001", "S-0002", "S-0003"]
+
+
+def test_table_edits_undo_and_round_trip(qapp):
+    from khervebook.notebook import FORMAT_VERSION, NotebookWidget
+    from khervebook.samplecell import _C
+    nb, cell = _nb_with_samples(qapp, "A")
+    cell.grid.item(0, _C["name"]).setText("Wafer 7")
+    assert cell.reg.get("S-0001").name == "Wafer 7"
+    nb.undo()
+    assert cell.reg.get("S-0001").name == "A"
+    nb.redo()
+    child = (cell.grid.selectRow(0), cell.new_child())[1]
+    assert cell.reg.get(child).parents == ["S-0001"]
+    cell.grid.item(0, _C["parents"]).setText(f"{child}, S-9999")
+    assert cell.reg.get("S-0001").parents == []    # cycle + unknown dropped
     doc = json.loads(nb.to_json())
-    assert doc["version"] == FORMAT_VERSION
-    assert doc["samples"]["items"][0]["name"] == "Film A"
-
+    assert doc["version"] == FORMAT_VERSION and "samples" not in doc
     nb2 = NotebookWidget()
     nb2.load_json(nb.to_json())
-    assert nb2.samples.get("S-0001").name == "Film A"
-    # a fresh document has no register, and writes none
-    nb2.load_json('{"cells": []}')
-    assert len(nb2.samples) == 0
-    assert "samples" not in json.loads(nb2.to_json())
+    assert nb2.samples.get("S-0001").name == "Wafer 7"
+    assert nb2.samples.get(child).parents == ["S-0001"]
 
 
-def test_ksample_table(qapp):
-    from khervebook.notebook import NotebookWidget
-    nb = NotebookWidget()
-    nb.edit_samples(lambda r: r.add(name="A"))
-    nb.edit_samples(lambda r: r.add(name="B", parents=["S-0001"]))
-    nb.cells[0].set_source("t = ksample()\nlist(t.index), t.loc['S-0002', 'parents']")
-    nb.cells[0].execute(nb.kernel)
-    assert nb.cells[0].output.text() == "(['S-0001', 'S-0002'], ['S-0001'])"
-
-
-def test_sample_edits_are_undoable(qapp):
-    from khervebook.notebook import NotebookWidget
-    nb = NotebookWidget()
-    nb.edit_samples(lambda r: r.add(name="A"), "New sample")
-    nb.edit_samples(lambda r: r.update("S-0001", name="B"))
-    assert nb.samples.get("S-0001").name == "B"
+def test_delete_and_status(qapp):
+    from khervebook.samplecell import _C
+    nb, cell = _nb_with_samples(qapp, "A", "B")
+    cell.reg.update("S-0002", parents=["S-0001"])
+    cell._commit()
+    cell.grid.item(1, _C["status"]).setText("consumed")
+    assert cell.reg.get("S-0002").status == "consumed"
+    cell.grid.selectRow(0)
+    cell.delete_selected()
+    assert cell.reg.ids() == ["S-0002"]
+    assert cell.reg.get("S-0002").parents == []
     nb.undo()
-    assert nb.samples.get("S-0001").name == "A"
-    nb.undo()
-    assert len(nb.samples) == 0
-    nb.redo()
-    assert nb.samples.get("S-0001").name == "A"
-    # a no-op edit pushes nothing
-    count = nb.undo_stack.count()
-    nb.edit_samples(lambda r: r.update("S-0001", name="A"))
-    assert nb.undo_stack.count() == count
+    assert cell.reg.ids() == ["S-0001", "S-0002"]
 
 
-def test_markdown_link_click_reaches_panel(qapp):
+def test_mention_click_selects_row(qapp):
     from PyQt5.QtCore import QUrl
-    from khervebook.notebook import NotebookWidget
-    from khervebook.samplesdock import SamplesDock
-    nb = NotebookWidget()
-    dock = SamplesDock(nb)
-    nb.edit_samples(lambda r: r.add(name="A").id)
-    nb.edit_samples(lambda r: r.add(name="B").id)
+    nb, cell = _nb_with_samples(qapp, "A", "B")
     md = nb.add_cell("markdown", "See @S-0002")
     md.execute(nb.kernel)
     assert "ksample:S-0002" in md.view.document().toMarkdown()
     md.view.anchorClicked.emit(QUrl("ksample:S-0002"))
-    assert dock.heading.text() == "S-0002"
-    assert dock.used.item(0).data(256) is md      # Qt.UserRole
+    assert cell.selected_ids() == ["S-0002"]
+    assert nb.current is cell
 
 
-def test_panel_edits_and_mention(qapp):
+def test_ksample_table(qapp):
+    nb, cell = _nb_with_samples(qapp, "A", "B")
+    cell.reg.update("S-0002", parents=["S-0001"])
+    cell._commit()
+    code = nb.cells[1]
+    code.set_source("t = ksample()\nlist(t.index), t.loc['S-0002', 'parents']")
+    code.execute(nb.kernel)
+    assert code.output.text() == "(['S-0001', 'S-0002'], ['S-0001'])"
+
+
+def test_old_top_level_register_becomes_a_cell(qapp):
     from khervebook.notebook import NotebookWidget
-    from khervebook.samplesdock import SamplesDock
+    old = {"format": "kbook", "version": 8,
+           "cells": [{"type": "markdown", "source": "@S-0001"}],
+           "samples": {"prefix": "S", "digits": 4,
+                       "items": [{"id": "S-0001", "name": "Old"}]}}
     nb = NotebookWidget()
-    dock = SamplesDock(nb)
-    sid = dock.new_sample()
-    dock.fields["name"].setText("Wafer 7")
-    dock.fields["name"].editingFinished.emit()
-    assert nb.samples.get(sid).name == "Wafer 7"
-    child = dock.new_child()
-    assert nb.samples.get(child).parents == [sid]
-    assert dock.tree.topLevelItem(0).child(0).text(0) == child
-    nb._select(nb.cells[0])
-    dock.mention_in_cell()
-    assert nb.cells[0].source() == f'ksample("{child}")'
-    dock._show(sid)
-    dock.parents.setText(f"{child}, S-9999")
-    dock.parents.editingFinished.emit()
-    assert nb.samples.get(sid).parents == []      # cycle + unknown dropped
+    nb.load_json(json.dumps(old))
+    assert [c.CELL_TYPE for c in nb.cells] == ["samples", "markdown"]
+    assert nb.samples.get("S-0001").name == "Old"
+    # and an .ipynb exported with the register in its metadata
+    meta = {"cells": [], "metadata": {"khervebook": {"samples":
+                                                     old["samples"]}}}
+    nb.load_ipynb(json.dumps(meta))
+    assert nb.cells[0].CELL_TYPE == "samples"
 
 
-def test_ipynb_keeps_the_register(qapp):
+def test_ipynb_keeps_the_samples_cell(qapp):
     from khervebook.notebook import NotebookWidget
-    nb = NotebookWidget()
-    nb.edit_samples(lambda r: r.add(name="A"))
+    nb, cell = _nb_with_samples(qapp, "A")
+    doc = json.loads(nb.to_ipynb())
+    assert "| S-0001 | A |" in "".join(doc["cells"][0]["source"])
     nb2 = NotebookWidget()
     nb2.load_ipynb(nb.to_ipynb())
     assert nb2.samples.get("S-0001").name == "A"

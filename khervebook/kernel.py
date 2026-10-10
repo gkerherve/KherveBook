@@ -219,7 +219,7 @@ class Kernel:
         self.file_lookup = None
         self.kfit_lookup = None
         self.lab_lookup = None
-        self.samples = None         # the notebook's SampleRegistry
+        self.samples_lookup = None  # -> the notebook's SampleRegistry
         self.link_markdown = None   # Markdown -> with sample/cite links
         self.refs_lookup = None
         self.reset()
@@ -380,12 +380,12 @@ class Kernel:
         ``ksample("S-0001")`` returns a copy of that sample (``.name``,
         ``.composition``, ``.parents``…); ``ksample()`` returns every
         sample as a pandas DataFrame indexed by ID (a list of dicts when
-        pandas is missing). Read-only: the Samples panel edits them.
+        pandas is missing). Read-only: the Samples cell edits them.
         """
         import copy
 
         def ksample(sample_id=None):
-            reg = self.samples
+            reg = self.samples_lookup() if self.samples_lookup else None
             if sample_id is None:
                 rows = [s.to_dict() for s in (reg or [])]
                 try:
@@ -397,8 +397,8 @@ class Kernel:
                 return pd.DataFrame(rows, columns=cols).set_index("id")
             sample = reg.get(str(sample_id)) if reg is not None else None
             if sample is None:
-                raise KeyError(f"no sample {sample_id!r} — add it in the "
-                               "Samples panel (View ▸ Samples)")
+                raise KeyError(f"no sample {sample_id!r} — add it to a "
+                               "Samples cell (Cell ▸ Add Samples Cell)")
             return copy.deepcopy(sample)
 
         return ksample

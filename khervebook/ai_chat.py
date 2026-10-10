@@ -62,7 +62,7 @@ _KIND = {"python": "code", "py": "code", "md": "markdown",
 #: a binary payload (an SVG drawing, an HDF5 KherveFitting project), so a
 #: generated replacement could only ever destroy one.
 _PROTECTED = ("svg", "kfit", "ktex", "mol", "lab", "ref", "slide",
-              "cad")
+              "cad", "samples")
 
 #: How much of each cell to show the model, and a total cap.
 _MAX_CELL_CHARS = 4000
@@ -160,7 +160,7 @@ def _notebook_listing(notebook) -> str:
             body = _kfit_summary(cell, kfit_n)
             kfit_n += 1
         elif cell.CELL_TYPE in ("ktex", "mol", "lab", "ref", "slide",
-                                "cad"):
+                                "cad", "samples"):
             # Their source is a whole document / molecule as JSON, not
             # text the model could usefully read or rewrite.
             body = cell.ai_summary()
@@ -179,13 +179,6 @@ def _notebook_listing(notebook) -> str:
             blocks.append(f"… ({len(notebook.cells) - i} more cells omitted)")
             break
         blocks.append(block)
-    samples = getattr(notebook, "samples", None)
-    if samples is not None and len(samples):
-        # The register lives beside the cells; mention a sample as @S-0001
-        # in prose or read it in code with ksample("S-0001").
-        blocks.append("=== Sample register (cite as @ID in markdown, "
-                      "ksample(\"ID\") in code; ksample() is a DataFrame of "
-                      "all) ===\n" + samples.summary_text())
     return "\n".join(blocks) if blocks else "(empty notebook)"
 
 

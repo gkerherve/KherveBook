@@ -87,7 +87,8 @@ def test_measurements_table_and_klab(qapp):
     nb.cells[0].execute(nb.kernel)
     assert nb.cells[0].output.text() == "6.0"
     # its sample IDs count as usage of those samples
-    nb.edit_samples(lambda r: r.add(name="a"))
+    smp = nb.add_cell("samples", "")
+    smp.new_sample()
     assert nb.sample_usage("S-0001") == [cell]
 
 

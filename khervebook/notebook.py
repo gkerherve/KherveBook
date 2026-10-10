@@ -22,7 +22,7 @@ from .cells import CodeCell, make_cell
 from .kernel import Kernel
 from .samples import SampleRegistry
 from .undo_commands import (AddCellCmd, ConvertCellCmd, MoveCellCmd,
-                            RemoveCellCmd, SamplesCmd, SourceEditCmd)
+                            RemoveCellCmd, SourceEditCmd)
 from . import sheetcell                  # noqa: F401  (registers "sheet")
 from . import svgcell                    # noqa: F401  (registers "svg")
 from . import jscell                     # noqa: F401  (registers "js")
@@ -35,8 +35,12 @@ from . import labcell                    # noqa: F401  (registers "lab")
 from . import refcell                    # noqa: F401  (registers "ref")
 from . import slidecell                  # noqa: F401  (registers "slide")
 from . import cadcell                    # noqa: F401  (registers "cad")
+from . import samplecell                 # noqa: F401  (registers "samples")
 
-# v8: "cad" (KherveCAD design), "slide" (KherveSlide deck), "ref" (references, KherveRef) and "lab" cells (structured lab records) and a top-level "samples" register (IDs, lineage) — see samples.py.
+# v8: "samples" (sample register), "lab" (structured lab records),
+#     "ref" (references, KherveRef), "slide" (KherveSlide deck) and "cad"
+#     (KherveCAD design). A top-level "samples" object (a short-lived
+#     earlier form of the register) loads as a Samples cell.
 # v7: "ktex" (a KherveTeX document shown as pages) and "mol" (KherveMol).
 # v6: "kfit" (a KherveFitting project shown as a plot / data table).
 # v5: "note" (rich text + pen) and "file" (attachments) cell types.
@@ -77,7 +81,6 @@ class NotebookWidget(QScrollArea):
     modified = pyqtSignal()
     current_changed = pyqtSignal(object)   # the newly focused cell
     open_kbook_requested = pyqtSignal(str)  # a .kbook was dropped
-    samples_changed = pyqtSignal(object)    # register edited; id to select
     sample_requested = pyqtSignal(str)      # an @S-0001 link was clicked
 
     def __init__(self):
@@ -104,10 +107,16 @@ class NotebookWidget(QScrollArea):
         self.kernel.file_lookup = self._resolve_file
         self.kernel.kfit_lookup = self._resolve_kfit
         self.kernel.lab_lookup = self._resolve_lab
-        #: the lab samples this notebook tracks; ksample() reads them and
-        #: Markdown renders @S-0001 against them.
-        self.samples = SampleRegistry()
-        self.kernel.samples = self.samples
+        # ksample() and @S-0001 read the Samples cells' register.
+        self.kernel.samples_lookup = lambda: self.samples
+        self.sample_requested.connect(self.show_sample)
+        # The Samples cells' "Used in" column follows the other cells'
+        # text — refreshed after edits settle, not on every keystroke.
+        self._usage_timer = QTimer(self)
+        self._usage_timer.setSingleShot(True)
+        self._usage_timer.setInterval(500)
+        self._usage_timer.timeout.connect(self._refresh_sample_usage)
+        self.modified.connect(self._usage_timer.start)
         self.kernel.link_markdown = self._link_markdown
         self.kernel.refs_lookup = self.references
         self._clipboard = None              # dict from a cut/copied cell
@@ -452,7 +461,8 @@ class NotebookWidget(QScrollArea):
                            ("Molecule", "mol"), ("Lab Record", "lab"),
                            ("References", "ref"),
                            ("KherveSlide Deck", "slide"),
-                           ("KherveCAD Design", "cad")):
+                           ("KherveCAD Design", "cad"),
+                           ("Samples", "samples")):
             if key != cell.CELL_TYPE:
                 conv.addAction(label,
                                lambda k=key: self.convert_current(k))
@@ -706,26 +716,42 @@ class NotebookWidget(QScrollArea):
         return None
 
     # -- samples --------------------------------------------------------------
-    def edit_samples(self, mutate, label="Edit sample", select=None):
-        """Apply *mutate(registry)* as one undoable step. *mutate* may
-        return the id to select afterwards."""
-        before = self.samples.to_dict()
-        scratch = SampleRegistry()
-        scratch.load(before)
-        picked = mutate(scratch)
-        after = scratch.to_dict()
-        if after == before:
-            return None
-        sid = picked if isinstance(picked, str) else select
-        self.undo_stack.push(SamplesCmd(self, before, after, label, sid))
-        return sid
+    def _sample_cells(self):
+        return [c for c in self.cells if c.CELL_TYPE == "samples"]
 
-    def _set_samples(self, data: dict, select=None):
-        self.samples.load(data)
-        # Rendered Markdown re-links its mentions against the new register.
-        self.rerender_markdown()
-        self.samples_changed.emit(select)
-        self.modified.emit()
+    @property
+    def samples(self) -> SampleRegistry:
+        """Every Samples cell's samples as one register (the first cell
+        holding an ID wins; the first cell sets the ID prefix)."""
+        cells = self._sample_cells()
+        reg = SampleRegistry(*((cells[0].reg.prefix, cells[0].reg.digits)
+                               if cells else ()))
+        seen = set()
+        for cell in cells:
+            for s in cell.reg:
+                if s.id not in seen:
+                    seen.add(s.id)
+                    reg.items.append(s)
+        return reg
+
+    def sample_usage_map(self):
+        """{sample id: [cells naming it]}, Samples cells themselves aside."""
+        reg = self.samples
+        if not len(reg):
+            return {}
+        return reg.usage([c for c in self.cells
+                          if c.CELL_TYPE != "samples"])
+
+    def _refresh_sample_usage(self):
+        for cell in self._sample_cells():
+            cell.refresh_usage()
+
+    def show_sample(self, sample_id):
+        for cell in self._sample_cells():
+            if cell.reg.get(sample_id) is not None:
+                self.show_cell(cell)
+                cell.select_id(sample_id)
+                return
 
     # -- references -------------------------------------------------------
     def _ref_cells(self):
@@ -767,7 +793,7 @@ class NotebookWidget(QScrollArea):
 
     def sample_usage(self, sample_id):
         """The cells that name *sample_id*, in document order."""
-        return self.samples.usage(self.cells).get(sample_id, [])
+        return self.sample_usage_map().get(sample_id, [])
 
     def show_cell(self, cell):
         if cell in self.cells:
@@ -792,29 +818,33 @@ class NotebookWidget(QScrollArea):
     def to_json(self) -> str:
         doc = {"format": "kbook", "version": FORMAT_VERSION,
                "cells": [c.to_dict() for c in self.cells]}
-        if len(self.samples):
-            doc["samples"] = self.samples.to_dict()
         return json.dumps(doc, indent=1)
 
     def load_json(self, text: str):
         doc = json.loads(text)
-        self._apply_cells(doc.get("cells", []))
-        self.samples.load(doc.get("samples"))
-        self.samples_changed.emit(None)
+        self._apply_cells(self._with_register(doc.get("cells", []),
+                                              doc.get("samples")))
+
+    @staticmethod
+    def _with_register(items, register):
+        """A register stored outside the cells (the first form of the
+        sample register) becomes a Samples cell at the top."""
+        if not isinstance(register, dict) or not register.get("items") or \
+                any(i.get("type") == "samples" for i in items or []):
+            return items
+        return [{"type": "samples", "source": json.dumps(
+            {"kbook_samples": 1, **register})}] + list(items or [])
 
     def load_ipynb(self, text: str):
         """Replace the notebook with an imported Jupyter/Colab .ipynb."""
         from . import ipynb
-        self._apply_cells(ipynb.from_ipynb(text))
-        self.samples.load(ipynb.samples_of(text))
-        self.samples_changed.emit(None)
+        self._apply_cells(self._with_register(ipynb.from_ipynb(text),
+                                              ipynb.samples_of(text)))
 
     def to_ipynb(self) -> str:
         """Serialise the notebook to a Jupyter/Colab .ipynb string."""
         from . import ipynb
-        return ipynb.to_ipynb([c.to_dict() for c in self.cells],
-                              self.samples.to_dict() if len(self.samples)
-                              else None)
+        return ipynb.to_ipynb([c.to_dict() for c in self.cells])
 
     def _apply_cells(self, items):
         self.stop_loop()
@@ -825,7 +855,6 @@ class NotebookWidget(QScrollArea):
         self.cells = []
         self.current = None
         self.kernel.reset()
-        self.samples.clear()                # load_json restores its own
         for item in (items or [{"type": "code", "source": ""}]):
             cell = self.add_cell(item.get("type", "code"),
                                  item.get("source", ""))

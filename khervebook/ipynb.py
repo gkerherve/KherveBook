@@ -142,6 +142,20 @@ def _mol_markdown(src: str) -> str:
         return "⚛ Molecule"
 
 
+def _samples_markdown(src: str) -> str:
+    from .samples import SampleRegistry
+    try:
+        reg = SampleRegistry()
+        reg.load(json.loads(src))
+    except (ValueError, TypeError):
+        return "🧪 Samples"
+    rows = ["**Samples**", "", "| ID | Name | Composition | Status | "
+            "Made from |", "|---|---|---|---|---|"]
+    rows += [f"| {s.id} | {s.name} | {s.composition} | {s.status} | "
+             f"{', '.join(s.parents)} |" for s in reg]
+    return "\n".join(rows)
+
+
 def _ref_markdown(src: str) -> str:
     from . import refs
     try:
@@ -185,6 +199,8 @@ def _display_body(t: str, src: str) -> str:
         return _lab_markdown(src)
     if t == "ref":
         return _ref_markdown(src)
+    if t == "samples":
+        return _samples_markdown(src)
     if t in ("slide", "cad"):
         what = "KherveSlide deck" if t == "slide" else "KherveCAD design"
         try:
@@ -197,9 +213,8 @@ def _display_body(t: str, src: str) -> str:
     return "```\n" + src + "\n```"
 
 
-def to_ipynb(items: list, samples: dict = None) -> str:
-    """Serialise KherveBook cell dicts to a Jupyter/Colab .ipynb string.
-    A sample register rides in the notebook metadata (Jupyter ignores it)."""
+def to_ipynb(items: list) -> str:
+    """Serialise KherveBook cell dicts to a Jupyter/Colab .ipynb string."""
     doc = {
         "cells": [_cell_to_ipynb(it) for it in items],
         "metadata": {
@@ -210,13 +225,12 @@ def to_ipynb(items: list, samples: dict = None) -> str:
         "nbformat": 4,
         "nbformat_minor": 5,
     }
-    if samples:
-        doc["metadata"]["khervebook"] = {"samples": samples}
     return json.dumps(doc, indent=1)
 
 
 def samples_of(text: str):
-    """The sample register stored by `to_ipynb`, or None."""
+    """A sample register an earlier export kept in the metadata, or None
+    (it now travels as a Samples cell)."""
     try:
         meta = json.loads(text).get("metadata") or {}
         return (meta.get("khervebook") or {}).get("samples")
@@ -235,7 +249,7 @@ def from_ipynb(text: str) -> list:
         kb = meta.get("khervebook") or {}
         if kb.get("type") in ("latex", "sheet", "note", "svg", "js",
                               "file", "ktex", "mol", "lab", "ref",
-                              "slide", "cad") and \
+                              "slide", "cad", "samples") and \
                 "source" in kb:
             item = {"type": kb["type"], "source": kb["source"]}
         else:

@@ -246,15 +246,19 @@ into a new module and import.
                        `SampleRegistry` (ancestors/descendants/roots, cycle
                        guard, `usage(cells)` = cells whose text names the
                        ID, `link_mentions` = `@S-0001` → `ksample:` link in
-                       Markdown, skipping code). Qt-free. Lives on
-                       `NotebookWidget.samples`; edits go through
-                       `edit_samples(mutate)` → one `SamplesCmd` undo step.
-                       Code reads it with `ksample("S-0001")` / `ksample()`
-                       (a DataFrame).
-  - `samplesdock.py` — the Samples side panel (View ▸ Samples,
-                       Ctrl+Shift+K): lineage tree, form, "Used in" list,
-                       and "mention in cell". Clicking an @mention in a
-                       rendered Markdown cell reveals the sample here.
+                       Markdown, skipping code). Qt-free.
+  - `samplecell.py`  — `SamplesCell` ("samples", Cell ▸ Add Samples Cell,
+                       Ctrl+Shift+K): the register **as a cell** — a table
+                       (ID, name, composition, batch, location, made,
+                       status via a combo delegate, made from, notes, and a
+                       computed "Used in"). `NotebookWidget.samples` is the
+                       union of all Samples cells (first ID wins; new IDs
+                       continue from the notebook's highest), so @mentions,
+                       `ksample()` and IDs in Lab tables resolve across
+                       them. Usage ignores Samples cells' own JSON. Edits
+                       emit `source_edited` (undo). A top-level `"samples"`
+                       object in a .kbook / .ipynb metadata (the first,
+                       panel-based form) loads as a Samples cell at the top.
   - `labcell.py`     — `LabCell` ("lab"): a structured lab record after
                        kELN's blocks — **measurements** (table, mean ± sd
                        per all-numeric column, spreadsheet paste),
@@ -420,7 +424,7 @@ into a new module and import.
 
 `.kbook` is JSON: `{"format": "kbook", "version": 6, "cells":
 [{"type": "code"|"markdown"|"note"|"latex"|"sheet"|"svg"|"js"|"file"
-|"kfit"|"ktex"|"mol"|"lab"|"ref"|"slide"|"cad", "source": "...", optional "title", "collapsed", "column",
+|"kfit"|"ktex"|"mol"|"lab"|"ref"|"slide"|"cad"|"samples", "source": "...", optional "title", "collapsed", "column",
 "width", "height"}]}`. A `kfit` cell's `source` is JSON
 `{"kbook_kfit":1,"file":{name,size,embed|path},"sheet":…,"view":
 "plot"|"data"}` — same storage as a file attachment. A `note`
@@ -447,10 +451,11 @@ drag-resize grips; a sheet's `height` sizes its grid). A sheet cell's `source` i
 "active": "<sheet name>"}` (the legacy single-grid `{"rows","cols",
 "data"}` still loads). When a cell gains new persisted properties,
 bump `FORMAT_VERSION` in `notebook.py` and keep `load_json` backward
-compatible. A top-level `"samples": {"prefix", "digits", "items":
-[{id, name, composition, batch, location, made, status, parents[],
-notes}]}` holds the sample register (format version 8, with the `lab` and `ref` cells; written only
-when non-empty; in `.ipynb` it rides in `metadata.khervebook.samples`).
+compatible. A `samples` cell's `source` is `{"kbook_samples":1,"prefix","digits",
+"items":[{id, name, composition, batch, location, made, status,
+parents[], notes}]}` (format version 8, with the `lab`, `ref`, `slide`
+and `cad` cells; a legacy top-level `"samples"` object still loads, as
+a Samples cell).
 Jupyter/Colab `.ipynb` import/export is in `ipynb.py`
 (File menu); latex/sheet cells carry their type+source in cell
 metadata for a lossless round-trip.

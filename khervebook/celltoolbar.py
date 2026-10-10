@@ -106,7 +106,8 @@ class CellToolBar(QToolBar):
                  "lab": self._build_lab,
                  "ref": self._build_ref,
                  "slide": self._build_slide,
-                 "cad": self._build_cad}.get(cell_type, self._build_code)
+                 "cad": self._build_cad,
+                 "samples": self._build_samples}.get(cell_type, self._build_code)
         build()
 
     # -- KFit (KherveFitting project) mode ------------------------------------
@@ -129,6 +130,18 @@ class CellToolBar(QToolBar):
                   "mdi.open-in-new")
         self._add("Locate KherveSlide…", "Choose which KherveSlide to launch",
                   lambda: self._call("slide", "locate_app"), "mdi.magnify")
+
+    def _build_samples(self):
+        self._add("New Sample", "Add a sample",
+                  lambda: self._call("samples", "new_sample"), "mdi.plus")
+        self._add("New from Selected", "Add a sample made from the selected "
+                  "one", lambda: self._call("samples", "new_child"),
+                  "mdi.source-branch-plus")
+        self._add("Copy @ID", "Copy the selected sample's @mention",
+                  lambda: self._call("samples", "copy_mention"), "mdi.at")
+        self._add("Delete Sample", "Delete the selected samples",
+                  lambda: self._call("samples", "delete_selected"),
+                  "mdi.delete-outline")
 
     def _build_cad(self):
         self._add("Insert .kcad…", "Show a KherveCAD design in this cell",

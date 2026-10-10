@@ -239,6 +239,8 @@ class MainWindow(QMainWindow):
                               self.import_spreadsheet))
         f.addAction(self._act("&Import Jupyter/Colab (.ipynb)...", None,
                               self.import_ipynb))
+        f.addAction(self._act("Import Kherve&Note (.knote)...", None,
+                              self.import_knote))
         f.addAction(self._act("E&xport as Jupyter/Colab (.ipynb)...", None,
                               self.export_ipynb))
         f.addSeparator()
@@ -754,6 +756,14 @@ class MainWindow(QMainWindow):
 
     SHEET_FILTER = ("Spreadsheets (*.xlsx *.xlsm *.csv *.tsv);;"
                     "All files (*)")
+
+    def import_knote(self):
+        name = filedialog.open_file(self, "Import KherveNote", "",
+                                    "KherveNote notes (*.knote);;"
+                                    "All files (*)")
+        if name and not self.notebook.open_file_in_cell(name):
+            QMessageBox.critical(self, APP_NAME,
+                                 f"Could not import:\n{Path(name).name}")
 
     def import_spreadsheet(self):
         name = filedialog.open_file(

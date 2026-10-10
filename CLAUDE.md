@@ -104,6 +104,16 @@ into a new module and import.
                        value or a Python translation. PNG/JPG and each
                        PDF page become a self-contained SVG cell (bytes
                        embedded base64), fit-to-width and travel in .kbook.
+  - `knote.py`       — KherveNote `.knote` import (zip: `note.json` +
+                       `assets/`; KherveNote is PySide6, read directly):
+                       title cell, a Markdown cell per section (marks →
+                       **/*/<u>, key points / questions as quotes, nested
+                       numbered lists), an SVG cell per picture, one File
+                       cell for attached documents, and the Speech as a
+                       collapsed "What was said" cell stamped with the time
+                       of day (`meta.started` + `t`). Drop or File ▸
+                       Import KherveNote; imported items may carry
+                       `title`/`collapsed`.
   - `ipynb.py`       — Jupyter/Colab .ipynb import & export (lossless
                        round-trip via cell metadata).
   - `notebook.py`    — `NotebookWidget`: scrollable cell column, shared

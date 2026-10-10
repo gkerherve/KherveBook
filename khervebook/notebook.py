@@ -64,6 +64,7 @@ DROP_TYPES = {
     ".ipynb": "ipynb",                    # Jupyter / Colab notebook
     ".kslide": "kslide",                  # KherveSlide deck -> its slides
     ".kcad": "kcad",                      # KherveCAD design -> its views
+    ".knote": "knote",                    # KherveNote notes + speech
     ".bib": "bib",                        # BibTeX -> References cell
     ".kref": "kref",                      # KherveRef library -> References
 }
@@ -527,12 +528,15 @@ class NotebookWidget(QScrollArea):
             self.open_kbook_requested.emit(str(p))
             return True
         if kind in ("ksheet", "kdoc", "ktex", "ipynb", "image", "pdf",
-                    "xlsx"):
+                    "xlsx", "knote"):
             try:
                 if kind == "ipynb":
                     from . import ipynb
                     items = ipynb.from_ipynb(
                         p.read_text(encoding="utf-8"))
+                elif kind == "knote":
+                    from . import knote
+                    items = knote.to_cells(str(p))
                 else:
                     importer = {"ksheet": importers.ksheet_to_cells,
                                 "kdoc": importers.kdoc_to_cells,
@@ -553,6 +557,10 @@ class NotebookWidget(QScrollArea):
                                           label=f"Import {p.name}")
                 if item["type"] in ("markdown", "latex", "svg", "sheet"):
                     new.execute(self.kernel)
+                if item.get("title"):
+                    new.set_title(item["title"])
+                if item.get("collapsed"):
+                    new.set_collapsed(True)
             self.undo_stack.endMacro()
             self.modified.emit()
             return True

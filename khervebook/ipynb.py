@@ -163,8 +163,9 @@ def _display_body(t: str, src: str) -> str:
     return "```\n" + src + "\n```"
 
 
-def to_ipynb(items: list) -> str:
-    """Serialise KherveBook cell dicts to a Jupyter/Colab .ipynb string."""
+def to_ipynb(items: list, samples: dict = None) -> str:
+    """Serialise KherveBook cell dicts to a Jupyter/Colab .ipynb string.
+    A sample register rides in the notebook metadata (Jupyter ignores it)."""
     doc = {
         "cells": [_cell_to_ipynb(it) for it in items],
         "metadata": {
@@ -175,7 +176,18 @@ def to_ipynb(items: list) -> str:
         "nbformat": 4,
         "nbformat_minor": 5,
     }
+    if samples:
+        doc["metadata"]["khervebook"] = {"samples": samples}
     return json.dumps(doc, indent=1)
+
+
+def samples_of(text: str):
+    """The sample register stored by `to_ipynb`, or None."""
+    try:
+        meta = json.loads(text).get("metadata") or {}
+        return (meta.get("khervebook") or {}).get("samples")
+    except (ValueError, AttributeError):
+        return None
 
 
 # -- import ----------------------------------------------------------------

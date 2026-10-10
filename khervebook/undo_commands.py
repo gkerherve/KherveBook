@@ -102,3 +102,22 @@ class SetSourceCmd(QUndoCommand):
     def undo(self):
         self.cell.set_source(self.old)
         self.nb.modified.emit()
+
+
+class SamplesCmd(QUndoCommand):
+    """Replace the sample register with *after* (redo) / *before* (undo).
+
+    Snapshots of the whole register: it is a short list, and one snapshot
+    pair covers add, edit, delete and re-parenting alike."""
+
+    def __init__(self, nb, before: dict, after: dict, text="Edit sample",
+                 select=None):
+        super().__init__(text)
+        self.nb, self.before, self.after = nb, before, after
+        self.select = select
+
+    def redo(self):
+        self.nb._set_samples(self.after, self.select)
+
+    def undo(self):
+        self.nb._set_samples(self.before, self.select)

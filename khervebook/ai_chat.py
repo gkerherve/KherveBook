@@ -177,6 +177,13 @@ def _notebook_listing(notebook) -> str:
             blocks.append(f"… ({len(notebook.cells) - i} more cells omitted)")
             break
         blocks.append(block)
+    samples = getattr(notebook, "samples", None)
+    if samples is not None and len(samples):
+        # The register lives beside the cells; mention a sample as @S-0001
+        # in prose or read it in code with ksample("S-0001").
+        blocks.append("=== Sample register (cite as @ID in markdown, "
+                      "ksample(\"ID\") in code; ksample() is a DataFrame of "
+                      "all) ===\n" + samples.summary_text())
     return "\n".join(blocks) if blocks else "(empty notebook)"
 
 

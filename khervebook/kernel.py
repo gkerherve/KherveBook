@@ -218,6 +218,7 @@ class Kernel:
         self.notebook_dir = None
         self.file_lookup = None
         self.kfit_lookup = None
+        self.samples = None         # the notebook's SampleRegistry
         self.reset()
 
     def reset(self):
@@ -288,6 +289,8 @@ class Kernel:
         g["kf"] = self._make_kf()
         # kfit("C1s") -> a sheet of a KFit cell's KherveFitting project.
         g["kfit"] = self._make_kfit()
+        # ksample("S-0001") -> that sample; ksample() -> all, as a table.
+        g["ksample"] = self._make_ksample()
 
     def _make_kfit(self):
         """Build kfit(): the Python <-> KFit cell bridge.
@@ -317,6 +320,35 @@ class Kernel:
                            f"(it has: {', '.join(project.names)})")
 
         return kfit
+
+    def _make_ksample(self):
+        """Build ksample(): read the notebook's sample register.
+
+        ``ksample("S-0001")`` returns a copy of that sample (``.name``,
+        ``.composition``, ``.parents``…); ``ksample()`` returns every
+        sample as a pandas DataFrame indexed by ID (a list of dicts when
+        pandas is missing). Read-only: the Samples panel edits them.
+        """
+        import copy
+
+        def ksample(sample_id=None):
+            reg = self.samples
+            if sample_id is None:
+                rows = [s.to_dict() for s in (reg or [])]
+                try:
+                    import pandas as pd
+                except Exception:
+                    return rows
+                cols = ["id", "name", "composition", "batch", "location",
+                        "made", "status", "parents", "notes"]
+                return pd.DataFrame(rows, columns=cols).set_index("id")
+            sample = reg.get(str(sample_id)) if reg is not None else None
+            if sample is None:
+                raise KeyError(f"no sample {sample_id!r} — add it in the "
+                               "Samples panel (View ▸ Samples)")
+            return copy.deepcopy(sample)
+
+        return ksample
 
     def _make_kf(self):
         import os

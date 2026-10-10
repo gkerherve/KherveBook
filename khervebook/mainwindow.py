@@ -79,6 +79,10 @@ class MainWindow(QMainWindow):
         self.ai_chat = AIChatDock(self.notebook, self)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.ai_chat)
         self.splitDockWidget(self.explorer, self.ai_chat, Qt.Vertical)
+        from .samplesdock import SamplesDock
+        self.samples_dock = SamplesDock(self.notebook, self)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.samples_dock)
+        self.samples_dock.hide()        # restoreState reopens it if it was
         self._build_menus()
         self._build_toolbar()
         self.notebook.current_changed.connect(self._on_current_cell)
@@ -262,6 +266,10 @@ class MainWindow(QMainWindow):
         self._ai_toggle.setText("&AI Assistant")
         self._ai_toggle.setShortcut("Ctrl+Shift+A")
         v.addAction(self._ai_toggle)
+        self._samples_toggle = self.samples_dock.toggleViewAction()
+        self._samples_toggle.setText("&Samples")
+        self._samples_toggle.setShortcut("Ctrl+Shift+K")
+        v.addAction(self._samples_toggle)
         pos = v.addMenu("File Explorer &Position")
         pos.addAction(self._act("&Left", None,
                                 lambda: self._dock_explorer(Qt.LeftDockWidgetArea)))
@@ -407,6 +415,10 @@ class MainWindow(QMainWindow):
         self._ai_toggle.setToolTip(
             "Show/hide the AI assistant (Ctrl+Shift+A)")
         tb.addAction(self._ai_toggle)
+        self._samples_toggle.setIcon(icon("mdi.flask-outline"))
+        self._samples_toggle.setToolTip(
+            "Show/hide the sample register (Ctrl+Shift+K)")
+        tb.addAction(self._samples_toggle)
         tb.addSeparator()
         # Reuse the View-menu action so the button and menu item share
         # state; set its icon here so it recolours on a theme rebuild.

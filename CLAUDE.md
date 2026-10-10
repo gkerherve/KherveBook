@@ -209,6 +209,23 @@ into a new module and import.
                        molecule lives **inside** the .kbook as KherveMol's
                        `.kmol` JSON. Without KherveMol the cell says so and
                        keeps the stored JSON verbatim.
+  - `samples.py`     — the notebook's **sample register** (ported in
+                       spirit from kELN in KherveOS): `Sample` (id `S-0001`
+                       = prefix + zero-padded counter, never reused; name,
+                       composition, batch, location, made, status in use/
+                       consumed/discarded, `parents` for lineage, notes) and
+                       `SampleRegistry` (ancestors/descendants/roots, cycle
+                       guard, `usage(cells)` = cells whose text names the
+                       ID, `link_mentions` = `@S-0001` → `ksample:` link in
+                       Markdown, skipping code). Qt-free. Lives on
+                       `NotebookWidget.samples`; edits go through
+                       `edit_samples(mutate)` → one `SamplesCmd` undo step.
+                       Code reads it with `ksample("S-0001")` / `ksample()`
+                       (a DataFrame).
+  - `samplesdock.py` — the Samples side panel (View ▸ Samples,
+                       Ctrl+Shift+K): lineage tree, form, "Used in" list,
+                       and "mention in cell". Clicking an @mention in a
+                       rendered Markdown cell reveals the sample here.
   - `siblings.py`    — finds sibling Kherve apps: `import_package` puts an
                        embedded package's checkout on sys.path (env var,
                        e.g. `KHERVEMOL_PATH` → PyInstaller bundle →
@@ -350,7 +367,11 @@ drag-resize grips; a sheet's `height` sizes its grid). A sheet cell's `source` i
 "active": "<sheet name>"}` (the legacy single-grid `{"rows","cols",
 "data"}` still loads). When a cell gains new persisted properties,
 bump `FORMAT_VERSION` in `notebook.py` and keep `load_json` backward
-compatible. Jupyter/Colab `.ipynb` import/export is in `ipynb.py`
+compatible. A top-level `"samples": {"prefix", "digits", "items":
+[{id, name, composition, batch, location, made, status, parents[],
+notes}]}` holds the sample register (format version 8; written only
+when non-empty; in `.ipynb` it rides in `metadata.khervebook.samples`).
+Jupyter/Colab `.ipynb` import/export is in `ipynb.py`
 (File menu); latex/sheet cells carry their type+source in cell
 metadata for a lossless round-trip.
 

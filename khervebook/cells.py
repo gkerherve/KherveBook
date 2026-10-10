@@ -16,9 +16,9 @@ import io
 import re
 
 from PyQt5.QtCore import QEvent, QSize, Qt, QThread, pyqtSignal
-from PyQt5.QtGui import (QColor, QFont, QFontMetrics, QPainter, QPixmap,
-                         QSyntaxHighlighter, QTextCharFormat, QTextCursor,
-                         QTextDocument)
+from PyQt5.QtGui import (QColor, QDesktopServices, QFont, QFontMetrics,
+                         QPainter, QPixmap, QSyntaxHighlighter,
+                         QTextCharFormat, QTextCursor, QTextDocument)
 from PyQt5.QtWidgets import (QAction, QFrame, QHBoxLayout, QLabel, QLineEdit,
                              QPlainTextEdit, QScrollArea, QSizePolicy,
                              QTextBrowser, QToolButton, QVBoxLayout, QWidget)
@@ -888,6 +888,7 @@ class CellWidget(QFrame):
     content_changed = pyqtSignal()       # edited (non-editor cells)
     resized = pyqtSignal()               # width changed (notebook relayout)
     focused = pyqtSignal(object)         # self
+    sample_clicked = pyqtSignal(str)     # an @S-0001 link (sample id)
 
     def __init__(self, source=""):
         super().__init__()
@@ -1286,7 +1287,8 @@ class MarkdownCell(CellWidget):
                                                 dark=tokens()["dark"])
         self.view = QTextBrowser()
         self.view.setAcceptDrops(False)      # file drops go to the cell
-        self.view.setOpenExternalLinks(True)
+        self.view.setOpenLinks(False)        # @sample links stay in-app
+        self.view.anchorClicked.connect(self._open_link)
         self.view.setFrameShape(QFrame.NoFrame)
         # Render markdown at a comfortable reading size (the app default
         # is small next to LaTeX).
@@ -1298,8 +1300,19 @@ class MarkdownCell(CellWidget):
         self.view.mouseDoubleClickEvent = self._edit_again
         self.column.addWidget(self.view)
 
+    def _open_link(self, url):
+        from .samples import LINK_SCHEME
+        if url.scheme() == LINK_SCHEME:
+            self.sample_clicked.emit(url.path())
+        else:
+            QDesktopServices.openUrl(url)
+
     def execute(self, kernel):
-        self.view.document().setMarkdown(self.source())
+        text = self.source()
+        samples = getattr(kernel, "samples", None)
+        if samples is not None:
+            text = samples.link_mentions(text)
+        self.view.document().setMarkdown(text)
         self.view.document().adjustSize()
         height = int(self.view.document().size().height()) + 12
         self.view.setFixedHeight(max(28, height))

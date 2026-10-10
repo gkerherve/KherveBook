@@ -104,6 +104,27 @@ class SetSourceCmd(QUndoCommand):
         self.nb.modified.emit()
 
 
+class SourceEditCmd(QUndoCommand):
+    """An edit a cell has already made to itself (a table cell typed, a
+    box ticked): the first redo is a no-op, later ones re-apply *new*."""
+
+    def __init__(self, nb, cell, old, new, text="Edit cell"):
+        super().__init__(text)
+        self.nb, self.cell, self.old, self.new = nb, cell, old, new
+        self._done = True
+
+    def redo(self):
+        if self._done:
+            self._done = False
+            return
+        self.cell.set_source(self.new)
+        self.nb.modified.emit()
+
+    def undo(self):
+        self.cell.set_source(self.old)
+        self.nb.modified.emit()
+
+
 class SamplesCmd(QUndoCommand):
     """Replace the sample register with *after* (redo) / *before* (undo).
 

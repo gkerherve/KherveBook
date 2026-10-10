@@ -102,7 +102,8 @@ class CellToolBar(QToolBar):
                  "file": self._build_file,
                  "kfit": self._build_kfit,
                  "ktex": self._build_ktex,
-                 "mol": self._build_mol}.get(cell_type, self._build_code)
+                 "mol": self._build_mol,
+                 "lab": self._build_lab}.get(cell_type, self._build_code)
         build()
 
     # -- KFit (KherveFitting project) mode ------------------------------------
@@ -111,6 +112,18 @@ class CellToolBar(QToolBar):
         if cell is not None and cell.CELL_TYPE == "kfit" and hasattr(
                 cell, method):
             getattr(cell, method)(*args)
+
+    def _build_lab(self):
+        from .labmath import KINDS
+        self._add_menu("Kind", "What this lab record is",
+                       [(label, lambda k=key: self._call("lab", "set_kind",
+                                                         k, True))
+                        for key, label in KINDS], "mdi.flask-outline")
+        self._add("Add Row", "Add a row / step / reagent",
+                  lambda: self._call("lab", "add_row"), "mdi.table-row-plus-after")
+        self._add("Add Column", "Add a measurement column",
+                  lambda: self._call("lab", "add_column"),
+                  "mdi.table-column-plus-after")
 
     def _build_kfit(self):
         self._add("Load .kfit", "Open a KherveFitting project into this cell",

@@ -218,6 +218,7 @@ class Kernel:
         self.notebook_dir = None
         self.file_lookup = None
         self.kfit_lookup = None
+        self.lab_lookup = None
         self.samples = None         # the notebook's SampleRegistry
         self.reset()
 
@@ -291,6 +292,8 @@ class Kernel:
         g["kfit"] = self._make_kfit()
         # ksample("S-0001") -> that sample; ksample() -> all, as a table.
         g["ksample"] = self._make_ksample()
+        # klab() -> the first Lab cell's record (DataFrame for tables).
+        g["klab"] = self._make_klab()
 
     def _make_kfit(self):
         """Build kfit(): the Python <-> KFit cell bridge.
@@ -320,6 +323,23 @@ class Kernel:
                            f"(it has: {', '.join(project.names)})")
 
         return kfit
+
+    def _make_klab(self):
+        """Build klab(): read a Lab cell. ``klab()`` is the first one,
+        ``klab(2)`` the second, ``klab("Hardness")`` the one titled so.
+        Measurements, steps and reactions come back as DataFrames (numeric
+        columns as floats; reactions with computed mw / mmol / equiv);
+        runs and safety records as dicts."""
+        def klab(which=1):
+            lookup = self.lab_lookup
+            cell = lookup(which) if lookup is not None else None
+            if cell is None:
+                raise NameError("no Lab cell yet — Cell ▸ Add Lab Record"
+                                if not isinstance(which, str) else
+                                f"no Lab cell titled {which!r}")
+            return cell.as_python()
+
+        return klab
 
     def _make_ksample(self):
         """Build ksample(): read the notebook's sample register.

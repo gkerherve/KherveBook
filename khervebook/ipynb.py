@@ -142,6 +142,15 @@ def _mol_markdown(src: str) -> str:
         return "⚛ Molecule"
 
 
+def _lab_markdown(src: str) -> str:
+    from .labmath import to_markdown
+    try:
+        doc = json.loads(src)
+        return to_markdown(doc["kind"], doc.get("data"))
+    except (ValueError, TypeError, KeyError):
+        return "🧪 Lab record"
+
+
 def _display_body(t: str, src: str) -> str:
     if t == "latex":
         return ("```latex\n" + src + "\n```" if is_document(src)
@@ -158,6 +167,8 @@ def _display_body(t: str, src: str) -> str:
         return _ktex_markdown(src)
     if t == "mol":
         return _mol_markdown(src)
+    if t == "lab":
+        return _lab_markdown(src)
     if t == "svg":
         return src if src.lstrip().startswith("<svg") else "```\n" + src + "\n```"
     return "```\n" + src + "\n```"
@@ -200,7 +211,8 @@ def from_ipynb(text: str) -> list:
         meta = cell.get("metadata") or {}
         kb = meta.get("khervebook") or {}
         if kb.get("type") in ("latex", "sheet", "note", "svg", "js",
-                              "file", "ktex", "mol") and "source" in kb:
+                              "file", "ktex", "mol", "lab") and \
+                "source" in kb:
             item = {"type": kb["type"], "source": kb["source"]}
         else:
             ct = cell.get("cell_type", "code")

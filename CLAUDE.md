@@ -226,6 +226,21 @@ into a new module and import.
                        Ctrl+Shift+K): lineage tree, form, "Used in" list,
                        and "mention in cell". Clicking an @mention in a
                        rendered Markdown cell reveals the sample here.
+  - `labcell.py`     — `LabCell` ("lab"): a structured lab record after
+                       kELN's blocks — **measurements** (table, mean ± sd
+                       per all-numeric column, spreadsheet paste),
+                       **protocol steps** (ticking stamps `lab_user()` +
+                       time), **instrument run** (recent instruments in
+                       QSettings), **reaction** (MW from formula shown grey
+                       and not stored, mmol from mass / volume×density,
+                       equivalents vs the limiting reactant, yield) and
+                       **safety** (GHS, PPE, risk). Table edits have no
+                       editor undo, so the cell emits `source_edited` and
+                       the notebook pushes a `SourceEditCmd`. Code reads it
+                       with `klab()` / `klab(2)` / `klab("title")`.
+  - `labmath.py`     — the Qt-free half: kinds, `normalise`, defaults,
+                       `molar_mass`, `stats`, `reaction_compute`,
+                       `to_markdown` (used by .ipynb export and the AI).
   - `siblings.py`    — finds sibling Kherve apps: `import_package` puts an
                        embedded package's checkout on sys.path (env var,
                        e.g. `KHERVEMOL_PATH` → PyInstaller bundle →
@@ -345,12 +360,14 @@ into a new module and import.
 
 `.kbook` is JSON: `{"format": "kbook", "version": 6, "cells":
 [{"type": "code"|"markdown"|"note"|"latex"|"sheet"|"svg"|"js"|"file"
-|"kfit"|"ktex"|"mol", "source": "...", optional "title", "collapsed", "column",
+|"kfit"|"ktex"|"mol"|"lab", "source": "...", optional "title", "collapsed", "column",
 "width", "height"}]}`. A `kfit` cell's `source` is JSON
 `{"kbook_kfit":1,"file":{name,size,embed|path},"sheet":…,"view":
 "plot"|"data"}` — same storage as a file attachment. A `note`
 cell's `source` is JSON
 `{"kbook_note":1,"html":…,"ink":…}`; a `ktex` cell's `source` is
+`{"kbook_lab":1,"kind":"measurements"|"steps"|"run"|"reaction"|"safety",
+"data":{…}}` (shapes in `labmath.default_data`); a `ktex` cell's is
 `{"kbook_ktex":1,"file":{name,size,embed|path},"origin","page"}`; a
 `mol` cell's is `{"kbook_mol":1,"kmol":<KherveMol .kmol JSON>,"view":
 "3d"|"2d","query"}` (format version 7); a `file` cell's `source` is JSON

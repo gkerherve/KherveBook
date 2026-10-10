@@ -22,7 +22,7 @@ from .cells import CodeCell, make_cell
 from .kernel import Kernel
 from .samples import SampleRegistry
 from .undo_commands import (AddCellCmd, ConvertCellCmd, MoveCellCmd,
-                            RemoveCellCmd, SamplesCmd)
+                            RemoveCellCmd, SamplesCmd, SourceEditCmd)
 from . import sheetcell                  # noqa: F401  (registers "sheet")
 from . import svgcell                    # noqa: F401  (registers "svg")
 from . import jscell                     # noqa: F401  (registers "js")
@@ -31,8 +31,9 @@ from . import filecell                   # noqa: F401  (registers "file")
 from . import kfitcell                   # noqa: F401  (registers "kfit")
 from . import ktexcell                   # noqa: F401  (registers "ktex")
 from . import molcell                    # noqa: F401  (registers "mol")
+from . import labcell                    # noqa: F401  (registers "lab")
 
-# v8: a top-level "samples" register (IDs, lineage) — see samples.py.
+# v8: "lab" cells (structured lab records) and a top-level "samples" register (IDs, lineage) — see samples.py.
 # v7: "ktex" (a KherveTeX document shown as pages) and "mol" (KherveMol).
 # v6: "kfit" (a KherveFitting project shown as a plot / data table).
 # v5: "note" (rich text + pen) and "file" (attachments) cell types.
@@ -94,6 +95,7 @@ class NotebookWidget(QScrollArea):
         # KherveFitting projects via kfit("...").
         self.kernel.file_lookup = self._resolve_file
         self.kernel.kfit_lookup = self._resolve_kfit
+        self.kernel.lab_lookup = self._resolve_lab
         #: the lab samples this notebook tracks; ksample() reads them and
         #: Markdown renders @S-0001 against them.
         self.samples = SampleRegistry()
@@ -126,7 +128,15 @@ class NotebookWidget(QScrollArea):
         cell.content_changed.connect(self.modified.emit)
         cell.resized.connect(self._on_cell_resized)
         cell.sample_clicked.connect(self.sample_requested.emit)
+        # Cells that edit themselves outside a text editor (Lab tables)
+        # report each committed edit, so Ctrl+Z reaches it.
+        if hasattr(cell, "source_edited"):
+            cell.source_edited.connect(self._on_source_edited)
         return cell
+
+    def _on_source_edited(self, cell, old, new):
+        if cell in self.cells:
+            self.undo_stack.push(SourceEditCmd(self, cell, old, new))
 
     def _attach_cell(self, cell, index: int):
         """Place a (new or restored) live cell into the document at index.
@@ -428,7 +438,7 @@ class NotebookWidget(QScrollArea):
                            ("JavaScript", "js"), ("File", "file"),
                            ("KFit", "kfit"),
                            ("KherveTeX Document", "ktex"),
-                           ("Molecule", "mol")):
+                           ("Molecule", "mol"), ("Lab Record", "lab")):
             if key != cell.CELL_TYPE:
                 conv.addAction(label,
                                lambda k=key: self.convert_current(k))
@@ -696,6 +706,18 @@ class NotebookWidget(QScrollArea):
                 cell.set_collapsed(False)
             self._select(cell)
             self.ensureWidgetVisible(cell)
+
+    def _resolve_lab(self, which=1):
+        """klab(...) -> a Lab cell, by 1-based position among the Lab
+        cells or by its title, or None."""
+        cells = [c for c in self.cells if c.CELL_TYPE == "lab"]
+        if isinstance(which, str):
+            return next((c for c in cells if c.title == which), None)
+        try:
+            index = int(which)
+        except (TypeError, ValueError):
+            return None
+        return cells[index - 1] if 1 <= index <= len(cells) else None
 
     # -- persistence -------------------------------------------------------
     def to_json(self) -> str:

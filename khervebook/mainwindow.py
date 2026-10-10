@@ -137,6 +137,10 @@ class MainWindow(QMainWindow):
         from .notecell import NOTE_STARTER
         self.notebook.add_cell_below("note", NOTE_STARTER)
 
+    def _add_lab(self, kind):
+        from .labcell import starter
+        self.notebook.add_cell_below("lab", starter(kind))
+
     def _add_file_cell(self):
         """Add a File cell and immediately prompt for a file to attach."""
         cell = self.notebook.add_cell_below("file")
@@ -210,6 +214,11 @@ class MainWindow(QMainWindow):
                               self._add_js_cell))
         c.addAction(self._act("Attach &File Cell...", None,
                               self._add_file_cell))
+        lab = c.addMenu("Add Lab &Record")
+        from . import labmath
+        for key, label in labmath.KINDS:
+            lab.addAction(self._act(label, None,
+                                    lambda _=False, k=key: self._add_lab(k)))
         c.addSeparator()
         c.addAction(self._act("&Run Cell", "Ctrl+Return",
                               self.notebook.run_current))
@@ -339,7 +348,7 @@ class MainWindow(QMainWindow):
                   ("Note", "note"), ("LaTeX", "latex"), ("Sheet", "sheet"),
                   ("SVG", "svg"), ("JavaScript", "js"), ("File", "file"),
                   ("KFit", "kfit"), ("KherveTeX Doc", "ktex"),
-                  ("Molecule", "mol")]
+                  ("Molecule", "mol"), ("Lab", "lab")]
 
     def _build_toolbar(self):
         """Jupyter-style main toolbar: file/cell ops, run, cell type."""

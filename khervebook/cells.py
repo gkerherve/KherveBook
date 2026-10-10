@@ -889,6 +889,7 @@ class CellWidget(QFrame):
     resized = pyqtSignal()               # width changed (notebook relayout)
     focused = pyqtSignal(object)         # self
     sample_clicked = pyqtSignal(str)     # an @S-0001 link (sample id)
+    cite_clicked = pyqtSignal(str)       # a [@key] citation (citation key)
 
     def __init__(self, source=""):
         super().__init__()
@@ -1301,17 +1302,20 @@ class MarkdownCell(CellWidget):
         self.column.addWidget(self.view)
 
     def _open_link(self, url):
-        from .samples import LINK_SCHEME
-        if url.scheme() == LINK_SCHEME:
+        from . import refs, samples
+        if url.scheme() == samples.LINK_SCHEME:
             self.sample_clicked.emit(url.path())
+        elif url.scheme() == refs.LINK_SCHEME:
+            self.cite_clicked.emit(url.path())
         else:
             QDesktopServices.openUrl(url)
 
     def execute(self, kernel):
         text = self.source()
-        samples = getattr(kernel, "samples", None)
-        if samples is not None:
-            text = samples.link_mentions(text)
+        # @S-0001 sample mentions and [@key] citations become links.
+        link = getattr(kernel, "link_markdown", None)
+        if link is not None:
+            text = link(text)
         self.view.document().setMarkdown(text)
         self.view.document().adjustSize()
         height = int(self.view.document().size().height()) + 12

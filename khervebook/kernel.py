@@ -220,6 +220,8 @@ class Kernel:
         self.kfit_lookup = None
         self.lab_lookup = None
         self.samples = None         # the notebook's SampleRegistry
+        self.link_markdown = None   # Markdown -> with sample/cite links
+        self.refs_lookup = None
         self.reset()
 
     def reset(self):
@@ -292,6 +294,8 @@ class Kernel:
         g["kfit"] = self._make_kfit()
         # ksample("S-0001") -> that sample; ksample() -> all, as a table.
         g["ksample"] = self._make_ksample()
+        # kref() -> the notebook's references; kref("key") -> one.
+        g["kref"] = self._make_kref()
         # klab() -> the first Lab cell's record (DataFrame for tables).
         g["klab"] = self._make_klab()
 
@@ -323,6 +327,35 @@ class Kernel:
                            f"(it has: {', '.join(project.names)})")
 
         return kfit
+
+    def _make_kref(self):
+        """Build kref(): the notebook's references (all References cells).
+        ``kref()`` is a DataFrame indexed by citation key; ``kref("key")``
+        one entry as a dict."""
+        import copy
+
+        def kref(key=None):
+            entries = self.refs_lookup() if self.refs_lookup else []
+            if key is not None:
+                for e in entries:
+                    if e["key"] == key:
+                        return copy.deepcopy(e)
+                raise KeyError(f"no reference {key!r} — add it to a "
+                               "References cell")
+            from . import refs
+            rows = [{"key": e["key"], "authors": refs.authors_text(e),
+                     "year": refs.year(e), "title": e.get("title", ""),
+                     "journal": e.get("journal") or e.get("booktitle", ""),
+                     "doi": e.get("doi", "")} for e in entries]
+            try:
+                import pandas as pd
+            except Exception:
+                return rows
+            return pd.DataFrame(rows, columns=["key", "authors", "year",
+                                               "title", "journal", "doi"])\
+                .set_index("key")
+
+        return kref
 
     def _make_klab(self):
         """Build klab(): read a Lab cell. ``klab()`` is the first one,

@@ -104,3 +104,77 @@ def python_with(module: str):
         if ok == 0:
             return exe
     return None
+
+
+# -- launching a sibling app as its own process ----------------------------
+
+def _bundle_exe(app: Path):
+    macos = app / "Contents" / "MacOS"
+    preferred = macos / app.stem
+    if preferred.exists():
+        return preferred
+    for f in sorted(macos.glob("*")) if macos.is_dir() else []:
+        if f.is_file() and os.access(f, os.X_OK):
+            return f
+    return None
+
+
+def app_command(path, qt="PySide6"):
+    """Launch command (without the document) for a chosen app: a .app
+    bundle, an executable, or a source checkout's launcher script run with
+    its own virtualenv (else any Python that can import *qt*)."""
+    p = Path(path)
+    if p.suffix.lower() == ".app" and p.is_dir():
+        exe = _bundle_exe(p)
+        return [str(exe)] if exe else None
+    if p.is_file() and p.suffix.lower() == ".py":
+        python = venv_python(p.parent) or python_with(qt)
+        return [python, str(p)] if python else None
+    if p.is_file():
+        return [str(p)]
+    return None
+
+
+def app_install_candidates(app: str):
+    """Where an installed Kherve app lives on this platform, in order."""
+    out = [Path("/Applications") / f"{app}.app",
+           Path.home() / "Applications" / f"{app}.app"]
+    if os.environ.get("LOCALAPPDATA"):
+        out.append(Path(os.environ["LOCALAPPDATA"]) / "Programs" / app
+                   / f"{app}.exe")
+    for var in ("ProgramFiles", "ProgramFiles(x86)"):
+        if os.environ.get(var):
+            out.append(Path(os.environ[var]) / app / f"{app}.exe")
+    return out
+
+
+def find_app(app: str, package: str, script: str, env_var: str = "",
+             override: str = "", qt: str = "PySide6"):
+    """The command that launches sibling *app*, or None: the user's own
+    choice (*override*, from a "Locate…" button), an installed copy, then
+    a source checkout's *script*."""
+    for candidate in ([override] if override else []) + \
+            app_install_candidates(app):
+        if candidate and Path(candidate).exists():
+            cmd = app_command(candidate, qt)
+            if cmd:
+                return cmd
+    repo = checkout(app, package, env_var)
+    if repo is not None and (repo / script).exists():
+        return app_command(repo / script, qt)
+    return None
+
+
+def launch_detached(cmd, *args, cwd=None):
+    """Start *cmd* + *args* so it outlives KherveBook and never blocks it."""
+    import subprocess
+    kw = {"cwd": str(cwd) if cwd else None}
+    if sys.platform == "win32":
+        kw["creationflags"] = (subprocess.DETACHED_PROCESS
+                               | subprocess.CREATE_NEW_PROCESS_GROUP)
+    else:
+        kw["start_new_session"] = True
+    return subprocess.Popen(list(cmd) + [str(a) for a in args],
+                            stdin=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL, **kw)

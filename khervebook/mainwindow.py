@@ -269,6 +269,8 @@ class MainWindow(QMainWindow):
                               self._add_js_cell))
         c.addAction(self._act("Attach &File Cell...", None,
                               self._add_file_cell))
+        c.addAction(self._act("Add Re&ferences Cell", None,
+                              lambda: self.notebook.add_cell_below("ref")))
         lab = c.addMenu("Add Lab &Record")
         from . import labmath
         for key, label in labmath.KINDS:
@@ -403,7 +405,8 @@ class MainWindow(QMainWindow):
                   ("Note", "note"), ("LaTeX", "latex"), ("Sheet", "sheet"),
                   ("SVG", "svg"), ("JavaScript", "js"), ("File", "file"),
                   ("KFit", "kfit"), ("KherveTeX Doc", "ktex"),
-                  ("Molecule", "mol"), ("Lab", "lab")]
+                  ("Molecule", "mol"), ("Lab", "lab"),
+                  ("References", "ref")]
 
     def _build_toolbar(self):
         """Jupyter-style main toolbar: file/cell ops, run, cell type."""

@@ -249,7 +249,30 @@ into a new module and import.
                        plus "Save as Template…" into the per-user
                        AppData `templates/` folder ("My Templates"),
                        sample register dropped.
-  - `siblings.py`    — finds sibling Kherve apps: `import_package` puts an
+  - `refs.py`        — Qt-free references: entries in **KherveRef's own
+                       shape** (`key`, `type`, `authors` [{family,given}],
+                       `date`, `journal`, `doi`…), two styles (numbered
+                       ACS-like, author–year APA-like), BibTeX parse/write,
+                       DOI lookup (doi.org CSL-JSON → Crossref, urllib on a
+                       caller's thread), KherveRef library reading
+                       (`<lib>/.kherveref/references/*.json`, list from
+                       `<AppData>/KherveRef/libraries.json`) and
+                       `link_citations`: `[@key]`/`[@a; @b]` in Markdown →
+                       `kref:` links. **Never import `kherveref`** — it is
+                       PySide6.
+  - `refcell.py`     — `RefCell` ("ref"): the notebook's bibliography;
+                       entries copied in (self-contained), from a DOI
+                       (QThread in a module set), a KherveRef library
+                       (`LibraryPicker`), or a dropped `.bib`/`.kref`.
+                       Numbering is notebook-wide (`citation_index()`, first
+                       ref cell's style wins); each entry shows how often
+                       it is cited. "Open in KherveRef" launches the app on
+                       the linked library (`siblings.find_app`). The
+                       attribute is `cite_style`, never `style` — that
+                       would shadow `QWidget.style()` and abort Qt.
+                       Code: `kref()` (DataFrame) / `kref("key")`.
+  - `siblings.py`    — finds sibling Kherve apps (`find_app` +
+                       `launch_detached` for the separate-process ones): `import_package` puts an
                        embedded package's checkout on sys.path (env var,
                        e.g. `KHERVEMOL_PATH` → PyInstaller bundle →
                        `../<Repo>` → ~/Documents/PycharmProjects/<Repo>),
@@ -368,12 +391,14 @@ into a new module and import.
 
 `.kbook` is JSON: `{"format": "kbook", "version": 6, "cells":
 [{"type": "code"|"markdown"|"note"|"latex"|"sheet"|"svg"|"js"|"file"
-|"kfit"|"ktex"|"mol"|"lab", "source": "...", optional "title", "collapsed", "column",
+|"kfit"|"ktex"|"mol"|"lab"|"ref", "source": "...", optional "title", "collapsed", "column",
 "width", "height"}]}`. A `kfit` cell's `source` is JSON
 `{"kbook_kfit":1,"file":{name,size,embed|path},"sheet":…,"view":
 "plot"|"data"}` — same storage as a file attachment. A `note`
 cell's `source` is JSON
-`{"kbook_note":1,"html":…,"ink":…}`; a `lab` cell's `source` is
+`{"kbook_note":1,"html":…,"ink":…}`; a `ref` cell's is `{"kbook_refs":1,"style":"numbered"|"author-year",
+"library":<KherveRef folder or "">,"entries":[KherveRef entries]}`;
+a `lab` cell's `source` is
 `{"kbook_lab":1,"kind":"measurements"|"steps"|"run"|"reaction"|"safety",
 "data":{…}}` (shapes in `labmath.default_data`); a `ktex` cell's is
 `{"kbook_ktex":1,"file":{name,size,embed|path},"origin","page"}`; a
@@ -394,7 +419,7 @@ drag-resize grips; a sheet's `height` sizes its grid). A sheet cell's `source` i
 bump `FORMAT_VERSION` in `notebook.py` and keep `load_json` backward
 compatible. A top-level `"samples": {"prefix", "digits", "items":
 [{id, name, composition, batch, location, made, status, parents[],
-notes}]}` holds the sample register (format version 8; written only
+notes}]}` holds the sample register (format version 8, with the `lab` and `ref` cells; written only
 when non-empty; in `.ipynb` it rides in `metadata.khervebook.samples`).
 Jupyter/Colab `.ipynb` import/export is in `ipynb.py`
 (File menu); latex/sheet cells carry their type+source in cell

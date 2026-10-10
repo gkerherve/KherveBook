@@ -142,6 +142,20 @@ def _mol_markdown(src: str) -> str:
         return "⚛ Molecule"
 
 
+def _ref_markdown(src: str) -> str:
+    from . import refs
+    try:
+        doc = json.loads(src)
+        style = doc.get("style", "numbered")
+        lines = ["**References**", ""]
+        for i, e in enumerate(doc.get("entries") or [], 1):
+            e = refs.normalise(e)
+            lines.append(f"{i}. " + refs.plain(refs.format_entry(e, style)))
+        return "\n".join(lines)
+    except (ValueError, TypeError, AttributeError):
+        return "📚 References"
+
+
 def _lab_markdown(src: str) -> str:
     from .labmath import to_markdown
     try:
@@ -169,6 +183,8 @@ def _display_body(t: str, src: str) -> str:
         return _mol_markdown(src)
     if t == "lab":
         return _lab_markdown(src)
+    if t == "ref":
+        return _ref_markdown(src)
     if t == "svg":
         return src if src.lstrip().startswith("<svg") else "```\n" + src + "\n```"
     return "```\n" + src + "\n```"
@@ -211,7 +227,7 @@ def from_ipynb(text: str) -> list:
         meta = cell.get("metadata") or {}
         kb = meta.get("khervebook") or {}
         if kb.get("type") in ("latex", "sheet", "note", "svg", "js",
-                              "file", "ktex", "mol", "lab") and \
+                              "file", "ktex", "mol", "lab", "ref") and \
                 "source" in kb:
             item = {"type": kb["type"], "source": kb["source"]}
         else:

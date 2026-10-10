@@ -32,6 +32,26 @@ DEFAULT_PREFIX = "S"
 DEFAULT_DIGITS = 4
 
 
+def outside_code(markdown: str, fn) -> str:
+    """Apply *fn* to the prose of *markdown* only — fenced blocks and
+    `inline code` pass through untouched."""
+    out, fenced = [], False
+    for line in markdown.split("\n"):
+        if line.lstrip().startswith(("```", "~~~")):
+            fenced = not fenced
+            out.append(line)
+            continue
+        if fenced:
+            out.append(line)
+            continue
+        # Odd-numbered pieces of a split on backticks are code spans.
+        parts = line.split("`")
+        for i in range(0, len(parts), 2):
+            parts[i] = fn(parts[i])
+        out.append("`".join(parts))
+    return "\n".join(out)
+
+
 @dataclass
 class Sample:
     id: str
@@ -221,21 +241,7 @@ class SampleRegistry:
                 return m.group()
             return f"[@{sid}]({LINK_SCHEME}:{sid})"
 
-        out, fenced = [], False
-        for line in markdown.split("\n"):
-            if line.lstrip().startswith(("```", "~~~")):
-                fenced = not fenced
-                out.append(line)
-                continue
-            if fenced:
-                out.append(line)
-                continue
-            # Odd-numbered pieces of a split on backticks are code spans.
-            parts = line.split("`")
-            for i in range(0, len(parts), 2):
-                parts[i] = pat.sub(link, parts[i])
-            out.append("`".join(parts))
-        return "\n".join(out)
+        return outside_code(markdown, lambda text: pat.sub(link, text))
 
     def summary_text(self) -> str:
         """A compact listing (for the AI assistant's view of the notebook)."""

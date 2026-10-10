@@ -103,7 +103,8 @@ class CellToolBar(QToolBar):
                  "kfit": self._build_kfit,
                  "ktex": self._build_ktex,
                  "mol": self._build_mol,
-                 "lab": self._build_lab}.get(cell_type, self._build_code)
+                 "lab": self._build_lab,
+                 "ref": self._build_ref}.get(cell_type, self._build_code)
         build()
 
     # -- KFit (KherveFitting project) mode ------------------------------------
@@ -112,6 +113,23 @@ class CellToolBar(QToolBar):
         if cell is not None and cell.CELL_TYPE == "kfit" and hasattr(
                 cell, method):
             getattr(cell, method)(*args)
+
+    def _build_ref(self):
+        self._add("Add DOI", "Look up the DOI typed in the cell",
+                  lambda: self._call("ref", "add_doi"), "mdi.plus")
+        self._add("From KherveRef…", "Pick references from a KherveRef "
+                  "library", lambda: self._call("ref", "add_from_library"),
+                  "mdi.bookshelf")
+        self._add("Import .bib…", "Add every entry of a BibTeX file",
+                  lambda: self._call("ref", "choose_bib"),
+                  "mdi.file-import-outline")
+        self._add("Export .bib…", "Write all references to a BibTeX file",
+                  lambda: self._call("ref", "export_bib"),
+                  "mdi.content-save-outline")
+        self.addSeparator()
+        self._add("Open in KherveRef", "Open the linked library in KherveRef",
+                  lambda: self._call("ref", "open_in_kherveref"),
+                  "mdi.open-in-new")
 
     def _build_lab(self):
         from .labmath import KINDS

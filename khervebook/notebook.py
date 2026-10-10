@@ -32,8 +32,9 @@ from . import kfitcell                   # noqa: F401  (registers "kfit")
 from . import ktexcell                   # noqa: F401  (registers "ktex")
 from . import molcell                    # noqa: F401  (registers "mol")
 from . import labcell                    # noqa: F401  (registers "lab")
+from . import refcell                    # noqa: F401  (registers "ref")
 
-# v8: "lab" cells (structured lab records) and a top-level "samples" register (IDs, lineage) — see samples.py.
+# v8: "ref" (references, KherveRef) and "lab" cells (structured lab records) and a top-level "samples" register (IDs, lineage) — see samples.py.
 # v7: "ktex" (a KherveTeX document shown as pages) and "mol" (KherveMol).
 # v6: "kfit" (a KherveFitting project shown as a plot / data table).
 # v5: "note" (rich text + pen) and "file" (attachments) cell types.
@@ -59,6 +60,8 @@ DROP_TYPES = {
     ".ktexz": "ktexdoc",                  # KherveTeX document -> its pages
     ".kmol": "kmol",                      # KherveMol molecule
     ".ipynb": "ipynb",                    # Jupyter / Colab notebook
+    ".bib": "bib",                        # BibTeX -> References cell
+    ".kref": "kref",                      # KherveRef library -> References
 }
 _MAX_DROP_BYTES = 2_000_000
 
@@ -100,6 +103,8 @@ class NotebookWidget(QScrollArea):
         #: Markdown renders @S-0001 against them.
         self.samples = SampleRegistry()
         self.kernel.samples = self.samples
+        self.kernel.link_markdown = self._link_markdown
+        self.kernel.refs_lookup = self.references
         self._clipboard = None              # dict from a cut/copied cell
         self._loop_cell = None              # cell being run continuously
         self._loop_timer = QTimer(self)
@@ -128,6 +133,7 @@ class NotebookWidget(QScrollArea):
         cell.content_changed.connect(self.modified.emit)
         cell.resized.connect(self._on_cell_resized)
         cell.sample_clicked.connect(self.sample_requested.emit)
+        cell.cite_clicked.connect(self.show_reference)
         # Cells that edit themselves outside a text editor (Lab tables)
         # report each committed edit, so Ctrl+Z reaches it.
         if hasattr(cell, "source_edited"):
@@ -438,7 +444,8 @@ class NotebookWidget(QScrollArea):
                            ("JavaScript", "js"), ("File", "file"),
                            ("KFit", "kfit"),
                            ("KherveTeX Document", "ktex"),
-                           ("Molecule", "mol"), ("Lab Record", "lab")):
+                           ("Molecule", "mol"), ("Lab Record", "lab"),
+                           ("References", "ref")):
             if key != cell.CELL_TYPE:
                 conv.addAction(label,
                                lambda k=key: self.convert_current(k))
@@ -551,6 +558,16 @@ class NotebookWidget(QScrollArea):
             else:
                 cell = self.add_cell_below("ktex", "")
             ok = cell.attach(str(p))
+            if ok:
+                self.modified.emit()
+            return ok
+        if kind in ("bib", "kref"):
+            if cell is None or cell.CELL_TYPE != "ref":
+                cell = self.add_cell_below("ref", "")
+            else:
+                self._set_current(cell)
+            ok = (cell.import_bib(str(p)) if kind == "bib"
+                  else cell.link_library(str(p)))
             if ok:
                 self.modified.emit()
             return ok
@@ -690,11 +707,47 @@ class NotebookWidget(QScrollArea):
     def _set_samples(self, data: dict, select=None):
         self.samples.load(data)
         # Rendered Markdown re-links its mentions against the new register.
+        self.rerender_markdown()
+        self.samples_changed.emit(select)
+        self.modified.emit()
+
+    # -- references -------------------------------------------------------
+    def _ref_cells(self):
+        return [c for c in self.cells if c.CELL_TYPE == "ref"]
+
+    def references(self):
+        """Every entry of every References cell, in document order (that
+        order numbers them)."""
+        return [e for c in self._ref_cells() for e in c.entries]
+
+    def citation_index(self):
+        """key -> (number, entry); the first cell holding a key wins."""
+        index = {}
+        for e in self.references():
+            if e["key"] not in index:
+                index[e["key"]] = (len(index) + 1, e)
+        return index
+
+    def _link_markdown(self, text):
+        from . import refs
+        cells = self._ref_cells()
+        if cells:
+            text = refs.link_citations(text, self.citation_index(),
+                                       cells[0].cite_style)
+        return self.samples.link_mentions(text)
+
+    def show_reference(self, key):
+        for cell in self._ref_cells():
+            if any(e["key"] == key for e in cell.entries):
+                self.show_cell(cell)
+                cell.select_key(key)
+                return
+
+    def rerender_markdown(self):
+        """Re-link rendered Markdown (the samples or references changed)."""
         for cell in self.cells:
             if cell.CELL_TYPE == "markdown" and cell.view.isVisible():
                 cell.execute(self.kernel)
-        self.samples_changed.emit(select)
-        self.modified.emit()
 
     def sample_usage(self, sample_id):
         """The cells that name *sample_id*, in document order."""

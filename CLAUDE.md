@@ -365,7 +365,7 @@ into a new module and import.
 `{"kbook_kfit":1,"file":{name,size,embed|path},"sheet":…,"view":
 "plot"|"data"}` — same storage as a file attachment. A `note`
 cell's `source` is JSON
-`{"kbook_note":1,"html":…,"ink":…}`; a `ktex` cell's `source` is
+`{"kbook_note":1,"html":…,"ink":…}`; a `lab` cell's `source` is
 `{"kbook_lab":1,"kind":"measurements"|"steps"|"run"|"reaction"|"safety",
 "data":{…}}` (shapes in `labmath.default_data`); a `ktex` cell's is
 `{"kbook_ktex":1,"file":{name,size,embed|path},"origin","page"}`; a

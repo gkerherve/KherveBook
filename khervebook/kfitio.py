@@ -44,12 +44,14 @@ _TECHNIQUE_AXES = (
     (lambda n: n.startswith("EDX~Plot"), "Energy (keV)", "Counts", None),
     (lambda n: n.startswith("TEM~Plot"), "Distance (nm)",
      "Intensity (a.u.)", "TEM"),
+    (lambda n: n.startswith("AFM~Profile"), "Distance (nm)", "Height (nm)",
+     "AFM"),
     (lambda n: n.startswith(("SEM", "TEM~Count", "TEM~Freq")),
      "Particle size (nm)", "Count", "SEM"),
     (lambda n: n.upper().startswith("FTIR"),
      "Wavenumber (cm$^{-1}$)", "Transmittance (%)", "FTIR"),
     (lambda n: n.upper().startswith("EELS"),
-     "Energy Loss (eV)", "Intensity (a.u.)", None),
+     "Energy Loss (eV)", "Intensity (a.u.)", "EELS"),
     (lambda n: n.upper().startswith("EIS"), "Z' (Ω)", "-Z'' (Ω)", "EIS"),
     (lambda n: n.upper().startswith("SQUID"),
      "Temperature (K)", "Moment (emu)", "SQUID"),
@@ -59,6 +61,21 @@ _TECHNIQUE_AXES = (
      "Intensity (counts)", None),
     (lambda n: n.startswith("XAS"), "Photon Energy (eV)",
      "Intensity (a.u.)", None),
+    # The forward-axis curve techniques, labels on the sheet. ELLIPS is
+    # never spelled "EL": EELS would match it.
+    (lambda n: n.upper().startswith("UVVIS"),
+     "Wavelength (nm)", "Absorbance (a.u.)", "UVVIS"),
+    (lambda n: n.upper().startswith("ELLIPS"),
+     "Wavelength (nm)", "$\\Psi$ (°)", "ELLIPS"),
+    (lambda n: n.upper().startswith("PL"),
+     "Wavelength (nm)", "PL Intensity (a.u.)", "PL"),
+    (lambda n: n.upper().startswith("MS"), "m/z", "Intensity (a.u.)", "MS"),
+    (lambda n: n.upper().startswith("GC"),
+     "Retention time (min)", "Signal (a.u.)", "GC"),
+    (lambda n: n.upper().startswith("DIL"),
+     "Temperature (°C)", "dL/L$_0$", "DIL"),
+    (lambda n: n.upper().startswith("BET"), "Relative pressure (P/P$_0$)",
+     "Quantity adsorbed (cm$^3$/g STP)", "BET"),
     (lambda n: n.startswith("RA") or "RAMAN" in n.upper()
      or n.startswith("Ra_"),
      "Wavenumber (cm$^{-1}$)", "Intensity (a.u.)", None),
@@ -377,9 +394,11 @@ def _merge_arrays(f, levels: dict):
         level = levels.get(str(name))
         if not isinstance(level, dict):
             continue
-        for ds_name, parent in _ARRAY_KEYS.items():
-            if ds_name not in sub:
-                continue
+        for ds_name in sub:
+            # Every array the writer stored losslessly (the spectrum, the
+            # transmission, a technique's TGA_/EIS_/XRD_… traces) wins over
+            # the two-decimal JSON copy.
+            parent = _ARRAY_KEYS.get(ds_name)
             values = sub[ds_name][:].tolist()
             if parent is None:
                 level[ds_name] = values

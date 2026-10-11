@@ -237,6 +237,8 @@ class MainWindow(QMainWindow):
                               self.import_ipynb))
         f.addAction(self._act("Import Kherve&Note (.knote)...", None,
                               self.import_knote))
+        self.instrument_menu = f.addMenu("Import Instrument &Data")
+        self._build_instrument_menu()
         f.addAction(self._act("E&xport as Jupyter/Colab (.ipynb)...", None,
                               self.export_ipynb))
         f.addSeparator()
@@ -747,6 +749,42 @@ class MainWindow(QMainWindow):
 
     SHEET_FILTER = ("Spreadsheets (*.xlsx *.xlsm *.csv *.tsv);;"
                     "All files (*)")
+
+    def _build_instrument_menu(self):
+        """Technique ▸ vendor ▸ format, as in KherveFitting's Import menu."""
+        from . import instruments
+        menu = self.instrument_menu
+        menu.clear()
+        tech_menus, group_menus = {}, {}
+        for fmt in instruments.formats():
+            tm = tech_menus.get(fmt.technique)
+            if tm is None:
+                tm = tech_menus[fmt.technique] = menu.addMenu(fmt.technique)
+            target = tm
+            if fmt.group:
+                key = (fmt.technique, fmt.group)
+                if key not in group_menus:
+                    group_menus[key] = tm.addMenu(fmt.group)
+                target = group_menus[key]
+            target.addAction(self._act(
+                fmt.label + "…", None,
+                lambda _=False, f=fmt: self.import_instrument(f)))
+        if not tech_menus:
+            menu.addAction("(no readers available)").setEnabled(False)
+
+    def import_instrument(self, fmt):
+        title = f"Import {fmt.technique} — {fmt.label}"
+        if fmt.multi:
+            names = filedialog.open_files(self, title, "", fmt.filter)
+        else:
+            name = filedialog.open_file(self, title, "", fmt.filter)
+            names = [name] if name else []
+        if names and not self.notebook.import_instrument(fmt, names):
+            QMessageBox.warning(self, APP_NAME,
+                                self.notebook.current._hint.text()
+                                if self.notebook.current is not None and
+                                hasattr(self.notebook.current, "_hint")
+                                else f"Could not import {Path(names[0]).name}")
 
     def import_knote(self):
         name = filedialog.open_file(self, "Import KherveNote", "",

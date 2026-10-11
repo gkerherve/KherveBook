@@ -527,6 +527,12 @@ class NotebookWidget(QScrollArea):
             if ok:
                 self.modified.emit()
             return ok
+        # An instrument file KherveFitting imports (VGD, VAMAS, XRDML…)
+        # becomes a KherveFitting project in a KFit cell.
+        from . import instruments
+        fmt = instruments.detect(p) if p.is_file() else None
+        if fmt is not None:
+            return self.import_instrument(fmt, [str(p)], cell)
         kind = DROP_TYPES.get(p.suffix.lower())
         if kind is None and importers.is_ktex(str(p)):
             kind = "ktex"                  # .ktex.json double suffix
@@ -641,6 +647,21 @@ class NotebookWidget(QScrollArea):
             cell.execute(self.kernel)
         self.modified.emit()
         return True
+
+    def import_instrument(self, fmt, paths, cell=None) -> bool:
+        """Import instrument file(s) into *cell* when it is a KFit cell,
+        else into a new KFit cell below the current one (one undo step)."""
+        if cell is not None and cell.CELL_TYPE == "kfit":
+            self._set_current(cell)
+            ok = cell.import_data(fmt, paths)
+        else:
+            # A failed import keeps the new cell: its hint says why.
+            cell = self.add_cell_below("kfit", "",
+                                       label=f"Import {Path(paths[0]).name}")
+            ok = cell.import_data(fmt, paths)
+        if ok:
+            self.modified.emit()
+        return ok
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():

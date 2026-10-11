@@ -110,6 +110,9 @@ class KFitCell(CellWidget):
         self._stem = "notebook"
         self._wanted_sheet = ""            # sheet to restore from the .kbook
         self._origin = ""                  # where it was loaded from, for Refresh
+        #: an instrument import ({"technique", "label", "paths"}): Refresh
+        #: reads those files again instead of a .kfit
+        self._imported = None
         self._plot = None
         self._card = self._build_card()
         self.column.addWidget(self._card)
@@ -194,9 +197,57 @@ class KFitCell(CellWidget):
         # of the bytes, which would otherwise go stale the moment
         # KherveFitting saves the original again.
         self._origin = str(p.resolve())
+        self._imported = None
         self._wanted_sheet = ""
         self._reload_project()
         self.content_changed.emit()
+        return True
+
+    def import_data(self, fmt, paths) -> bool:
+        """Import instrument file(s) with *fmt* (an `instruments.Format`)
+        as a new project — what KherveFitting's Import menu would make."""
+        from . import instruments
+        paths = [str(Path(x).resolve()) for x in
+                 (paths if isinstance(paths, (list, tuple)) else [paths])]
+        try:
+            data = instruments.to_kfit(fmt, paths)
+        except instruments.ImportFailed as exc:
+            self._hint.setText(str(exc))
+            return False
+        name = Path(paths[0]).stem + ".kfit"
+        self._att = _Attachment(name=name, size=len(data), data=data)
+        self._origin = ""
+        self._imported = {"technique": fmt.technique, "label": fmt.label,
+                          "paths": paths}
+        self._wanted_sheet = ""
+        self._reload_project()
+        n = len(self._project.sheets) if self._project else 0
+        self._hint.setText(f"Imported {len(paths)} file"
+                           f"{'s' if len(paths) != 1 else ''} as "
+                           f"{fmt.technique} {fmt.label}: {n} sheet"
+                           f"{'s' if n != 1 else ''}. “Open in "
+                           "KherveFitting” to fit them.")
+        self.content_changed.emit()
+        return True
+
+    def _reimport(self) -> bool:
+        from . import instruments
+        info = self._imported or {}
+        fmt = next((f for f in instruments.formats()
+                    if f.technique == info.get("technique")
+                    and f.label == info.get("label")), None)
+        missing = [x for x in info.get("paths", []) if not Path(x).exists()]
+        if fmt is None or missing:
+            self._hint.setText("Cannot refresh: " + (
+                f"{missing[0]} is no longer there." if missing else
+                f"the {info.get('label')} reader is not available."))
+            return False
+        wanted = self._sheet_box.currentText()
+        if not self.import_data(fmt, info["paths"]):
+            return False
+        self._wanted_sheet = wanted
+        self._fill_sheets()
+        self._refresh()
         return True
 
     def refresh(self) -> bool:
@@ -206,6 +257,8 @@ class KFitCell(CellWidget):
         project re-fitted in KherveFitting since it was loaded needs this
         to catch up. The shown sheet is kept if the new file still has it.
         """
+        if self._imported:
+            return self._reimport()
         origin = self._origin
         if not origin:
             self._hint.setText(
@@ -470,6 +523,13 @@ class KFitCell(CellWidget):
                 self.attach(path)
                 event.acceptProposedAction()
                 return
+        from . import instruments
+        for path in paths:
+            fmt = instruments.detect(path)
+            if fmt is not None:
+                self.import_data(fmt, path)
+                event.acceptProposedAction()
+                return
         if paths:
             self._hint.setText(
                 f"A KFit cell holds KherveFitting projects only — "
@@ -486,6 +546,8 @@ class KFitCell(CellWidget):
             doc["file"] = self._att.to_dict(self._doc_dir)
         if self._origin:
             doc["origin"] = self._origin
+        if self._imported:
+            doc["imported"] = self._imported
         return json.dumps(doc)
 
     def set_source(self, text: str):
@@ -504,6 +566,9 @@ class KFitCell(CellWidget):
                      else None)
         self._wanted_sheet = str(doc.get("sheet") or "")
         self._origin = str(doc.get("origin") or "")
+        imported = doc.get("imported")
+        self._imported = imported if isinstance(imported, dict) and \
+            imported.get("paths") else None
         self._tabs.setCurrentIndex(1 if doc.get("view") == "data" else 0)
         self._reload_project()
 

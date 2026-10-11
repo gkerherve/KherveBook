@@ -27,8 +27,8 @@ from pathlib import Path
 from typing import Callable, Optional, Tuple
 
 #: reader modules, in menu order of their first technique
-_MODULES = ("kratos", "phi", "xrd", "thermal", "bet", "eis", "squid",
-            "optical", "msgc", "ftir", "raman")
+_MODULES = ("thermo", "kratos", "phi", "vamas", "diamond", "xrd", "thermal",
+            "bet", "eis", "squid", "optical", "msgc", "ftir", "raman")
 
 
 @dataclass(frozen=True)

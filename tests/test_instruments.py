@@ -158,10 +158,10 @@ def test_failed_import_says_why(qapp, fake_formats, tmp_path):
 def test_menu_mirrors_techniques(qapp, fake_formats):
     from khervebook.mainwindow import MainWindow
     win = MainWindow()
+    win.notebook.stop_loop()          # the welcome notebook's live cell
     top = [a.text() for a in win.instrument_menu.actions()]
     assert top == ["XPS", "UV-Vis", "XRD"]
     xps = win.instrument_menu.actions()[0].menu()
     test = xps.actions()[0].menu()
     assert [a.text() for a in test.actions()] == ["Fake (.fake)…",
                                                   "Fake files (.fake)…"]
-    win.close()

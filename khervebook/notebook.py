@@ -412,7 +412,13 @@ class NotebookWidget(QScrollArea):
         if cell is None or cell not in self.cells:
             self.stop_loop()
             return
-        cell.execute(self.kernel)
+        try:
+            cell.execute(self.kernel)
+        except RuntimeError:
+            # The cell's widgets went away under the timer (its window
+            # closed): stop rather than raise inside a Qt slot, which
+            # aborts the whole app.
+            self.stop_loop()
 
     def _show_cell_menu(self, cell, global_pos):
         """Right-click menu with the per-cell operations."""

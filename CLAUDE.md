@@ -320,6 +320,33 @@ into a new module and import.
                        runs high→low — is read from the *sheet name*, via
                        a table ported from KherveFitting's
                        `Plot_Operations`.
+  - `instruments/`   — **every spectrum file KherveFittingPro imports**
+                       (its `libraries/FileMenu/*_Import.py`, ported wx-free
+                       and checked value-for-value against KherveFittingPro
+                       on the same files). Each reader module declares
+                       `FORMATS = [Format(technique, label, exts, read,
+                       group, sniff, multi, needs)]` and returns
+                       `{sheet: core level}` — KherveFitting's own dicts
+                       (`kfitwrite.core_level` = its `build_core_level_Data`,
+                       with the deliberate Raw/Corrected Data swap).
+                       `kfitwrite.to_bytes` writes the `.kfit` exactly as
+                       `write_kfitting` does; the result goes into a KFit
+                       cell (`KFitCell.import_data`, Refresh re-reads the
+                       instrument file, `imported` persisted). `detect()`
+                       claims a dropped file by unique extension, or by
+                       `sniff` for shared ones (.txt/.csv/.dat/.xlsx/.nxs)
+                       — generic text formats are menu-only so a plain CSV
+                       stays a sheet. File ▸ Import Instrument Data mirrors
+                       KherveFitting's Import menu (technique ▸ vendor).
+                       Register a new module in `_MODULES`. Modules: thermo
+                       (+thermo_avantage), scienta, xps_text (MRS, VG, ASC,
+                       CSV), igor, kratos, phi, diamond, vamas (own ISO
+                       14976 parser), sdp, xrd, thermal (TGA, DSC .tri,
+                       DIL), bet, eis, squid, optical (UV-Vis, PL, ellips.),
+                       msgc, ftir (+JCAMP, Nicolet), raman; helpers
+                       kfgeneric, xlsxflow (KherveFitting's xlsx round-trip
+                       rounding). Maps / images / ARPES cubes / AFM / SEM /
+                       TEM / EELS / EDX / PHI .sxi are not ported yet.
   - `kfitmodels.py`  — peak lineshapes (GL/SGL, Voigt, Pseudo-Voigt, LA,
                        LA*G, LF, DS, DS*G, ExpGauss, A*GL/A*SGL, SB),
                        ported from KherveFitting's `Peak_Functions` and

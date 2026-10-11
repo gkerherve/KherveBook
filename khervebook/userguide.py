@@ -186,6 +186,17 @@ computer, or drop a <code>.bib</code>. Cite in Markdown with
 author&ndash;year) and link to the entry, and each entry shows whether it is
 cited yet. Export .bib hands the list to LaTeX; <code>kref()</code> reads it
 from code.</p>
+<p><b>Instrument data.</b> Every spectrum file KherveFitting imports can
+come straight into a notebook: drop it on the notebook, or use File &rarr;
+Import Instrument Data, organised by technique and vendor as in
+KherveFitting &mdash; XPS (Thermo Avantage / VGD / AVG, Scienta, Kratos,
+PHI, VAMAS, Diamond, MRS, VG-Microtech, Igor, SDP, ASCII), XAS, XRD, FTIR,
+Raman, UV-Vis, PL, ellipsometry, TGA / DSC, dilatometry, BET, EIS, SQUID,
+MS and GC. The file becomes a KherveFitting project in a KFit cell
+(plot, data table, <code>kfit()</code> in code, Open in KherveFitting);
+Refresh reads the instrument file again. Plain .csv / .txt files are only
+treated as instrument data from the menu, so a dropped spreadsheet still
+opens as a sheet.</p>
 <p><b>KherveSlide decks</b> (<code>.kslide</code>) show as their slides and
 <b>KherveCAD designs</b> (<code>.kcad</code>) as rendered isometric, front
 and top views; <b>KherveNote</b> notes (<code>.knote</code>) import as cells
